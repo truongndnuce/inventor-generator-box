@@ -2,11 +2,13 @@ using System;
 using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Windows.Forms.Integration;
 using InventorAddin.Services;
 using InventorAddin.ViewModels;
 using InventorAddin.Views;
+using InventorAddin.Web;
 using Inv = Inventor;
 
 namespace InventorAddin.Host;
@@ -33,6 +35,7 @@ public sealed class AddInServer : Inv.ApplicationAddInServer
     private Form? _window;
     private PanelViewModel? _viewModel;
     private Inv.ApplicationEvents? _appEvents;
+    private JobWorker? _worker;
     private bool _closing;
 
     public object? Automation => null;
@@ -60,6 +63,8 @@ public sealed class AddInServer : Inv.ApplicationAddInServer
             Log.Info("Deactivate");
             if (_button != null) _button.OnExecute -= OnButtonExecute;
             if (_appEvents != null) _appEvents.OnActivateDocument -= OnActivateDocument;
+            _worker?.Dispose();
+            _worker = null;
             _closing = true;
             _window?.Close();
             _window?.Dispose();
@@ -126,6 +131,55 @@ public sealed class AddInServer : Inv.ApplicationAddInServer
         catch (Exception ex)
         {
             Log.Warn("Could not subscribe to document activation event: " + ex.Message);
+        }
+
+        StartWebWorker(app);
+    }
+
+    // ---------------------------------------------------------------- web worker
+
+    /// <summary>
+    /// Nhận job do web đặt (be/Cadflow.Api). Cấu hình ở %AppData%\InventorBoxAddin\worker.json.
+    /// Handle của cửa sổ (tạo trên UI thread) dùng để đẩy phần gọi Inventor API về đúng UI thread.
+    /// </summary>
+    private void StartWebWorker(Inv.Application app)
+    {
+        try
+        {
+            var settings = WorkerSettings.Load();
+            if (!settings.Enabled)
+            {
+                Log.Info("Web worker disabled in worker.json");
+                return;
+            }
+
+            _ = _window!.Handle; // ép tạo handle ngay trên UI thread, kể cả khi cửa sổ đang ẩn
+            var ui = _window;
+            _worker = new JobWorker(app, settings, work =>
+            {
+                var tcs = new TaskCompletionSource<object?>();
+                ui.BeginInvoke(new Action(() =>
+                {
+                    try { tcs.SetResult(work()); }
+                    catch (Exception ex) { tcs.SetException(ex); }
+                }));
+                return tcs.Task;
+            });
+            _worker.StatusChanged += status =>
+            {
+                try
+                {
+                    if (!ui.IsDisposed && ui.IsHandleCreated)
+                        ui.BeginInvoke(new Action(() => ui.Text = "Box Generator - web: " + status));
+                }
+                catch { /* cửa sổ đang đóng */ }
+            };
+            _worker.Start();
+            Log.Info($"Web worker started: {settings.WorkerName} -> {settings.ServerUrl}");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Could not start the web worker", ex);
         }
     }
 

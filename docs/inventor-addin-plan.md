@@ -21,11 +21,12 @@ Xây dựng một add-in cho Autodesk Inventor có khả năng:
 |---|---------|----------|---------|
 | 1 | Phiên bản Inventor mục tiêu | **Inventor 2027 (đã chốt)** | Target **.NET 10**, dùng Visual Studio 2026 và Inventor 2027 SDK/DeveloperTools.msi. Không dùng .NET Framework 4.8 |
 | 2 | Loại đối tượng | **Part (đã chốt)** | Assembly để dành cho Giai đoạn 5 nếu cần |
-| 3 | Hình dạng mẫu đầu tiên | **Hộp rỗng có nắp (đã chốt)** | Thân hộp và nắp là 2 solid body trong 1 Part. Thông số xem mục 4 |
+| 3 | Hình dạng mục tiêu | **Máy biến áp lực tham chiếu ảnh GE Vernova (đã chốt hướng), làm theo từng cấp** | **Cấp 1 chính là hộp rỗng có nắp** (thùng và nắp), thông số ở mục 4. Các cấp sau thêm sứ, ống dẫn, làm mát. Chi tiết ở mục 5d |
 | 4 | Danh sách thông số | Tên, kiểu, đơn vị, min/max, mặc định | Lập bảng ở mục 4 |
 | 5 | Tạo và chỉnh ở đâu | **Trên model (Part) đang mở (đã chốt)** | Không tạo document mới. Add-in làm việc với document đang active. Quy tắc xử lý xem Giai đoạn 2 |
-| 6 | UI | **Ribbon + Dockable window WPF, kèm canvas xem trước (đã chốt)** | Vừa xem model vừa chỉnh. Chi tiết ở mục 5b |
+| 6 | UI | **UI chính chuyển sang web (xem mục 15 của `cadflow-order-to-model-plan.md`).** Dockable window WPF kèm canvas xem trước nay là công cụ phát triển, tùy chọn | Canvas xem trước trở thành xem trước trên web. Mục 5b giữ lại làm tham khảo thiết kế |
 | 7 | Lưu preset | **File JSON (đã chốt, lưu tạm)** | File mẫu `presets.json` đi kèm kế hoạch. Chi tiết ở mục 5b |
+| 8 | Cách mô tả đối tượng | **Tự xây ngôn ngữ riêng (DSL) cho Inventor (đã chốt hướng)** | Lấy cảm hứng từ ý tưởng rule-based của SmartAssembly nhưng cú pháp và ngữ nghĩa do mình tự thiết kế. Chi tiết ở mục 5c |
 
 ---
 
@@ -37,6 +38,7 @@ Xây dựng một add-in cho Autodesk Inventor có khả năng:
 - **Application Layer**: các use case như `TạoĐốiTượng`, `CậpNhậtThôngSố`, `ĐọcThôngSố`.
 - **Inventor Adapter**: lớp duy nhất gọi trực tiếp Inventor API. Các lớp khác chỉ làm việc với model của riêng mình.
 - **Domain/Model**: định nghĩa đối tượng và thông số (tên, đơn vị, ràng buộc), độc lập với Inventor để dễ test.
+- **Lớp ngôn ngữ (DSL)**: lexer, parser, phân tích ngữ nghĩa, bộ tính biểu thức có đơn vị, sinh "kế hoạch dựng" trừu tượng. Hoàn toàn độc lập với Inventor, chi tiết ở mục 5c.
 
 ### 3.2. Nguyên tắc thiết kế
 - **Parametric trước**: mọi kích thước quan trọng gắn vào User Parameter có tên. Chỉnh bằng cách đổi giá trị Parameter, không xóa vẽ lại hình học.
@@ -69,7 +71,6 @@ Xây dựng một add-in cho Autodesk Inventor có khả năng:
 - `BX_Wall` nhỏ hơn một nửa của `min(BX_Length, BX_Width)` và nhỏ hơn `BX_Height - BX_Bottom`.
 - `BX_CornerRadius` không vượt quá một nửa của `min(BX_Length, BX_Width)`.
 - Bán kính bo góc trong (`BX_CornerRadius - BX_Wall`) nếu âm thì lấy bằng 0, không để sketch bị lỗi.
-  - **Đã điều chỉnh khi triển khai**: Fillet/Shell của Inventor lỗi khi bán kính bằng 0, và gờ nắp cần bo bán kính `BX_CornerRadius - BX_Wall - BX_LidClearance`. Nên bắt buộc `BX_CornerRadius > BX_Wall + BX_LidClearance` (mặc định 3 > 2.3). Nghĩa là giá trị min 0 của `BX_CornerRadius` ở bảng trên thực tế không dùng được.
 - `BX_LidLip` nhỏ hơn `BX_Height - BX_Bottom` để gờ không chạm đáy.
 - `BX_LidClearance` nhỏ hơn `BX_Wall` để gờ nắp không bị lệch ra ngoài thành.
 - Các giới hạn min/max ở bảng chỉ là điểm khởi đầu, sẽ chỉnh lại sau khi test ở giá trị biên.
@@ -131,7 +132,7 @@ Lưu ý:
 - **Hoàn thành khi**: qua được bộ test thủ công ở mục 6.
 
 ### Giai đoạn 5 (tùy chọn): Mở rộng
-- Thêm loại đối tượng thứ hai để kiểm chứng kiến trúc.
+- Thêm loại đối tượng thứ hai để kiểm chứng kiến trúc, đồng thời là bước D4 của DSL (mục 5c).
 - Chuyển sang Assembly nếu đối tượng gồm nhiều chi tiết.
 - Cho phép nhập thông số từ file (Excel/JSON).
 - Đóng gói ApplicationPlugins bundle để cài đặt gọn.
@@ -179,6 +180,152 @@ Lưu ý:
 
 ---
 
+## 5c. Ngôn ngữ riêng (DSL) để mô tả đối tượng Inventor
+
+### Ý tưởng
+SmartAssembly (cho Creo) cho người dùng viết chương trình bằng ngôn ngữ riêng của nó để tự động hóa thiết kế dựa trên luật. Add-in này lấy **ý tưởng** đó: đối tượng, thông số, luật và các bước dựng được mô tả bằng một ngôn ngữ do mình tự thiết kế, add-in chỉ là trình thông dịch và thực thi trong Inventor. Cú pháp và ngữ nghĩa không sao chép từ SmartAssembly.
+
+### Mục tiêu
+1. Một **file mô tả** là nguồn duy nhất cho một loại đối tượng: thông số, ràng buộc, giá trị suy ra, các bước dựng.
+2. **UI và canvas sinh từ file mô tả** (danh sách ô nhập, min/max, thông báo lỗi), không viết tay từng loại đối tượng.
+3. Thêm loại đối tượng mới chủ yếu là viết file mô tả mới, ít hoặc không sửa lõi add-in.
+4. Thông báo lỗi chỉ rõ **dòng và cột** trong file mô tả.
+
+### Ngoài phạm vi ban đầu
+- Lắp ráp từ trên xuống kiểu SmartAssembly (đặt nhiều thành phần vào Assembly).
+- Trình soạn thảo riêng có tô màu cú pháp, gợi ý code.
+- Chạy ngôn ngữ ngoài Inventor hoặc trên web.
+
+### Đường ống xử lý
+1. **Lexer**: chia văn bản thành token, ghi vị trí dòng/cột.
+2. **Parser**: tạo cây cú pháp (AST), báo lỗi cú pháp có vị trí và gợi ý sửa.
+3. **Phân tích ngữ nghĩa**: kiểm tra tên chưa khai báo hoặc khai báo trùng, kiểm tra kiểu và **đơn vị** (không cộng mm với độ), phát hiện phụ thuộc vòng giữa các giá trị suy ra, sắp thứ tự tính.
+4. **Bộ tính (evaluator)**: tính biểu thức có đơn vị, kiểm tra các luật, trả về danh sách vi phạm kèm thông báo.
+5. **Kế hoạch dựng (build plan)**: danh sách thao tác trừu tượng theo thứ tự (tạo sketch, extrude, shell, bo góc, đặt tên body...), chưa gọi Inventor.
+6. **Inventor Adapter**: duyệt kế hoạch dựng và gọi Inventor API, trong một Transaction.
+7. **Preview renderer** của canvas đọc cùng kết quả đã tính, không qua Inventor.
+
+Mỗi bước đều test được mà **không cần mở Inventor**, chỉ riêng bước 6 cần.
+
+### Các khái niệm ngôn ngữ cần có
+| Khái niệm | Vai trò | Ghi chú |
+|-----------|---------|---------|
+| Khai báo đối tượng | Tên, mô tả, tiền tố Parameter | Mỗi file là một loại đối tượng |
+| Thông số (parameter) | Tên, kiểu (độ dài, góc, số nguyên, văn bản), đơn vị, mặc định, min/max | Chính là bảng ở mục 4 |
+| Giá trị suy ra (derived) | Tính từ thông số khác | Ví dụ bán kính bo góc trong |
+| Luật/ràng buộc (rule) | Điều kiện phải đúng, kèm thông báo lỗi | Chính là danh sách "Ràng buộc hợp lệ" ở mục 4 |
+| Biểu thức | Số học, so sánh, hàm `min`/`max`, đơn vị | Là lõi của ngôn ngữ |
+| Bước dựng (build step) | Sketch, feature, tên body | Theo thứ tự, tham chiếu thông số bằng tên |
+| Điều kiện, lặp (sau) | Bật tắt một phần, số lượng phần tử theo thông số số nguyên | Cần cho gân, mảng lỗ, trục bậc |
+| Import/thư viện (sau) | Dùng lại định nghĩa | Cho thư viện thành phần |
+| Preset | Bộ giá trị đặt tên | Giữ nguyên file JSON, không nhất thiết đưa vào DSL |
+
+### Các quyết định thiết kế ngôn ngữ (bạn tự quyết)
+| # | Câu hỏi | Lựa chọn | Gợi ý tham khảo |
+|---|---------|----------|-----------------|
+| D1 | Phong cách | **Đã chọn hướng: mệnh lệnh theo dòng, từ khóa viết hoa, ba khối (form, bảng, dựng), kiểu SmartAssembly** | Chi tiết ánh xạ ở `smartassembly-to-inventor-mapping.md`. Thay cho phương án lai ở bản trước; bước "kế hoạch dựng" nay là giao diện Host và vết lệnh (mục 14 của file đó) |
+| D2 | Cú pháp bên ngoài | Văn bản tự thiết kế / dựa trên JSON hoặc YAML | Nếu muốn ngôn ngữ riêng thật sự thì dùng văn bản tự thiết kế; JSON chỉ là phương án tạm |
+| D3 | Cách viết parser | Viết tay (recursive descent) / dùng thư viện (ví dụ Pidgin, Superpower, Sprache) / ANTLR | Viết tay cho ngôn ngữ nhỏ cho thông báo lỗi tốt nhất; thư viện nhanh hơn lúc đầu |
+| D4 | Kiểu và đơn vị | Có kiểm tra đơn vị tĩnh / chỉ kiểm tra lúc chạy | Nên kiểm tra tĩnh, vì sai đơn vị là lỗi phổ biến nhất |
+| D5 | Tên tham chiếu đến Inventor | Tên thông số map thẳng sang tên Parameter / có ánh xạ | Map thẳng, dùng tiền tố khai báo trong file |
+| D6 | Đuôi file và nơi đặt | Tên đuôi riêng; thư mục thư viện | Chọn khi chốt tên ngôn ngữ |
+| D7 | Phiên bản ngôn ngữ | Có `version` trong file không | Nên có từ đầu để sau này đổi cú pháp được |
+| D8 | Thông báo lỗi | Mức chi tiết, ngôn ngữ (Việt/Anh) | Có dòng, cột, đoạn trích, gợi ý |
+
+### Các bước phát triển DSL
+| Bước | Nội dung | Hoàn thành khi |
+|------|----------|----------------|
+| D0 | Viết **bằng tay** vài file mẫu mô tả hộp theo cú pháp bạn muốn, chưa có parser. Chốt các quyết định D1-D8 qua việc viết thử | Có file mô tả hộp đầy đủ mà bạn đọc vào thấy tự nhiên |
+| D1 | Lexer, parser, AST cho phần thông số và luật. Chưa cần Inventor | Đọc được file hộp, báo lỗi cú pháp đúng dòng cột |
+| D2 | Phân tích ngữ nghĩa và bộ tính biểu thức có đơn vị | Với bộ giá trị cho trước trả đúng danh sách luật bị vi phạm. UI và canvas đọc được định nghĩa |
+| D3 | Phần bước dựng và kế hoạch dựng, Adapter gọi Inventor | Cùng file mô tả dựng ra hộp giống hệt phiên bản viết cứng của Giai đoạn 2 |
+| D4 | Loại đối tượng thứ hai (mặt bích hoặc trục bậc) | Chạy được bằng file mới, không sửa lõi. Lúc này mới bổ sung điều kiện, lặp, số nguyên |
+| D5 | Thư viện, import, thông báo lỗi tốt hơn | Dùng lại được phần định nghĩa chung |
+
+### Quan hệ với các giai đoạn khác
+- **Giai đoạn 2 vẫn dựng hộp bằng code viết cứng** trước. Việc này giúp bạn nắm Inventor API và tạo ra **bản chuẩn để so sánh**: DSL dựng ra phải cho kết quả giống bản viết cứng (cùng Parameter, cùng body, cùng thể tích).
+- D0 và D1, D2 có thể làm song song với Giai đoạn 0-1, vì không cần Inventor.
+- `presets.json` giữ nguyên; khóa là tên thông số đã khai báo trong file mô tả.
+
+### Kiểm thử cho DSL
+- **Unit test lexer, parser**: file đúng và nhiều dạng file sai, kiểm tra vị trí lỗi.
+- **Test ngữ nghĩa**: đơn vị không khớp, tên chưa khai báo, phụ thuộc vòng.
+- **Test luật**: bộ giá trị biên và vi phạm cho trước, kiểm tra danh sách lỗi.
+- **Golden test**: file mô tả và bộ giá trị cho trước, so sánh kế hoạch dựng với kết quả mong đợi đã lưu.
+- **So sánh với bản viết cứng** trong Inventor: DSL và code viết cứng cho cùng model.
+
+---
+
+## 5d. Đối tượng mục tiêu: máy biến áp lực (tham chiếu ảnh GE Vernova)
+
+### Về đối tượng
+- Ảnh tham chiếu là **một máy biến áp lực cỡ lớn** (một thiết bị trong trạm biến áp), không phải cả trạm. Add-in sẽ dựng **mô hình đơn giản hóa, tham số hóa** có hình dáng tổng thể tương tự, không phải bản sao của sản phẩm cụ thể nào.
+- Ảnh chỉ dùng để tham khảo hình khối chung. Không sao chép chi tiết thiết kế riêng, nhãn hiệu hoặc logo.
+- Kích thước thật (theo công suất, cấp điện áp, tiêu chuẩn) **do bạn cung cấp từ catalog hoặc bản vẽ**. Kế hoạch này chỉ định nghĩa cấu trúc và tên thông số, không tự đặt số liệu kỹ thuật.
+
+### Các khối nhìn thấy trong ảnh
+| Khối | Mô tả (theo ảnh, có thể cần chỉnh) |
+|------|--------------------------------------|
+| Thùng (tank) | Khối chữ nhật lớn, thành có các tấm gia cường và nắp kiểm tra tròn (manhole); chân đế phía dưới có các khe |
+| Nắp và hộp dẫn trên nắp | Phần nắp nâng lên dạng hộp nghiêng chạy dọc thùng |
+| Các hộp dẫn (bus duct/turret) | Các khối chữ nhật nghiêng nối từ nắp ra từng sứ xuyên |
+| Sứ xuyên (bushing) | Nhiều sứ dài đặt **gần nằm ngang**, một sứ rất dài đặt nghiêng, vài sứ nhỏ dựng đứng; thân sứ có các tán (sheds) |
+| Ống làm mát | Ống đường kính lớn có mặt bích, đi vòng và uốn theo đường 3D, có van màu đỏ |
+| Bộ làm mát tách rời | Một cụm thiết bị riêng đặt ngoài thùng, nối bằng ống |
+| Phụ kiện | Van, nắp chụp màu đỏ ở chân, thang, vòng nâng |
+
+### Chia thành các cấp (độ chi tiết tăng dần)
+| Cấp | Nội dung | Cách chứa trong file | Ghi chú |
+|-----|----------|----------------------|---------|
+| **1. Thùng và nắp** | Chính là hộp rỗng có nắp ở mục 4, đổi tên thành thùng và nắp; thêm chân đế | Part, nhiều body | Làm trước, kiểm chứng toàn bộ vòng lặp tạo và chỉnh |
+| **2. Nắp nâng, hộp dẫn, gia cường** | Phần nắp nâng nghiêng, các hộp dẫn nghiêng, tấm gia cường, nắp kiểm tra tròn | Part, nhiều body | Thêm thông số số nguyên (số gia cường) và góc nghiêng |
+| **3. Sứ xuyên** | Họ sứ xuyên tham số hóa (đường kính, chiều dài, số tán), đặt theo vị trí và góc | Part nhiều body hoặc **Assembly** | Số lượng sứ thay đổi theo cấu hình; nên làm sứ là chi tiết dùng lại |
+| **4. Ống làm mát và van** | Ống đi theo đường 3D có điểm uốn, mặt bích, van | **Assembly** | Phần khó nhất của hình học (quét theo đường 3D) |
+| **5. Bộ làm mát tách rời và phụ kiện** | Cụm làm mát ngoài, thang, vòng nâng, bánh hoặc đế trượt | **Assembly** | Dùng thư viện thành phần có phiên bản |
+
+### Thay đổi so với quyết định "Part trước"
+- Cấp 1 và 2 vẫn là **một Part nhiều body**, giữ đúng kế hoạch hiện tại.
+- Từ Cấp 3 trở đi nên chuyển sang **Assembly** với thư viện thành phần (sứ, ống, van...). Việc này đưa nội dung của Giai đoạn 5 lên sớm hơn, nhưng chỉ khi Cấp 1-2 đã chạy ổn.
+- Add-in, DSL và Adapter cần được thiết kế để dựng được **cả Part lẫn Assembly** ngay từ đầu (chưa cần cài đặt, chỉ cần không khóa cứng giả định "một Part").
+
+### Thông số theo cấp (tên gợi ý, điền giá trị từ catalog)
+Tiền tố `TR_` thay cho `BX_` khi chuyển sang máy biến áp. Cấp 1 ánh xạ trực tiếp từ bảng ở mục 4.
+
+| Cấp | Tên Parameter | Ý nghĩa | Kiểu | Đơn vị | Tương ứng cũ |
+|-----|---------------|---------|------|--------|---------------|
+| 1 | TR_TankLength, TR_TankWidth, TR_TankHeight | Kích thước ngoài thùng | Length | mm | BX_Length, BX_Width, BX_Height |
+| 1 | TR_Wall, TR_Bottom, TR_CornerRadius | Độ dày thành, đáy, bo góc | Length | mm | BX_Wall, BX_Bottom, BX_CornerRadius |
+| 1 | TR_CoverThickness, TR_CoverLip, TR_CoverClearance | Nắp và gờ nắp | Length | mm | BX_LidThickness, BX_LidLip, BX_LidClearance |
+| 1 | TR_SkirtHeight | Chiều cao chân đế | Length | mm | mới |
+| 2 | TR_CoverRiseHeight, TR_CoverRiseAngle | Chiều cao và góc nghiêng phần nắp nâng | Length, Angle | mm, độ | mới |
+| 2 | TR_RibCount, TR_RibSpacing, TR_RibDepth | Số, bước và độ sâu gân gia cường | Integer, Length | -, mm | mới |
+| 2 | TR_ManholeCount, TR_ManholeDiameter | Số và đường kính nắp kiểm tra | Integer, Length | -, mm | mới |
+| 3 | TR_BushingCount | Số sứ xuyên | Integer | - | mới |
+| 3 | TR_BushingDiameter, TR_BushingLength, TR_BushingShedCount | Kích thước sứ | Length, Integer | mm | mới |
+| 3 | TR_BushingAngle, TR_BushingSpacing | Góc đặt và khoảng cách giữa sứ | Angle, Length | độ, mm | mới |
+| 4 | TR_PipeDiameter, TR_PipeBendRadius | Ống làm mát | Length | mm | mới |
+| 4 | TR_PipeRoute | Đường đi ống (danh sách điểm) | Danh sách | mm | mới |
+| 5 | TR_CoolerOffset, TR_CoolerSize | Vị trí và kích thước bộ làm mát | Length | mm | mới |
+
+Một số thông số là **danh sách** (đường đi ống, vị trí từng sứ). Điều này ảnh hưởng đến UI, DSL và preset: ô nhập đơn không đủ, cần bảng hoặc danh sách điểm. Nên xử lý khi đến Cấp 3 và 4, chưa cần ở Cấp 1.
+
+### Ảnh hưởng tới các phần khác của kế hoạch
+- **Canvas xem trước**: thêm khung nhìn từ bên cạnh với thùng, nắp nâng và các sứ nghiêng (Cấp 2-3). Ống làm mát (Cấp 4) chỉ cần sơ đồ đường đi.
+- **DSL**: cần danh sách, lặp theo số nguyên (số sứ, số gân) và điều kiện sớm hơn dự kiến, vì sứ và gân phụ thuộc số lượng. Nên đưa các tính năng này vào bước D4 của mục 5c.
+- **Kiểm thử**: thêm ca số sứ nhỏ nhất và lớn nhất, góc sứ ở hai đầu giới hạn, đường ống có điểm gấp khúc, nhiều sứ chồng lên nhau.
+- **Hình ảnh**: mô hình chỉ cần giống về bố cục và tỉ lệ, không cần giống ảnh chụp. Bỏ qua chi tiết nhỏ (bu lông, đường hàn) ở bản đầu.
+
+### Rủi ro riêng của đối tượng này
+| Rủi ro | Cách giảm |
+|--------|-----------|
+| Quá nhiều chi tiết, dự án không bao giờ xong | Làm theo từng cấp, mỗi cấp chạy ổn mới sang cấp sau; chốt "đủ giống" cho từng cấp |
+| Ống theo đường 3D dễ lỗi khi đổi kích thước | Dùng đường đi tính sẵn từ thông số, kiểm tra điểm gấp khúc và bán kính uốn tối thiểu |
+| Sứ nghiêng làm hộp dẫn và sứ lệch nhau | Tính vị trí hộp dẫn từ vị trí và góc của sứ, không đặt tay |
+| Thiếu số liệu thật | Bạn cung cấp bảng kích thước từ catalog; đặt chỗ trống trong bảng thông số cho tới khi có |
+| Part một file quá nặng khi có nhiều sứ | Chuyển sang Assembly từ Cấp 3, dùng chi tiết sứ lặp lại |
+
+---
+
 ## 6. Kiểm thử (thủ công)
 
 | Tình huống | Kỳ vọng |
@@ -217,11 +364,24 @@ Lưu ý:
 | Host WPF vào dockable window của Inventor gặp lỗi hiển thị hoặc focus | Thử UserControl rỗng ngay ở Giai đoạn 1, trước khi làm form và canvas |
 | Canvas khác với hình thật của Inventor khiến người dùng hiểu sai | Ghi chú rõ đây là sơ đồ minh họa, vẽ đúng tỷ lệ, chỉ làm xem trước 3D sau khi bản 2D ổn |
 | Gõ từng phím làm tính lại model nhiều lần, UI giật | Canvas dùng lớp tính hình thuần, chỉ đẩy vào Inventor khi bấm Áp dụng |
+| DSL phình to thành dự án riêng, add-in không bao giờ chạy được | Dựng hộp bằng code viết cứng trước (Giai đoạn 2); chỉ thêm tính năng ngôn ngữ khi một ví dụ thật cần đến |
+| Thiết kế cú pháp quá sớm rồi phải đổi, hỏng các file đã viết | D0 viết tay file mẫu trước khi code parser; có `version` trong file |
+| Thông báo lỗi khó hiểu khiến người viết file mô tả bó tay | Lexer ghi dòng cột từ đầu, test riêng các trường hợp lỗi |
+| Sai đơn vị trong biểu thức | Kiểm tra đơn vị tĩnh ở bước phân tích ngữ nghĩa |
+| DSL dựng ra khác bản viết cứng nhưng không ai phát hiện | So sánh Parameter, body và thể tích giữa hai bản trong Inventor |
 
 ---
 
 ## 8. Việc làm ngay tiếp theo
 
-1. Chốt 6 câu hỏi ở mục 2.
-2. Điền bảng thông số ở mục 4 cho hình dạng mẫu đầu tiên.
-3. Làm xong Giai đoạn 0 và 1 để có khung chạy được, sau đó mới sang tạo đối tượng.
+Các quyết định ở mục 2 và bảng thông số ở mục 4 đã xong. Hai nhánh có thể làm song song:
+
+**Nhánh Inventor**
+1. Giai đoạn 0: cài Visual Studio 2026, Inventor 2027 SDK, tạo solution.
+2. Giai đoạn 1: khung add-in, ribbon, dockable window chứa UserControl WPF rỗng.
+3. Giai đoạn 2: dựng hộp bằng code viết cứng trên Part đang mở (làm bản chuẩn).
+
+**Nhánh ngôn ngữ (không cần Inventor)**
+1. D0: viết tay file mô tả hộp theo cú pháp bạn muốn, chốt các quyết định D1-D8 ở mục 5c.
+2. D1, D2: lexer, parser, phân tích ngữ nghĩa, bộ tính biểu thức có đơn vị.
+3. D3: kế hoạch dựng và Adapter, so sánh với bản viết cứng.

@@ -1,0 +1,9 @@
+﻿# build output
+bin/
+obj/
+.idea/
+.vs/
+*.user
+
+# runtime data of the web server (jobs, artifacts)
+be/Cadflow.Api/data/
