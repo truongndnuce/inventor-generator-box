@@ -5,7 +5,14 @@ using System.Linq;
 namespace InventorAddin.Models;
 
 /// <summary>Định nghĩa một thông số (một nơi duy nhất; UI, preset và adapter đều đọc từ đây). Đơn vị: mm.</summary>
-public sealed record ParameterDef(string Name, string Label, string Group, double Default, double Min, double Max);
+public sealed record ParameterDef(string Name, string Label, string Group, double Default, double Min, double Max)
+{
+    /// <summary>Đơn vị hiển thị ("mm", "" cho số đếm).</summary>
+    public string Unit { get; init; } = "mm";
+
+    /// <summary>Số nguyên (số sứ, số cánh tản nhiệt...): form dùng bước 1 và luật từ chối giá trị lẻ.</summary>
+    public bool Integer { get; init; }
+}
 
 /// <summary>Một lỗi ràng buộc, kèm danh sách thông số liên quan để UI tô đỏ.</summary>
 public sealed record ValidationIssue(string Message, IReadOnlyList<string> Params);

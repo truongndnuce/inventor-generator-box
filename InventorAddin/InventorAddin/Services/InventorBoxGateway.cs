@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using InventorAddin.Host;
 using InventorAddin.Models;
@@ -150,7 +150,7 @@ internal sealed class InventorBoxGateway : IBoxGateway
     // ---------------------------------------------------------------- tiện ích
 
     /// <summary>Chạy <paramref name="work"/> trong một Transaction; lỗi hoặc model hỏng thì hoàn tác toàn bộ.</summary>
-    private OperationResult RunInTransaction(Inv.PartDocument part, string name, Action work, string okMessage)
+    internal OperationResult RunInTransaction(Inv.PartDocument part, string name, Action work, string okMessage)
     {
         var tx = _app.TransactionManager.StartTransaction((Inv._Document)part, name);
         var wasSilent = _app.SilentOperation;
