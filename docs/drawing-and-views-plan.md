@@ -85,9 +85,9 @@ Khi có tiêu chuẩn riêng của công ty (ví dụ template của GE Vernova)
 - Dim chuỗi trên mặt cắt: máy biến áp (đế, thân thùng, nắp); hộp (đáy, chiều cao) — mức hộp chưa kiểm chứng trên Inventor thật.
 
 ### Việc chưa làm / chưa kiểm chứng (cập nhật 2026-11-06)
-- [ ] **Chưa chạy qua luồng web thật**: add-in mới chưa được nạp vào Inventor (DLL bị khoá, cần đóng và mở lại Inventor). Cần đặt đơn máy biến áp và hộp từ web, kiểm tra job succeeded, đủ file `.png` (iso/front/top/right) + `.pdf`.
+- [x] Đã chạy qua luồng web thật (2026-11-06, Inventor 2027.2): đơn máy biến áp và đơn hộp đều succeeded, đủ `.ipt`, `.stp`, 4 ảnh, `.pdf`. Máy biến áp: A3 1:20, 5 view, 7 dim. Hộp: A4 1:2, 5 view, 6 dim; hướng nhìn Z-up đúng.
 - [ ] Thư viện ảnh nhiều góc và khung xem PDF trên web (`fe/app.js`, `fe/styles.css`) mới viết, chưa chạy trong trình duyệt.
-- [ ] Bản vẽ của **hộp** chưa thử: mô hình dựng theo trục Z (hướng nhìn `kBottomViewOrientation`), chuỗi dim đáy/chiều cao chưa kiểm chứng; nếu không tìm thấy cạnh thì chuỗi dim bị bỏ qua, không báo lỗi.
+- [ ] **Lỗi nhỏ, bản vẽ hộp**: chuỗi dim trên mặt cắt bị chồng chữ ("2,0038,00") vì đáy chỉ dày 2 mm; cần giãn chữ hoặc bỏ dim quá nhỏ. Nhãn đường cắt hộp (`A / .`) thiếu mã vùng so với bản vẽ máy biến áp, chưa rõ nguyên nhân.
 - [ ] Dim trên mặt cắt mới có chuỗi chiều cao đế/thân/nắp. Chưa có dim đường kính + chiều dài sứ, đường kính bình dầu, khoảng cách cánh tản nhiệt (kế hoạch mục 3).
 - [ ] Mặt cắt chỉ cắt dọc qua tâm hình chiếu đứng; chưa có mặt cắt ngang (trên hình chiếu bằng) hay mặt cắt qua trục sứ/bình dầu.
 - [ ] Máy biến áp là khối đặc nên mặt cắt gạch chéo kín; chưa có vỏ rỗng/chi tiết bên trong.
@@ -96,3 +96,5 @@ Khi có tiêu chuẩn riêng của công ty (ví dụ template của GE Vernova)
 - [ ] Chưa có tuỳ chọn "Include drawing" trên form; chưa lưu `.idw` gốc (chỉ PDF); chưa xuất DWG.
 - [ ] Chưa kiểm thử đường lỗi (Inventor treo/hộp thoại) và nhiều worker.
 - [ ] README chưa cập nhật cho sản phẩm máy biến áp, bản vẽ và DevRunner (công cụ thử nằm ngoài repo, `%TEMP%\devrun`).
+
+- [ ] Giao diện web (thư viện ảnh, khung PDF) chưa được tự kiểm thử trong trình duyệt; mới xác nhận file tải về đúng.
