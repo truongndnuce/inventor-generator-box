@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "units": "mm",
+  "presets": [
+    {
+      "name": "Small box",
+      "values": {
+        "BX_Length": 80,
+        "BX_Width": 50,
+        "BX_Height": 30,
+        "BX_Wall": 2,
+        "BX_Bottom": 2,
+        "BX_CornerRadius": 3,
+        "BX_LidThickness": 2,
+        "BX_LidLip": 4,
+        "BX_LidClearance": 0.3
+      }
+    },
+    {
+      "name": "Standard box",
+      "values": {
+        "BX_Length": 100,
+        "BX_Width": 60,
+        "BX_Height": 40,
+        "BX_Wall": 2,
+        "BX_Bottom": 2,
+        "BX_CornerRadius": 3,
+        "BX_LidThickness": 2,
+        "BX_LidLip": 4,
+        "BX_LidClearance": 0.3
+      }
+    },
+    {
+      "name": "Large box",
+      "values": {
+        "BX_Length": 200,
+        "BX_Width": 120,
+        "BX_Height": 80,
+        "BX_Wall": 3,
+        "BX_Bottom": 3,
+        "BX_CornerRadius": 5,
+        "BX_LidThickness": 3,
+        "BX_LidLip": 6,
+        "BX_LidClearance": 0.4
+      }
+    }
+  ]
+}

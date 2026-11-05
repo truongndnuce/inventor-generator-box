@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "Inventor 2027": {
+      "commandName": "Executable",
+      "executablePath": "C:\\Program Files\\Autodesk\\Inventor 2027\\Bin\\Inventor.exe",
+      "commandLineArgs": "",
+      "workingDirectory": "C:\\Program Files\\Autodesk\\Inventor 2027\\Bin",
+      "nativeDebugging": false
+    }
+  }
+}
