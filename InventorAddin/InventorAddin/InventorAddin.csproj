@@ -34,6 +34,10 @@
         <None Update="presets.default.json">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
+        <!-- Script .gea mẫu đi kèm add-in (web worker dùng Scripts\transformer.gea để dựng máy biến áp). -->
+        <None Include="Scripts\*.gea">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
         <None Update="InventorAddin.addin.template">
             <CopyToOutputDirectory>Never</CopyToOutputDirectory>
         </None>

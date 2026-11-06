@@ -38,4 +38,19 @@ public sealed class WpfDialogService : IDialogService
         window.Loaded += (_, _) => { box.Focus(); box.SelectAll(); };
         return window.ShowDialog() == true ? box.Text : null;
     }
+
+    public string? OpenFile(string title, string filter, string? initialDirectory)
+    {
+        var dlg = new Microsoft.Win32.OpenFileDialog { Title = title, Filter = filter, CheckFileExists = true };
+        if (!string.IsNullOrEmpty(initialDirectory)) dlg.InitialDirectory = initialDirectory;
+        return dlg.ShowDialog() == true ? dlg.FileName : null;
+    }
+
+    public string? SaveFile(string title, string filter, string? initialDirectory, string? fileName)
+    {
+        var dlg = new Microsoft.Win32.SaveFileDialog { Title = title, Filter = filter, AddExtension = true, DefaultExt = ".gea" };
+        if (!string.IsNullOrEmpty(initialDirectory)) dlg.InitialDirectory = initialDirectory;
+        if (!string.IsNullOrEmpty(fileName)) dlg.FileName = fileName;
+        return dlg.ShowDialog() == true ? dlg.FileName : null;
+    }
 }

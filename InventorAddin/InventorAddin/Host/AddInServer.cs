@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Windows.Forms.Integration;
 using InventorAddin.Services;
+using InventorAddin.Services.Gea;
 using InventorAddin.ViewModels;
 using InventorAddin.Views;
 using InventorAddin.Web;
@@ -34,6 +35,7 @@ public sealed class AddInServer : Inv.ApplicationAddInServer
     private Inv.ButtonDefinition? _button;
     private Form? _window;
     private PanelViewModel? _viewModel;
+    private ScriptViewModel? _scriptViewModel;
     private Inv.ApplicationEvents? _appEvents;
     private JobWorker? _worker;
     private bool _closing;
@@ -65,6 +67,7 @@ public sealed class AddInServer : Inv.ApplicationAddInServer
             if (_appEvents != null) _appEvents.OnActivateDocument -= OnActivateDocument;
             _worker?.Dispose();
             _worker = null;
+            _scriptViewModel?.Dispose();
             _closing = true;
             _window?.Close();
             _window?.Dispose();
@@ -76,6 +79,7 @@ public sealed class AddInServer : Inv.ApplicationAddInServer
         finally
         {
             _viewModel = null;
+            _scriptViewModel = null;
             _window = null;
             Release(ref _button);
             Release(ref _appEvents);
@@ -94,16 +98,18 @@ public sealed class AddInServer : Inv.ApplicationAddInServer
 
         // Service -> ViewModel -> View. View được đặt trong một cửa sổ pop-up (modeless) thuộc cửa sổ chính của Inventor.
         var defaultPresets = Path.Combine(Path.GetDirectoryName(typeof(AddInServer).Assembly.Location)!, "presets.default.json");
-        _viewModel = new PanelViewModel(new InventorBoxGateway(app), new PresetStore(Log.DataDirectory, defaultPresets), new WpfDialogService());
-        var host = new ElementHost { Dock = DockStyle.Fill, Child = new AddInPanel(_viewModel) };
+        var dialogs = new WpfDialogService();
+        _viewModel = new PanelViewModel(new InventorBoxGateway(app), new PresetStore(Log.DataDirectory, defaultPresets), dialogs);
+        _scriptViewModel = new ScriptViewModel(new GeaDocumentService(app), dialogs);
+        var host = new ElementHost { Dock = DockStyle.Fill, Child = new AddInPanel(_viewModel, _scriptViewModel) };
         _window = new Form
         {
             Text = "Box Generator",
             FormBorderStyle = FormBorderStyle.SizableToolWindow,
             StartPosition = FormStartPosition.Manual,
             ShowInTaskbar = false,
-            ClientSize = new Size(400, 760),
-            MinimumSize = new Size(320, 480),
+            ClientSize = new Size(440, 800),
+            MinimumSize = new Size(340, 520),
         };
         _window.Controls.Add(host);
         // Đóng cửa sổ chỉ ẩn đi, giữ trạng thái cho lần mở sau
@@ -218,6 +224,7 @@ public sealed class AddInServer : Inv.ApplicationAddInServer
         {
             if (_window == null || _app == null) return;
             _viewModel?.Refresh();
+            _scriptViewModel?.Refresh();
 
             if (!_window.Visible)
             {
@@ -240,7 +247,11 @@ public sealed class AddInServer : Inv.ApplicationAddInServer
     {
         handlingCode = Inv.HandlingCodeEnum.kEventNotHandled;
         if (beforeOrAfter != Inv.EventTimingEnum.kAfter) return;
-        try { _viewModel?.Refresh(); }
+        try
+        {
+            _viewModel?.Refresh();
+            _scriptViewModel?.Refresh();
+        }
         catch (Exception ex) { Log.Error("Refresh on document change failed", ex); }
     }
 
