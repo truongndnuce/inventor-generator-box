@@ -1,0 +1,560 @@
+﻿! ============================================================================
+! Máy biến áp lực ngoài trời (chi tiết hơn transformer.gea), dựng theo ảnh mẫu:
+!   - đế hai lớp, thùng bo góc có gân tăng cứng, vành mép trên và nắp tràn ra ngoài
+!   - các cụm cánh tản nhiệt dạng lá (builder:Radiator) nối vào thành sau bằng ống góp trên và dưới
+!   - bình dầu phụ nằm ngang ở đầu X âm: nắp chỏm hai đầu, mắt thăm dầu, giá đỡ chạy dọc thành đầu thùng
+!   - ống dầu chạy dọc nắp từ bình dầu, hai hàng sứ xuyên (cao áp phía trước, hạ áp phía sau)
+!     có chân sứ vát côn (body riêng, màu thùng) và nắp đầu cực
+!   - van xả dầu và biển cảnh báo ở thành trước
+!
+! Hệ tọa độ của builder: X dọc thùng (tâm thùng ở 0), D theo chiều sâu (D âm là mặt trước),
+! Elevation là cao độ (mặt đất là 0). Mỗi bộ phận là một solid body có tên trong cùng một Part.
+!
+! Sửa file này rồi bấm Apply (hoặc bật "Apply automatically...") trong tab Script: model dựng lại
+! trong một Transaction, Ctrl+Z hoàn tác một lần.
+! ============================================================================
+GEA_VERSION 1
+PRODUCT_NAME "Outdoor power transformer (HV/LV bushings)"
+PARAM_PREFIX TX_
+TARGET PART
+
+BEGIN_FORM
+
+  BEGIN_GROUP "Tank"
+    USER_INPUT_PARAM TX_TankLength     LENGTH 2600 mm MIN 1400 MAX 6000 REQUIRED LABEL "Tank length (X)"
+    USER_INPUT_PARAM TX_TankWidth      LENGTH 1400 mm MIN 800  MAX 3000 REQUIRED LABEL "Tank width (D)"
+    USER_INPUT_PARAM TX_TankHeight     LENGTH 2000 mm MIN 1000 MAX 4000 REQUIRED LABEL "Tank height"
+    USER_INPUT_PARAM TX_TankCorner     LENGTH 60 mm   MIN 0    MAX 200  LABEL "Tank corner radius"
+    USER_INPUT_PARAM TX_StiffenerCount INTEGER 3      MIN 0    MAX 8    LABEL "Stiffeners on the front wall"
+    CHECKBOX_PARAM TX_Valve TRUE LABEL "Drain valve"
+    CHECKBOX_PARAM TX_Sign  TRUE LABEL "Warning sign"
+  END_GROUP
+
+  BEGIN_GROUP "Base, flange and cover"
+    USER_INPUT_PARAM TX_BaseThickness  LENGTH 120 mm MIN 60 MAX 300 LABEL "Base thickness (two plates)"
+    USER_INPUT_PARAM TX_BaseOverhang   LENGTH 150 mm MIN 50 MAX 400 LABEL "Base overhang"
+    USER_INPUT_PARAM TX_FlangeHeight   LENGTH 80 mm  MIN 30 MAX 200 LABEL "Top flange height"
+    USER_INPUT_PARAM TX_CoverThickness LENGTH 40 mm  MIN 20 MAX 120 LABEL "Cover thickness"
+    USER_INPUT_PARAM TX_CoverOverhang  LENGTH 60 mm  MIN 0  MAX 200 LABEL "Cover overhang"
+  END_GROUP
+
+  BEGIN_GROUP "Radiators (back wall)"
+    USER_INPUT_PARAM TX_RadiatorCount INTEGER 3 MIN 0 MAX 8 LABEL "Radiator banks"
+    IF TX_RadiatorCount > 0
+      USER_INPUT_PARAM TX_RadiatorWidth  LENGTH 600 mm  MIN 200 MAX 1500 LABEL "Bank width (X)"
+      USER_INPUT_PARAM TX_RadiatorDepth  LENGTH 500 mm  MIN 150 MAX 1200 LABEL "Bank depth (D)"
+      USER_INPUT_PARAM TX_RadiatorHeight LENGTH 1500 mm MIN 400 MAX 3500 LABEL "Bank height"
+      USER_INPUT_PARAM TX_RadiatorGap    LENGTH 80 mm   MIN 20  MAX 400  LABEL "Gap between banks"
+      USER_INPUT_PARAM TX_RadiatorFins   INTEGER 18     MIN 3   MAX 60   LABEL "Fins per bank"
+      USER_INPUT_PARAM TX_RadiatorOffset LENGTH 150 mm  MIN 60  MAX 500  LABEL "Distance from tank wall"
+    END_IF
+  END_GROUP
+
+  BEGIN_GROUP "Conservator"
+    USER_INPUT_PARAM TX_ConservatorDiameter LENGTH 600 mm  MIN 250 MAX 1200 LABEL "Diameter"
+    USER_INPUT_PARAM TX_ConservatorLength   LENGTH 1300 mm MIN 500 MAX 3000 LABEL "Length (along D)"
+    USER_INPUT_PARAM TX_ConservatorLift     LENGTH 900 mm  MIN 300 MAX 2000 LABEL "Lift above cover"
+    USER_INPUT_PARAM TX_PipeDiameter        LENGTH 80 mm   MIN 40  MAX 200  LABEL "Oil pipe diameter"
+  END_GROUP
+
+  BEGIN_GROUP "HV bushings (front row)"
+    USER_INPUT_PARAM TX_HvCount          INTEGER 3     MIN 0   MAX 6    LABEL "Count"
+    IF TX_HvCount > 0
+      USER_INPUT_PARAM TX_HvDiameter       LENGTH 260 mm MIN 100 MAX 500  LABEL "Shed diameter"
+      USER_INPUT_PARAM TX_HvLength         LENGTH 1300 mm MIN 300 MAX 3000 LABEL "Porcelain length"
+      USER_INPUT_PARAM TX_HvSheds          INTEGER 12    MIN 3   MAX 30   LABEL "Shed count"
+      USER_INPUT_PARAM TX_HvTurretDiameter LENGTH 420 mm MIN 150 MAX 900  LABEL "Turret diameter"
+      USER_INPUT_PARAM TX_HvTurretHeight   LENGTH 450 mm MIN 100 MAX 1200 LABEL "Turret height"
+    END_IF
+  END_GROUP
+
+  BEGIN_GROUP "LV bushings (back row)"
+    USER_INPUT_PARAM TX_LvCount          INTEGER 3     MIN 0   MAX 6    LABEL "Count"
+    IF TX_LvCount > 0
+      USER_INPUT_PARAM TX_LvDiameter       LENGTH 200 mm MIN 100 MAX 500  LABEL "Shed diameter"
+      USER_INPUT_PARAM TX_LvLength         LENGTH 1100 mm MIN 300 MAX 3000 LABEL "Porcelain length"
+      USER_INPUT_PARAM TX_LvSheds          INTEGER 11    MIN 3   MAX 30   LABEL "Shed count"
+      USER_INPUT_PARAM TX_LvTurretDiameter LENGTH 360 mm MIN 150 MAX 900  LABEL "Turret diameter"
+      USER_INPUT_PARAM TX_LvTurretHeight   LENGTH 400 mm MIN 100 MAX 1200 LABEL "Turret height"
+    END_IF
+  END_GROUP
+
+  BEGIN_GROUP "Finish"
+    RADIOBUTTON_PARAM TX_Paint "Green" "Grey" "LightGrey" "White" LABEL "Tank colour"
+  END_GROUP
+
+  ! --- Luật kiểm tra ---
+  DECLARE_VARIABLE LENGTH span
+  DECLARE_VARIABLE LENGTH xs
+  DECLARE_VARIABLE LENGTH xe
+  DECLARE_VARIABLE LENGTH rowD
+
+  ASSERT TX_HvCount + TX_LvCount >= 1 "At least one bushing is required."
+
+  IF TX_RadiatorCount > 0
+    span = TX_RadiatorCount * TX_RadiatorWidth + (TX_RadiatorCount - 1) * TX_RadiatorGap
+    ASSERT span <= TX_TankLength - 100 mm \
+      "The radiator banks do not fit along the tank (banks x width + gaps must be at most tank length - 100 mm)."
+    ASSERT TX_RadiatorHeight <= TX_TankHeight - TX_FlangeHeight - 200 mm \
+      "Radiator height must be at most tank height - flange height - 200 mm."
+    ASSERT TX_RadiatorFins * 12 mm * 1.2 < TX_RadiatorWidth - 50 mm \
+      "Too many fins for this bank width (each fin is 12 mm and needs a gap)."
+  END_IF
+
+  ASSERT TX_ConservatorDiameter <= TX_TankLength / 3 "Conservator diameter must be at most one third of the tank length."
+  ASSERT TX_ConservatorLength <= TX_TankWidth + 600 mm "Conservator length must be at most tank width + 600 mm."
+  ASSERT TX_PipeDiameter <= TX_ConservatorDiameter / 3 "Oil pipe diameter must be at most one third of the conservator diameter."
+
+  ! Hai hàng sứ nằm giữa đầu bình dầu và đầu kia của thùng; ống dầu chạy giữa hai hàng.
+  xs = -TX_TankLength / 2 + 0.85 * TX_ConservatorDiameter + 150 mm
+  xe = TX_TankLength / 2 - 150 mm
+  rowD = 0.24 * TX_TankWidth
+
+  IF TX_HvCount > 0
+    ASSERT xe - xs >= (TX_HvCount - 1) * (TX_HvTurretDiameter + 40 mm) + TX_HvTurretDiameter \
+      "The HV bushings do not fit along the cover (reduce count or turret diameter, or a smaller conservator)."
+    ASSERT TX_HvTurretDiameter > 0.45 * TX_HvDiameter "HV turret diameter must be larger than the porcelain core (0.45 x shed diameter)."
+    ASSERT rowD + TX_HvTurretDiameter / 2 <= TX_TankWidth / 2 + TX_CoverOverhang \
+      "The HV turret overhangs the cover; reduce its diameter or widen the tank."
+    ASSERT rowD - TX_HvTurretDiameter / 2 >= TX_PipeDiameter / 2 + 20 mm \
+      "The HV turret hits the oil pipe between the rows; reduce its diameter or widen the tank."
+  END_IF
+  IF TX_LvCount > 0
+    ASSERT xe - xs >= (TX_LvCount - 1) * (TX_LvTurretDiameter + 40 mm) + TX_LvTurretDiameter \
+      "The LV bushings do not fit along the cover (reduce count or turret diameter, or a smaller conservator)."
+    ASSERT TX_LvTurretDiameter > 0.45 * TX_LvDiameter "LV turret diameter must be larger than the porcelain core (0.45 x shed diameter)."
+    ASSERT rowD + TX_LvTurretDiameter / 2 <= TX_TankWidth / 2 + TX_CoverOverhang \
+      "The LV turret overhangs the cover; reduce its diameter or widen the tank."
+    ASSERT rowD - TX_LvTurretDiameter / 2 >= TX_PipeDiameter / 2 + 20 mm \
+      "The LV turret hits the oil pipe between the rows; reduce its diameter or widen the tank."
+  END_IF
+
+  IF TX_StiffenerCount > 0
+    ASSERT TX_TankLength / (TX_StiffenerCount + 1) >= 300 mm "Stiffeners are closer than 300 mm; use fewer stiffeners."
+  END_IF
+
+END_FORM
+
+BEGIN_BUILD
+
+  DECLARE_VARIABLE LENGTH plate
+  DECLARE_VARIABLE LENGTH hTank
+  DECLARE_VARIABLE LENGTH hFlange
+  DECLARE_VARIABLE LENGTH hCover
+  DECLARE_VARIABLE LENGTH hTop
+  DECLARE_VARIABLE LENGTH frontD
+  DECLARE_VARIABLE LENGTH backD
+  DECLARE_VARIABLE LENGTH span
+  DECLARE_VARIABLE LENGTH x0
+  DECLARE_VARIABLE LENGTH x
+  DECLARE_VARIABLE LENGTH radD
+  DECLARE_VARIABLE LENGTH radH
+  DECLARE_VARIABLE LENGTH pitch
+  DECLARE_VARIABLE LENGTH consX
+  DECLARE_VARIABLE LENGTH consH
+  DECLARE_VARIABLE LENGTH consR
+  DECLARE_VARIABLE LENGTH legX
+  DECLARE_VARIABLE LENGTH legD
+  DECLARE_VARIABLE LENGTH legBottom
+  DECLARE_VARIABLE LENGTH pipeH
+  DECLARE_VARIABLE LENGTH xs
+  DECLARE_VARIABLE LENGTH xe
+  DECLARE_VARIABLE LENGTH rowD
+  DECLARE_VARIABLE STRING finish
+  DECLARE_REFERENCE body
+  DECLARE_REFERENCE turret
+
+  finish = TX_Paint
+  plate = TX_BaseThickness / 2
+  hTank = TX_BaseThickness
+  hCover = TX_BaseThickness + TX_TankHeight
+  hFlange = hCover - TX_FlangeHeight
+  hTop = hCover + TX_CoverThickness
+  frontD = -TX_TankWidth / 2
+  backD = TX_TankWidth / 2
+
+  PROCESSING_BOX_START "Building the transformer"
+
+  ! ------------------------------------------------------------------ đế hai lớp
+  PROCESSING_BOX_SET_STATE "Base" 5
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "SizeX"  TX_TankLength + 2 * TX_BaseOverhang
+    FEATURE_IN "SizeD"  TX_TankWidth + 2 * TX_BaseOverhang
+    FEATURE_IN "Height" plate
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "TX_BaseLower"
+  SET_REF_ATTR body "ROLE" "BASE"
+  SET_APPEARANCE body finish
+
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "Elevation" plate
+    FEATURE_IN "SizeX"     TX_TankLength + TX_BaseOverhang
+    FEATURE_IN "SizeD"     TX_TankWidth + TX_BaseOverhang
+    FEATURE_IN "Height"    plate
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "TX_BaseUpper"
+  SET_REF_ATTR body "ROLE" "BASE"
+  SET_APPEARANCE body finish
+
+  ! ------------------------------------------------------------------ thùng, vành mép, nắp
+  PROCESSING_BOX_SET_STATE "Tank and cover" 12
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "Elevation"    hTank
+    FEATURE_IN "SizeX"        TX_TankLength
+    FEATURE_IN "SizeD"        TX_TankWidth
+    FEATURE_IN "Height"       TX_TankHeight - TX_FlangeHeight
+    FEATURE_IN "CornerRadius" TX_TankCorner
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "TX_Tank"
+  SET_REF_ATTR body "ROLE" "TANK"
+  SET_APPEARANCE body finish
+
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "Elevation"    hFlange
+    FEATURE_IN "SizeX"        TX_TankLength + TX_CoverOverhang
+    FEATURE_IN "SizeD"        TX_TankWidth + TX_CoverOverhang
+    FEATURE_IN "Height"       TX_FlangeHeight
+    FEATURE_IN "CornerRadius" TX_TankCorner
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "TX_Flange"
+  SET_APPEARANCE body finish
+
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "Elevation"    hCover
+    FEATURE_IN "SizeX"        TX_TankLength + 2 * TX_CoverOverhang
+    FEATURE_IN "SizeD"        TX_TankWidth + 2 * TX_CoverOverhang
+    FEATURE_IN "Height"       TX_CoverThickness
+    FEATURE_IN "CornerRadius" TX_TankCorner
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "TX_Cover"
+  SET_REF_ATTR body "ROLE" "COVER"
+  SET_APPEARANCE body finish
+
+  ! ------------------------------------------------------------------ gân tăng cứng ở thành trước và hai đầu
+  PROCESSING_BOX_SET_STATE "Stiffeners" 20
+  pitch = TX_TankLength / (TX_StiffenerCount + 1)
+  FOR i FROM 1 TO TX_StiffenerCount
+    CREATE_FEATURE builder:Block
+      FEATURE_IN "CenterX"   -TX_TankLength / 2 + i * pitch
+      FEATURE_IN "CenterD"   frontD - 40 mm
+      FEATURE_IN "Elevation" hTank + 150 mm
+      FEATURE_IN "SizeX"     120 mm
+      FEATURE_IN "SizeD"     80 mm
+      FEATURE_IN "Height"    hFlange - hTank - 150 mm
+      FEATURE_OUT body "Body"
+    END_CREATE_FEATURE
+    SET_REF_NAME body "TX_Stiffener_" + STR(i)
+    SET_REF_ATTR body "ROLE" "STIFFENER"
+    SET_APPEARANCE body finish
+  END_FOR
+
+  FOR k FROM 0 TO 1
+    CREATE_FEATURE builder:Block
+      FEATURE_IN "CenterX"   (2 * k - 1) * (TX_TankLength / 2 + 40 mm)
+      FEATURE_IN "Elevation" hTank + 150 mm
+      FEATURE_IN "SizeX"     80 mm
+      FEATURE_IN "SizeD"     0.3 * TX_TankWidth
+      FEATURE_IN "Height"    hFlange - hTank - 150 mm
+      FEATURE_OUT body "Body"
+    END_CREATE_FEATURE
+    SET_REF_NAME body "TX_EndStiffener_" + STR(k + 1)
+    SET_REF_ATTR body "ROLE" "STIFFENER"
+    SET_APPEARANCE body finish
+  END_FOR
+
+  ! ------------------------------------------------------------------ cánh tản nhiệt ở thành sau
+  PROCESSING_BOX_SET_STATE "Radiators" 30
+  IF TX_RadiatorCount > 0
+    span = TX_RadiatorCount * TX_RadiatorWidth + (TX_RadiatorCount - 1) * TX_RadiatorGap
+    x0 = -span / 2 + TX_RadiatorWidth / 2
+    radD = backD + TX_RadiatorOffset + TX_RadiatorDepth / 2
+    radH = hTank + (hFlange - hTank - TX_RadiatorHeight) / 2
+    FOR i FROM 0 TO TX_RadiatorCount - 1
+      x = x0 + i * (TX_RadiatorWidth + TX_RadiatorGap)
+      CREATE_FEATURE builder:Radiator
+        FEATURE_IN "CenterX"   x
+        FEATURE_IN "CenterD"   radD
+        FEATURE_IN "Elevation" radH
+        FEATURE_IN "SizeX"     TX_RadiatorWidth
+        FEATURE_IN "SizeD"     TX_RadiatorDepth
+        FEATURE_IN "Height"    TX_RadiatorHeight
+        FEATURE_IN "FinCount"  TX_RadiatorFins
+        FEATURE_OUT body "Body"
+      END_CREATE_FEATURE
+      SET_REF_NAME body "TX_Radiator_" + STR(i + 1)
+      SET_REF_ATTR body "ROLE" "RADIATOR"
+      SET_APPEARANCE body finish
+
+      ! Ống góp trên và dưới nối cánh tản nhiệt vào thành thùng (lồng 20 mm vào hai đầu)
+      FOR k FROM 0 TO 1
+        CREATE_FEATURE builder:Cylinder
+          FEATURE_IN "Axis"      "D"
+          FEATURE_IN "CenterX"   x
+          FEATURE_IN "CenterD"   backD + TX_RadiatorOffset / 2
+          FEATURE_IN "Elevation" radH + 40 mm + k * (TX_RadiatorHeight - 80 mm)
+          FEATURE_IN "Diameter"  100 mm
+          FEATURE_IN "Length"    TX_RadiatorOffset + 40 mm
+          FEATURE_OUT body "Body"
+        END_CREATE_FEATURE
+        SET_REF_NAME body "TX_RadiatorPipe_" + STR(i + 1) + "_" + STR(k + 1)
+        SET_APPEARANCE body finish
+      END_FOR
+    END_FOR
+  END_IF
+
+  ! ------------------------------------------------------------------ bình dầu phụ và giá đỡ
+  PROCESSING_BOX_SET_STATE "Conservator" 50
+  consR = TX_ConservatorDiameter / 2
+  consX = -TX_TankLength / 2 + 0.35 * TX_ConservatorDiameter
+  consH = hTop + TX_ConservatorLift + consR
+  CREATE_FEATURE builder:Cylinder
+    FEATURE_IN "Axis"      "D"
+    FEATURE_IN "CenterX"   consX
+    FEATURE_IN "Elevation" consH
+    FEATURE_IN "Diameter"  TX_ConservatorDiameter
+    FEATURE_IN "Length"    TX_ConservatorLength
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "TX_Conservator"
+  SET_REF_ATTR body "ROLE" "CONSERVATOR"
+  SET_APPEARANCE body finish
+
+  ! Nắp chỏm hai đầu và mắt thăm dầu ở đầu trước
+  FOR k FROM 0 TO 1
+    CREATE_FEATURE builder:Cylinder
+      FEATURE_IN "Axis"      "D"
+      FEATURE_IN "CenterX"   consX
+      FEATURE_IN "CenterD"   (2 * k - 1) * (TX_ConservatorLength / 2 + 15 mm)
+      FEATURE_IN "Elevation" consH
+      FEATURE_IN "Diameter"  0.94 * TX_ConservatorDiameter
+      FEATURE_IN "Length"    30 mm
+      FEATURE_OUT body "Body"
+    END_CREATE_FEATURE
+    SET_REF_NAME body "TX_ConservatorHead_" + STR(k + 1)
+    SET_APPEARANCE body finish
+  END_FOR
+
+  CREATE_FEATURE builder:Cylinder
+    FEATURE_IN "Axis"      "D"
+    FEATURE_IN "CenterX"   consX
+    FEATURE_IN "CenterD"   -TX_ConservatorLength / 2 - 60 mm
+    FEATURE_IN "Elevation" consH
+    FEATURE_IN "Diameter"  0.45 * TX_ConservatorDiameter
+    FEATURE_IN "Length"    30 mm
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "TX_OilGauge"
+  SET_APPEARANCE body "White"
+
+  ! Hai chân đỡ chạy dọc thành đầu thùng (từ giữa thân lên tới đáy bình dầu), có yên đỡ và thanh giằng
+  legX = -TX_TankLength / 2 - TX_CoverOverhang - 50 mm
+  legBottom = hTank + 0.4 * TX_TankHeight
+  FOR k FROM 0 TO 1
+    legD = (2 * k - 1) * 0.3 * TX_ConservatorLength
+    CREATE_FEATURE builder:Block
+      FEATURE_IN "CenterX"   legX
+      FEATURE_IN "CenterD"   legD
+      FEATURE_IN "Elevation" legBottom
+      FEATURE_IN "SizeX"     100 mm
+      FEATURE_IN "SizeD"     100 mm
+      FEATURE_IN "Height"    consH - consR - legBottom + 20 mm
+      FEATURE_OUT body "Body"
+    END_CREATE_FEATURE
+    SET_REF_NAME body "TX_ConservatorLeg_" + STR(k + 1)
+    SET_REF_ATTR body "ROLE" "SUPPORT"
+    SET_APPEARANCE body finish
+
+    CREATE_FEATURE builder:Block
+      FEATURE_IN "CenterX"   (legX + consX) / 2
+      FEATURE_IN "CenterD"   legD
+      FEATURE_IN "Elevation" consH - consR - 20 mm
+      FEATURE_IN "SizeX"     consX - legX + 0.6 * TX_ConservatorDiameter
+      FEATURE_IN "SizeD"     80 mm
+      FEATURE_IN "Height"    0.3 * TX_ConservatorDiameter
+      FEATURE_OUT body "Body"
+    END_CREATE_FEATURE
+    SET_REF_NAME body "TX_ConservatorSaddle_" + STR(k + 1)
+    SET_APPEARANCE body finish
+
+    ! Tay đỡ nằm ngang bắt chân vào vành mép thùng
+    CREATE_FEATURE builder:Block
+      FEATURE_IN "CenterX"   legX + 50 mm + (TX_CoverOverhang + 50 mm) / 2
+      FEATURE_IN "CenterD"   legD
+      FEATURE_IN "Elevation" hFlange
+      FEATURE_IN "SizeX"     TX_CoverOverhang + 50 mm + 100 mm
+      FEATURE_IN "SizeD"     80 mm
+      FEATURE_IN "Height"    60 mm
+      FEATURE_OUT body "Body"
+    END_CREATE_FEATURE
+    SET_REF_NAME body "TX_ConservatorBracket_" + STR(k + 1)
+    SET_APPEARANCE body finish
+  END_FOR
+
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "CenterX"   legX
+    FEATURE_IN "Elevation" hTop + 0.45 * TX_ConservatorLift
+    FEATURE_IN "SizeX"     80 mm
+    FEATURE_IN "SizeD"     0.6 * TX_ConservatorLength + 100 mm
+    FEATURE_IN "Height"    80 mm
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "TX_ConservatorBrace"
+  SET_APPEARANCE body finish
+
+  ! ------------------------------------------------------------------ ống dầu: từ bình dầu xuống rồi chạy dọc nắp giữa hai hàng sứ
+  PROCESSING_BOX_SET_STATE "Oil pipe" 60
+  pipeH = hTop + 0.55 * TX_ConservatorLift
+  CREATE_FEATURE builder:Cylinder
+    FEATURE_IN "Axis"      "H"
+    FEATURE_IN "CenterX"   consX
+    FEATURE_IN "Elevation" pipeH - TX_PipeDiameter / 2
+    FEATURE_IN "Diameter"  TX_PipeDiameter
+    FEATURE_IN "Length"    consH - pipeH + TX_PipeDiameter / 2
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "TX_PipeRiser"
+  SET_APPEARANCE body finish
+
+  xe = TX_TankLength / 2 - 150 mm
+  CREATE_FEATURE builder:Cylinder
+    FEATURE_IN "Axis"      "X"
+    FEATURE_IN "CenterX"   (consX + xe) / 2
+    FEATURE_IN "Elevation" pipeH
+    FEATURE_IN "Diameter"  TX_PipeDiameter
+    FEATURE_IN "Length"    xe - consX
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "TX_OilPipe"
+  SET_REF_ATTR body "ROLE" "PIPE"
+  SET_APPEARANCE body finish
+
+  CREATE_FEATURE builder:Cylinder
+    FEATURE_IN "Axis"      "H"
+    FEATURE_IN "CenterX"   xe
+    FEATURE_IN "Elevation" hTop
+    FEATURE_IN "Diameter"  TX_PipeDiameter
+    FEATURE_IN "Length"    pipeH - hTop + TX_PipeDiameter / 2
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "TX_PipeDrop"
+  SET_APPEARANCE body finish
+
+  ! ------------------------------------------------------------------ sứ xuyên: HV hàng trước, LV hàng sau
+  PROCESSING_BOX_SET_STATE "Bushings" 70
+  xs = -TX_TankLength / 2 + 0.85 * TX_ConservatorDiameter + 150 mm
+  rowD = 0.24 * TX_TankWidth
+
+  FOR j FROM 0 TO TX_HvCount - 1
+    IF TX_HvCount == 1
+      x = (xs + xe) / 2
+    ELSE
+      x = xs + TX_HvTurretDiameter / 2 + j * (xe - xs - TX_HvTurretDiameter) / (TX_HvCount - 1)
+    END_IF
+    CREATE_FEATURE builder:Bushing
+      FEATURE_IN "CenterX"        x
+      FEATURE_IN "CenterD"        -rowD
+      FEATURE_IN "Elevation"      hTop
+      FEATURE_IN "Diameter"       TX_HvDiameter
+      FEATURE_IN "Length"         TX_HvLength
+      FEATURE_IN "ShedCount"      TX_HvSheds
+      FEATURE_IN "TurretHeight"   TX_HvTurretHeight
+      FEATURE_IN "TurretDiameter" TX_HvTurretDiameter
+      FEATURE_IN "TurretTaper"    0.35 * TX_HvTurretHeight
+      FEATURE_IN "CapHeight"      0.12 * TX_HvDiameter
+      FEATURE_IN "SeparateTurret" TRUE
+      FEATURE_OUT body "Body"
+      FEATURE_OUT turret "Turret"
+    END_CREATE_FEATURE
+    SET_REF_NAME turret "TX_HV_Turret_" + STR(j + 1)
+    SET_REF_ATTR turret "ROLE" "TURRET"
+    SET_APPEARANCE turret finish
+    SET_REF_NAME body "TX_HV_Bushing_" + STR(j + 1)
+    SET_REF_ATTR body "ROLE" "BUSHING"
+    SET_REF_ATTR body "SIDE" "HV"
+    SET_APPEARANCE body "Porcelain"
+  END_FOR
+
+  FOR j FROM 0 TO TX_LvCount - 1
+    IF TX_LvCount == 1
+      x = (xs + xe) / 2
+    ELSE
+      x = xs + TX_LvTurretDiameter / 2 + j * (xe - xs - TX_LvTurretDiameter) / (TX_LvCount - 1)
+    END_IF
+    CREATE_FEATURE builder:Bushing
+      FEATURE_IN "CenterX"        x
+      FEATURE_IN "CenterD"        rowD
+      FEATURE_IN "Elevation"      hTop
+      FEATURE_IN "Diameter"       TX_LvDiameter
+      FEATURE_IN "Length"         TX_LvLength
+      FEATURE_IN "ShedCount"      TX_LvSheds
+      FEATURE_IN "TurretHeight"   TX_LvTurretHeight
+      FEATURE_IN "TurretDiameter" TX_LvTurretDiameter
+      FEATURE_IN "TurretTaper"    0.35 * TX_LvTurretHeight
+      FEATURE_IN "CapHeight"      0.12 * TX_LvDiameter
+      FEATURE_IN "SeparateTurret" TRUE
+      FEATURE_OUT body "Body"
+      FEATURE_OUT turret "Turret"
+    END_CREATE_FEATURE
+    SET_REF_NAME turret "TX_LV_Turret_" + STR(j + 1)
+    SET_REF_ATTR turret "ROLE" "TURRET"
+    SET_APPEARANCE turret finish
+    SET_REF_NAME body "TX_LV_Bushing_" + STR(j + 1)
+    SET_REF_ATTR body "ROLE" "BUSHING"
+    SET_REF_ATTR body "SIDE" "LV"
+    SET_APPEARANCE body "Porcelain"
+  END_FOR
+
+  ! ------------------------------------------------------------------ van xả dầu và biển cảnh báo ở thành trước
+  PROCESSING_BOX_SET_STATE "Fittings" 90
+  IF TX_Valve
+    x = -TX_TankLength / 2 + 0.5 * pitch
+    CREATE_FEATURE builder:Cylinder
+      FEATURE_IN "Axis"      "D"
+      FEATURE_IN "CenterX"   x
+      FEATURE_IN "CenterD"   frontD - 60 mm
+      FEATURE_IN "Elevation" hTank + 200 mm
+      FEATURE_IN "Diameter"  70 mm
+      FEATURE_IN "Length"    140 mm
+      FEATURE_OUT body "Body"
+    END_CREATE_FEATURE
+    SET_REF_NAME body "TX_DrainValve"
+    SET_APPEARANCE body finish
+
+    CREATE_FEATURE builder:Cylinder
+      FEATURE_IN "Axis"      "D"
+      FEATURE_IN "CenterX"   x
+      FEATURE_IN "CenterD"   frontD - 135 mm
+      FEATURE_IN "Elevation" hTank + 200 mm
+      FEATURE_IN "Diameter"  150 mm
+      FEATURE_IN "Length"    16 mm
+      FEATURE_OUT body "Body"
+    END_CREATE_FEATURE
+    SET_REF_NAME body "TX_DrainValveWheel"
+    SET_APPEARANCE body "Red"
+  END_IF
+
+  IF TX_Sign
+    CREATE_FEATURE builder:Block
+      FEATURE_IN "CenterX"   -TX_TankLength / 2 + 0.5 * pitch
+      FEATURE_IN "CenterD"   frontD - 2 mm
+      FEATURE_IN "Elevation" hTank + 0.6 * TX_TankHeight
+      FEATURE_IN "SizeX"     250 mm
+      FEATURE_IN "SizeD"     4 mm
+      FEATURE_IN "Height"    250 mm
+      FEATURE_OUT body "Body"
+    END_CREATE_FEATURE
+    SET_REF_NAME body "TX_WarningSign"
+    SET_APPEARANCE body "Yellow"
+  END_IF
+
+  PROCESSING_BOX_SET_STATE "Updating the model" 95
+  REGEN_MDL
+  PRINT "Built transformer " + STR(TX_TankLength) + " x " + STR(TX_TankWidth) + " x " + STR(TX_TankHeight) + ": " + STR(TX_RadiatorCount) + " radiator banks, " + STR(TX_HvCount) + " HV + " + STR(TX_LvCount) + " LV bushings"
+  PROCESSING_BOX_END
+
+END_BUILD

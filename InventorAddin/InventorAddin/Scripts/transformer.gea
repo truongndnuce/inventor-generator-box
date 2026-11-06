@@ -1,0 +1,251 @@
+! ============================================================================
+! Máy biến áp lực (đơn giản hóa): đế, thùng, nắp, cánh tản nhiệt, bình dầu phụ, sứ xuyên.
+!
+! Mỗi bộ phận là một solid body có tên trong cùng một Part. Hệ tọa độ của builder:
+!   X  = dọc thùng (tâm thùng ở X = 0)
+!   D  = chiều sâu (tâm thùng ở D = 0), cánh tản nhiệt ở phía D dương
+!   Elevation = cao độ (đế nằm trên 0), bình dầu ở đầu X âm.
+!
+! Sửa file này rồi bấm Apply (hoặc bật "Tự áp dụng khi lưu") trong add-in: model được dựng lại
+! theo script mới trong một Transaction (Ctrl+Z hoàn tác một lần).
+! Luật kiểm tra ở FORM khớp với TransformerParams.Validate (server dùng bản C# đó).
+! ============================================================================
+GEA_VERSION 1
+PRODUCT_NAME "Power transformer (simplified)"
+PARAM_PREFIX TR_
+TARGET PART
+
+BEGIN_FORM
+
+  BEGIN_GROUP "Tank, base and cover"
+    USER_INPUT_PARAM TR_TankLength     LENGTH 2000 mm MIN 1000 MAX 5000 REQUIRED LABEL "Tank length"
+    USER_INPUT_PARAM TR_TankWidth      LENGTH 1100 mm MIN 600  MAX 2500 REQUIRED LABEL "Tank width"
+    USER_INPUT_PARAM TR_TankHeight     LENGTH 1500 mm MIN 800  MAX 3500 REQUIRED LABEL "Tank height"
+    USER_INPUT_PARAM TR_BaseThickness  LENGTH 80 mm   MIN 40   MAX 200  LABEL "Base plate thickness"
+    USER_INPUT_PARAM TR_BaseOverhang   LENGTH 120 mm  MIN 40   MAX 300  LABEL "Base plate overhang"
+    USER_INPUT_PARAM TR_CoverThickness LENGTH 50 mm   MIN 20   MAX 150  LABEL "Cover thickness"
+    USER_INPUT_PARAM TR_CoverOverhang  LENGTH 40 mm   MIN 0    MAX 120  LABEL "Cover overhang"
+  END_GROUP
+
+  BEGIN_GROUP "Radiators"
+    USER_INPUT_PARAM TR_RadiatorCount INTEGER 3 MIN 0 MAX 6 LABEL "Radiator count"
+    ! Khi không có cánh tản nhiệt thì ẩn các ô kích thước (ô ẩn giữ giá trị mặc định)
+    IF TR_RadiatorCount > 0
+      USER_INPUT_PARAM TR_RadiatorWidth  LENGTH 400 mm  MIN 150 MAX 800  LABEL "Radiator width"
+      USER_INPUT_PARAM TR_RadiatorDepth  LENGTH 220 mm  MIN 80  MAX 500  LABEL "Radiator depth"
+      USER_INPUT_PARAM TR_RadiatorHeight LENGTH 1000 mm MIN 300 MAX 2800 LABEL "Radiator height"
+      USER_INPUT_PARAM TR_RadiatorGap    LENGTH 60 mm   MIN 20  MAX 200  LABEL "Gap between radiators"
+    END_IF
+  END_GROUP
+
+  BEGIN_GROUP "Bushings"
+    USER_INPUT_PARAM TR_BushingCount     INTEGER 6 MIN 1 MAX 8 LABEL "Bushing count"
+    USER_INPUT_PARAM TR_BushingDiameter  LENGTH 200 mm MIN 100 MAX 400  LABEL "Bushing diameter"
+    USER_INPUT_PARAM TR_BushingLength    LENGTH 800 mm MIN 300 MAX 2000 LABEL "Bushing length"
+    USER_INPUT_PARAM TR_BushingShedCount INTEGER 8 MIN 3 MAX 14 LABEL "Shed count"
+    USER_INPUT_PARAM TR_TurretHeight     LENGTH 200 mm MIN 80  MAX 500  LABEL "Turret height"
+  END_GROUP
+
+  BEGIN_GROUP "Conservator"
+    USER_INPUT_PARAM TR_ConservatorDiameter LENGTH 450 mm  MIN 200 MAX 900  LABEL "Conservator diameter"
+    USER_INPUT_PARAM TR_ConservatorLength   LENGTH 1000 mm MIN 400 MAX 2500 LABEL "Conservator length"
+    USER_INPUT_PARAM TR_ConservatorLift     LENGTH 300 mm  MIN 150 MAX 1000 LABEL "Conservator lift above cover"
+  END_GROUP
+
+  ! --- Luật kiểm tra ---
+  DECLARE_VARIABLE LENGTH turretR
+  DECLARE_VARIABLE LENGTH availX
+  DECLARE_VARIABLE INTEGER rows
+  DECLARE_VARIABLE INTEGER perRow
+
+  turretR = 0.6 * TR_BushingDiameter
+  rows = 1
+  IF TR_BushingCount >= 2
+    rows = 2
+  END_IF
+  perRow = CEIL(TR_BushingCount / rows)
+
+  IF TR_RadiatorCount > 0
+    ASSERT TR_RadiatorCount * TR_RadiatorWidth + (TR_RadiatorCount - 1) * TR_RadiatorGap <= TR_TankLength - 200 mm \
+      "The radiators do not fit along the tank length (count x width + gaps must be at most tank length - 200 mm)."
+    ASSERT TR_RadiatorHeight <= TR_TankHeight - 250 mm "Radiator height must be at most tank height - 250 mm."
+  END_IF
+
+  ASSERT TR_ConservatorLength <= TR_TankWidth - 100 mm "Conservator length must be at most tank width - 100 mm."
+  ASSERT TR_ConservatorDiameter <= TR_TankLength / 3 "Conservator diameter must be at most one third of the tank length."
+
+  availX = TR_TankLength - TR_ConservatorDiameter - 2 * turretR - 200 mm
+  IF availX < 0 mm
+    ASSERT availX >= 0 mm "The bushings do not fit along the tank length (reduce count or diameter, or shorten the conservator)."
+  ELSE_IF perRow > 1
+    ASSERT availX / (perRow - 1) >= 2 * turretR + 20 mm \
+      "The bushings do not fit along the tank length (reduce count or diameter, or shorten the conservator)."
+  END_IF
+
+  IF rows == 2
+    ASSERT 0.44 * TR_TankWidth >= 2 * turretR + 50 mm \
+      "The two bushing rows are too close for this diameter; widen the tank or use a smaller bushing diameter."
+    ASSERT turretR <= 0.28 * TR_TankWidth "The bushing turret does not fit on the tank cover; reduce the bushing diameter."
+  ELSE
+    ASSERT turretR <= TR_TankWidth / 2 - 40 mm "The bushing turret does not fit on the tank cover; reduce the bushing diameter."
+  END_IF
+
+END_FORM
+
+BEGIN_BUILD
+
+  DECLARE_VARIABLE LENGTH hTank
+  DECLARE_VARIABLE LENGTH hCover
+  DECLARE_VARIABLE LENGTH hTop
+  DECLARE_VARIABLE LENGTH span
+  DECLARE_VARIABLE LENGTH x0
+  DECLARE_VARIABLE LENGTH consX
+  DECLARE_VARIABLE LENGTH turretR
+  DECLARE_VARIABLE LENGTH xs
+  DECLARE_VARIABLE LENGTH xe
+  DECLARE_VARIABLE LENGTH x
+  DECLARE_VARIABLE LENGTH d
+  DECLARE_VARIABLE LENGTH rowD
+  DECLARE_VARIABLE INTEGER rows
+  DECLARE_VARIABLE INTEGER perRow
+  DECLARE_VARIABLE INTEGER index
+  DECLARE_REFERENCE body
+
+  hTank = TR_BaseThickness
+  hCover = TR_BaseThickness + TR_TankHeight
+  hTop = hCover + TR_CoverThickness
+
+  PROCESSING_BOX_START "Building the transformer"
+
+  ! --- Đế, thùng, nắp ---
+  PROCESSING_BOX_SET_STATE "Base, tank and cover" 10
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "SizeX"  TR_TankLength + 2 * TR_BaseOverhang
+    FEATURE_IN "SizeD"  TR_TankWidth + 2 * TR_BaseOverhang
+    FEATURE_IN "Height" TR_BaseThickness
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "TR_Base"
+  SET_REF_ATTR body "ROLE" "BASE"
+  SET_APPEARANCE body "Grey"
+
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "Elevation" hTank
+    FEATURE_IN "SizeX"     TR_TankLength
+    FEATURE_IN "SizeD"     TR_TankWidth
+    FEATURE_IN "Height"    TR_TankHeight
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "TR_Tank"
+  SET_REF_ATTR body "ROLE" "TANK"
+  SET_APPEARANCE body "Grey"
+
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "Elevation" hCover
+    FEATURE_IN "SizeX"     TR_TankLength + 2 * TR_CoverOverhang
+    FEATURE_IN "SizeD"     TR_TankWidth + 2 * TR_CoverOverhang
+    FEATURE_IN "Height"    TR_CoverThickness
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "TR_Cover"
+  SET_REF_ATTR body "ROLE" "COVER"
+  SET_APPEARANCE body "Grey"
+
+  ! --- Cánh tản nhiệt (phía D dương, cách thành thùng 30 mm, cao hơn đáy thùng 150 mm) ---
+  PROCESSING_BOX_SET_STATE "Radiators" 30
+  span = TR_RadiatorCount * TR_RadiatorWidth + (TR_RadiatorCount - 1) * TR_RadiatorGap
+  x0 = -span / 2 + TR_RadiatorWidth / 2
+  FOR i FROM 0 TO TR_RadiatorCount - 1
+    CREATE_FEATURE builder:Block
+      FEATURE_IN "CenterX"   x0 + i * (TR_RadiatorWidth + TR_RadiatorGap)
+      FEATURE_IN "CenterD"   TR_TankWidth / 2 + 30 mm + TR_RadiatorDepth / 2
+      FEATURE_IN "Elevation" hTank + 150 mm
+      FEATURE_IN "SizeX"     TR_RadiatorWidth
+      FEATURE_IN "SizeD"     TR_RadiatorDepth
+      FEATURE_IN "Height"    TR_RadiatorHeight
+      FEATURE_OUT body "Body"
+    END_CREATE_FEATURE
+    SET_REF_NAME body "TR_Radiator_" + STR(i + 1)
+    SET_REF_ATTR body "ROLE" "RADIATOR"
+    SET_APPEARANCE body "Grey"
+  END_FOR
+
+  ! --- Bình dầu phụ: trụ nằm ngang theo D ở đầu X âm, trên hai chân đỡ ---
+  PROCESSING_BOX_SET_STATE "Conservator" 50
+  consX = -TR_TankLength / 2 + TR_ConservatorDiameter / 2
+  CREATE_FEATURE builder:Cylinder
+    FEATURE_IN "Axis"      "D"
+    FEATURE_IN "CenterX"   consX
+    FEATURE_IN "Elevation" hTop + TR_ConservatorLift + TR_ConservatorDiameter / 2
+    FEATURE_IN "Diameter"  TR_ConservatorDiameter
+    FEATURE_IN "Length"    TR_ConservatorLength
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "TR_Conservator"
+  SET_REF_ATTR body "ROLE" "CONSERVATOR"
+  SET_APPEARANCE body "Grey"
+
+  FOR k FROM 1 TO 2
+    CREATE_FEATURE builder:Block
+      FEATURE_IN "CenterX"   consX
+      FEATURE_IN "CenterD"   (2 * k - 3) * 0.3 * TR_ConservatorLength
+      FEATURE_IN "Elevation" hTop
+      FEATURE_IN "SizeX"     100 mm
+      FEATURE_IN "SizeD"     100 mm
+      FEATURE_IN "Height"    TR_ConservatorLift
+      FEATURE_OUT body "Body"
+    END_CREATE_FEATURE
+    SET_REF_NAME body "TR_ConservatorLeg_" + STR(k)
+    SET_APPEARANCE body "Grey"
+  END_FOR
+
+  ! --- Sứ xuyên: hai hàng trên nắp khi có từ 2 sứ ---
+  PROCESSING_BOX_SET_STATE "Bushings" 70
+  turretR = 0.6 * TR_BushingDiameter
+  rows = 1
+  IF TR_BushingCount >= 2
+    rows = 2
+  END_IF
+  perRow = CEIL(TR_BushingCount / rows)
+  xs = -TR_TankLength / 2 + TR_ConservatorDiameter + turretR + 100 mm
+  xe = TR_TankLength / 2 - turretR - 100 mm
+  rowD = 0.22 * TR_TankWidth
+
+  index = 0
+  FOR row FROM 0 TO rows - 1
+    d = 0 mm
+    IF rows == 2
+      d = (2 * row - 1) * rowD
+    END_IF
+    FOR j FROM 0 TO perRow - 1
+      IF index >= TR_BushingCount
+        BREAK
+      END_IF
+      IF perRow == 1
+        x = (xs + xe) / 2
+      ELSE
+        x = xs + j * (xe - xs) / (perRow - 1)
+      END_IF
+      CREATE_FEATURE builder:Bushing
+        FEATURE_IN "CenterX"      x
+        FEATURE_IN "CenterD"      d
+        FEATURE_IN "Elevation"    hTop
+        FEATURE_IN "Diameter"     TR_BushingDiameter
+        FEATURE_IN "Length"       TR_BushingLength
+        FEATURE_IN "TurretHeight" TR_TurretHeight
+        FEATURE_IN "ShedCount"    TR_BushingShedCount
+        FEATURE_OUT body "Body"
+      END_CREATE_FEATURE
+      index++
+      SET_REF_NAME body "TR_Bushing_" + STR(index)
+      SET_REF_ATTR body "ROLE" "BUSHING"
+      SET_APPEARANCE body "Porcelain"
+    END_FOR
+  END_FOR
+
+  PROCESSING_BOX_SET_STATE "Updating the model" 95
+  REGEN_MDL
+  PRINT "Built transformer " + STR(TR_TankLength) + " x " + STR(TR_TankWidth) + " x " + STR(TR_TankHeight) + ", " + STR(TR_RadiatorCount) + " radiators, " + STR(TR_BushingCount) + " bushings"
+  PROCESSING_BOX_END
+
+END_BUILD

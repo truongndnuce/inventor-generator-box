@@ -46,3 +46,8 @@ C:\Users\Administrator\AppData\Local\Temp\addin-check\InventorAddin.deps.json
 C:\Users\Administrator\AppData\Local\Temp\addin-check\InventorAddin.runtimeconfig.json
 C:\Users\Administrator\AppData\Local\Temp\addin-check\InventorAddin.dll
 C:\Users\Administrator\AppData\Local\Temp\addin-check\InventorAddin.pdb
+C:\Users\Administrator\Documents\GitHub\inventor-generator-box\InventorAddin\InventorAddin\bin\Debug\net10.0-windows\Scripts\tank-level1.gea
+C:\Users\Administrator\Documents\GitHub\inventor-generator-box\InventorAddin\InventorAddin\bin\Debug\net10.0-windows\Scripts\transformer.gea
+C:\Users\Administrator\Documents\GitHub\inventor-generator-box\InventorAddin\InventorAddin\obj\Debug\net10.0-windows\Views\ScriptPanel.baml
+C:\Users\Administrator\Documents\GitHub\inventor-generator-box\InventorAddin\InventorAddin\obj\Debug\net10.0-windows\Views\ScriptPanel.g.cs
+C:\Users\Administrator\Documents\GitHub\inventor-generator-box\InventorAddin\InventorAddin\bin\Debug\net10.0-windows\Scripts\transformer-hv.gea

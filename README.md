@@ -22,6 +22,19 @@ fe/  (web tĩnh)  ──►  be/Cadflow.Api (ASP.NET Core, hàng đợi job)  �
 2. **Add-in**: build `InventorAddin/InventorAddin.sln` (tự ghi file `.addin` vào `%AppData%\Autodesk\Inventor 2027\Addins`), mở Inventor 2027. Khi nạp, add-in tự kết nối server. Tiêu đề cửa sổ Box Generator hiện `web: connected`.
 3. Đặt đơn trên web: job chuyển `queued → running → succeeded`, trang job có ảnh, STEP, `.ipt`.
 
+## Script `.gea` (kiểu SmartAssembly)
+
+Đặc tả ngôn ngữ ở `sa-docs/gea-language-spec.md`. Trình thông dịch nằm ở `InventorAddin/InventorAddin/Gea/` (lexer, parser, kiểm tra ngữ nghĩa, FORM, BUILD; không phụ thuộc Inventor), Inventor Host và builder ở `Services/Gea/`. Script mẫu: `InventorAddin/InventorAddin/Scripts/` (`tank-level1.gea`, `transformer.gea`, `transformer-hv.gea`: máy biến áp ngoài trời chi tiết với cánh tản nhiệt dạng lá, bình dầu có giá đỡ, ống dầu, hai hàng sứ HV/LV, van xả, biển cảnh báo).
+
+Dùng trong add-in, tab **Script (.gea)**:
+1. **Open…** một file `.gea`, hoặc chọn **Template** rồi **Open template** (mở bản sao sửa được trong `%AppData%\InventorBoxAddin\scripts`).
+2. Tab **Form** sinh từ khối `BEGIN_FORM`: ô ẩn/hiện theo `IF`, lỗi `MIN`/`MAX`/`ASSERT` tô đỏ đúng ô.
+3. Sửa script ngay ở tab **Script** (lỗi có dòng, cột; nhấp đúp để nhảy tới dòng) hoặc **Edit externally**: lưu file là add-in tự nạp lại; bật *Apply automatically when the script file is saved* để model tự cập nhật.
+4. **Apply**: lưu script, rồi trong **một Transaction** xóa mọi body/feature/sketch/work plane do script tạo lần trước, đồng bộ thông số thành User Parameter, chạy lại `BEGIN_BUILD`. Lỗi ở bất kỳ bước nào thì model giữ nguyên; Ctrl+Z hoàn tác cả lần Apply. Hình học người dùng tự vẽ (không mang dấu `GEA_Owner`) được giữ.
+5. Script và giá trị được lưu trong Part (AttributeSet `GEA_Script`): mở lại `.ipt` là add-in nạp lại script để sửa tiếp (**Load from model**).
+
+Builder có sẵn cho `CREATE_FEATURE builder:<Tên>`: `Tank`, `Cover`, `Block`, `Cylinder`, `Bushing`, `Radiator` (manifest ở `Gea/GeaManifests.cs`). Web worker dựng máy biến áp bằng `Scripts/transformer.gea`, nên file `.ipt` trả về cũng mở và sửa được bằng tab Script.
+
 ## Cấu hình
 
 - **Add-in**: `%AppData%\InventorBoxAddin\worker.json` (tự tạo lần đầu): `enabled`, `serverUrl`, `workerKey`, `workerName`, `pollSeconds`. Log ở `%AppData%\InventorBoxAddin\logs`.

@@ -1,9 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using InventorAddin.Gea;
 using InventorAddin.Host;
 using InventorAddin.Models;
 using InventorAddin.Services;
+using InventorAddin.Services.Gea;
 using Inv = Inventor;
 
 namespace InventorAddin.Web;
@@ -29,6 +32,7 @@ public sealed record JobResult(
 internal sealed class InventorJobExecutor
 {
     private const string StepTranslatorId = "{90AF7F40-0C01-11D5-8E83-0010B541CD80}";
+    private const string TransformerScript = "transformer.gea";
 
     private readonly Inv.Application _app;
     private readonly InventorBoxGateway _gateway;
@@ -73,13 +77,20 @@ internal sealed class InventorJobExecutor
             }
             else
             {
-                progress("Building transformer", "Building tank, radiators, conservator and bushings.");
-                created = _gateway.RunInTransaction(doc, "Create transformer", () =>
-                {
-                    new TransformerBuilder(_app, doc, values).Build();
-                    var marker = doc.AttributeSets.Add("TR_Transformer", false);
-                    marker.Add("Schema", Inv.ValueTypeEnum.kIntegerType, 1);
-                }, "Transformer created.");
+                // Máy biến áp được mô tả bằng script .gea: cùng file đó mở được trong add-in để sửa và Apply lại,
+                // vì script và giá trị được lưu kèm trong .ipt.
+                var scriptPath = GeaScriptLibrary.BundledPath(TransformerScript);
+                if (!File.Exists(scriptPath))
+                    return JobResult.Fail($"Script {TransformerScript} is missing next to the add-in ({scriptPath}).", retryable: false);
+                var script = GeaScript.Compile(File.ReadAllText(scriptPath));
+                if (script.HasErrors)
+                    return JobResult.Fail($"{TransformerScript} has errors: " + script.Diagnostics.First(d => d.Severity == GeaSeverity.Error).Format(TransformerScript), retryable: false);
+                var form = script.EvaluateForm(values.ToDictionary(kv => kv.Key, kv => (object?)kv.Value));
+                if (!form.Ok)
+                    return JobResult.Fail("Invalid inputs: " + form.Errors[0].Message, retryable: false);
+
+                progress("Building transformer", $"Running {TransformerScript}: tank, radiators, conservator and bushings.");
+                created = new GeaDocumentService(_app).Apply(doc, script, form, scriptPath, msg => progress("Building transformer", msg));
             }
             if (!created.Ok)
                 return JobResult.Fail(created.Message, retryable: false);
