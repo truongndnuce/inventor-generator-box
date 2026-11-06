@@ -80,7 +80,7 @@ BEGIN_FORM
   END_GROUP
 
   BEGIN_GROUP "Finish"
-    RADIOBUTTON_PARAM TX_Paint "Green" "Grey" "Green" "White" LABEL "Tank colour"
+    RADIOBUTTON_PARAM TX_Paint "Green" "Grey" "LightGrey" "White" LABEL "Tank colour"
   END_GROUP
 
   ! --- Luật kiểm tra ---
