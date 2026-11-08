@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("InventorAddin")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("0.1.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("0.1.0+8f596ea5d48373a35130bf82c2fc6846cfff65f4")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("0.1.0+ae116a09942ec7fee43f0c2f551fa18052b91420")]
 [assembly: System.Reflection.AssemblyProductAttribute("InventorAddin")]
 [assembly: System.Reflection.AssemblyTitleAttribute("InventorAddin")]
 [assembly: System.Reflection.AssemblyVersionAttribute("0.1.0.0")]

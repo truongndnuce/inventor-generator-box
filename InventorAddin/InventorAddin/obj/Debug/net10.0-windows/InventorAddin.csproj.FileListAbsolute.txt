@@ -87,3 +87,14 @@ C:\Users\Admin\Documents\GitHub\inventor-generator-box\InventorAddin\InventorAdd
 C:\Users\Admin\Documents\GitHub\inventor-generator-box\InventorAddin\InventorAddin\bin\Debug\net10.0-windows\InventorAddin.dll
 C:\Users\Admin\Documents\GitHub\inventor-generator-box\InventorAddin\InventorAddin\bin\Debug\net10.0-windows\InventorAddin.pdb
 C:\Users\Admin\Documents\GitHub\inventor-generator-box\InventorAddin\InventorAddin\bin\Debug\net10.0-windows\Scripts\box.gea
+C:\Users\Admin\Documents\GitHub\inventor-generator-box\InventorAddin\InventorAddin\bin\Debug\net10.0-windows\Scripts\turbine.gea
+C:\Users\Admin\AppData\Local\Temp\claude\5b52259e0e58b63d\f3224b92-0332-4fde-aa0f-42ed17fedfe9\scratchpad\addinout2\presets.default.json
+C:\Users\Admin\AppData\Local\Temp\claude\5b52259e0e58b63d\f3224b92-0332-4fde-aa0f-42ed17fedfe9\scratchpad\addinout2\Scripts\box.gea
+C:\Users\Admin\AppData\Local\Temp\claude\5b52259e0e58b63d\f3224b92-0332-4fde-aa0f-42ed17fedfe9\scratchpad\addinout2\Scripts\tank-level1.gea
+C:\Users\Admin\AppData\Local\Temp\claude\5b52259e0e58b63d\f3224b92-0332-4fde-aa0f-42ed17fedfe9\scratchpad\addinout2\Scripts\transformer-hv.gea
+C:\Users\Admin\AppData\Local\Temp\claude\5b52259e0e58b63d\f3224b92-0332-4fde-aa0f-42ed17fedfe9\scratchpad\addinout2\Scripts\transformer.gea
+C:\Users\Admin\AppData\Local\Temp\claude\5b52259e0e58b63d\f3224b92-0332-4fde-aa0f-42ed17fedfe9\scratchpad\addinout2\Scripts\turbine.gea
+C:\Users\Admin\AppData\Local\Temp\claude\5b52259e0e58b63d\f3224b92-0332-4fde-aa0f-42ed17fedfe9\scratchpad\addinout2\InventorAddin.deps.json
+C:\Users\Admin\AppData\Local\Temp\claude\5b52259e0e58b63d\f3224b92-0332-4fde-aa0f-42ed17fedfe9\scratchpad\addinout2\InventorAddin.runtimeconfig.json
+C:\Users\Admin\AppData\Local\Temp\claude\5b52259e0e58b63d\f3224b92-0332-4fde-aa0f-42ed17fedfe9\scratchpad\addinout2\InventorAddin.dll
+C:\Users\Admin\AppData\Local\Temp\claude\5b52259e0e58b63d\f3224b92-0332-4fde-aa0f-42ed17fedfe9\scratchpad\addinout2\InventorAddin.pdb
