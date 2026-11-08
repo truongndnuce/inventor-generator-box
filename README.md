@@ -8,16 +8,18 @@ fe/  (web tĩnh)  ──►  be/Cadflow.Api (ASP.NET Core, hàng đợi job)  �
 
 | Thư mục | Vai trò |
 |---------|---------|
-| `fe/` | Configurator (form sinh từ schema, kiểm tra luật qua API), danh sách đơn, trang job theo dõi thời gian thực. HTML/JS thuần, không cần build. |
+| `fe/` | Configurator (form sinh từ schema, kiểm tra luật qua API), danh sách đơn, trang job theo dõi thời gian thực. React + Radix UI Themes (Vite); cần `npm run build` để tạo `fe/dist`. |
 | `be/Cadflow.Api/` | API: sản phẩm, đặt đơn, job, tải hồ sơ, API cho worker. Dùng chung file `BoxParams.cs` với add-in nên luật chỉ có một bản. Phục vụ luôn `fe/`. |
 | `InventorAddin/` | Add-in Inventor 2027. Ngoài UI chỉnh tay, thư mục `Web/` là **web worker**: hỏi server nhận job, dựng trên UI thread của Inventor, xuất `.ipt`, `.stp`, `.png`. |
 
 ## Chạy
 
-1. **Server + web** (cần .NET 10 SDK):
+1. **Server + web** (cần .NET 10 SDK và Node.js 20+; web là React + Radix UI Themes, build bằng Vite):
    ```
-   dotnet run --project be/Cadflow.Api
+   cd fe && npm install && npm run build      # tạo fe/dist, server phục vụ thư mục này
+   cd .. && dotnet run --project be/Cadflow.Api
    ```
+   Sửa giao diện: `cd fe && npm run dev` (http://localhost:5173, tự chuyển tiếp `/api` sang server :18080).
    Mở http://localhost:18080. Dữ liệu job nằm ở `be/Cadflow.Api/data/` (đổi bằng cấu hình `DataDir`).
 2. **Add-in**: build `InventorAddin/InventorAddin.sln` (tự ghi file `.addin` vào `%AppData%\Autodesk\Inventor 2027\Addins`), mở Inventor 2027. Khi nạp, add-in tự kết nối server. Tiêu đề cửa sổ Box Generator hiện `web: connected`.
 3. Đặt đơn trên web: job chuyển `queued → running → succeeded`, trang job có ảnh, STEP, `.ipt`.

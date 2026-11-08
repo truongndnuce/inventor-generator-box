@@ -7,3 +7,7 @@ obj/
 
 # runtime data of the web server (jobs, artifacts)
 be/Cadflow.Api/data/
+
+# front-end (Vite)
+fe/node_modules/
+fe/dist/

@@ -10,7 +10,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 var dataDir = Path.GetFullPath(builder.Configuration["DataDir"] ?? Path.Combine(builder.Environment.ContentRootPath, "data"));
 var workerKey = builder.Configuration["Worker:Key"] ?? "dev-worker-key";
-var frontendDir = Path.GetFullPath(builder.Configuration["Frontend:Path"] ?? Path.Combine(builder.Environment.ContentRootPath, "..", "..", "fe"));
+var frontendDir = Path.GetFullPath(builder.Configuration["Frontend:Path"] ?? Path.Combine(builder.Environment.ContentRootPath, "..", "..", "fe", "dist")); // front-end React: chạy `npm run build` trong fe/
 
 builder.Services.AddSingleton(new JobStore(dataDir));
 builder.Services.AddSingleton(new ScriptStore(dataDir));
@@ -32,7 +32,7 @@ if (Directory.Exists(frontendDir))
 }
 else
 {
-    app.Logger.LogWarning("Frontend directory not found: {Dir}. Only the API is served.", frontendDir);
+    app.Logger.LogWarning("Frontend build not found: {Dir}. Run 'npm install' and 'npm run build' in fe/ (or use 'npm run dev'). Only the API is served.", frontendDir);
 }
 
 var store = app.Services.GetRequiredService<JobStore>();
