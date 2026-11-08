@@ -303,7 +303,32 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
     private void Open()
     {
         var path = _dialogs.OpenFile("Open .gea script", Filter, _scriptPath != null ? Path.GetDirectoryName(_scriptPath) : GeaScriptLibrary.UserDirectory);
-        if (path != null && ConfirmDiscard()) LoadFile(path, null);
+        if (path == null || !ConfirmDiscard()) return;
+        LoadFile(path, null);
+        ApplyExportedValues(path);
+    }
+
+    /// <summary>File .gea export từ web có khối giá trị !@: điền vào form (đổi đơn vị nội bộ sang đơn vị hiển thị).</summary>
+    private void ApplyExportedValues(string path)
+    {
+        if (_fileText == null || _script == null || _script.HasErrors) return;
+        var block = GeaExportBlock.Parse(_fileText);
+        if (block == null) return;
+        int applied = 0;
+        foreach (var f in _fields)
+        {
+            switch (f.Def.Kind)
+            {
+                case GeaFieldKind.Number when block.Values.TryGetValue(f.Name, out var n):
+                    f.Load(n / f.Def.UnitFactor); applied++; break;
+                case GeaFieldKind.Checkbox when block.Values.TryGetValue(f.Name, out var b):
+                    f.Load(b != 0); applied++; break;
+                case GeaFieldKind.Radio or GeaFieldKind.Text when block.Texts.TryGetValue(f.Name, out var t):
+                    f.Load(t); applied++; break;
+            }
+        }
+        EvaluateForm();
+        SetStatus($"Opened {Path.GetFileName(path)}; loaded {applied} value(s) from the web export.", false);
     }
 
     private void OpenTemplate()
