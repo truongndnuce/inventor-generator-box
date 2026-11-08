@@ -4,7 +4,7 @@
 library
 C#
 .cs
-C:\Users\Administrator\Documents\GitHub\inventor-generator-box\InventorAddin\InventorAddin\obj\Debug\net10.0-windows\
+C:\Users\Admin\Documents\GitHub\inventor-generator-box\InventorAddin\InventorAddin\obj\Debug\net10.0-windows\
 InventorAddin
 none
 false
@@ -12,8 +12,8 @@ TRACE;DEBUG;NET;NET10_0;NETCOREAPP;WINDOWS;WINDOWS7_0;NET5_0_OR_GREATER;NET6_0_O
 
 2-674351503
 
-391402412168
-215588502148
+40721240237
+215547995942
 Views\AddInPanel.xaml;Views\ScriptPanel.xaml;
 
 False

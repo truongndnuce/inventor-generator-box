@@ -33,6 +33,7 @@ internal sealed class InventorJobExecutor
 {
     private const string StepTranslatorId = "{90AF7F40-0C01-11D5-8E83-0010B541CD80}";
     private const string TransformerScript = "transformer.gea";
+    private const string TurbineScript = "turbine.gea";
 
     private readonly Inv.Application _app;
     private readonly InventorBoxGateway _gateway;
@@ -53,12 +54,15 @@ internal sealed class InventorJobExecutor
     {
         // Server đã kiểm tra, nhưng worker kiểm tra lại: sai thì dừng mà chưa đụng tới Inventor.
         bool isBox = job.ProductCode == "box";
+        bool isTurbine = job.ProductCode == TurbineParams.Code;
         bool isTransformer = job.ProductCode == TransformerParams.Code;
-        if (!isBox && !isTransformer)
+        if (!isBox && !isTransformer && !isTurbine)
             return JobResult.Fail($"Unknown product '{job.ProductCode}'.", retryable: false);
 
-        var values = isBox ? BoxParams.Complete(job.Inputs) : TransformerParams.Complete(job.Inputs);
-        var issues = isBox ? BoxParams.Validate(values) : TransformerParams.Validate(values);
+        var values = isBox ? BoxParams.Complete(job.Inputs) : isTurbine ? TurbineParams.Complete(job.Inputs) : TransformerParams.Complete(job.Inputs);
+        var issues = isBox ? BoxParams.Validate(values) : isTurbine ? TurbineParams.Validate(values) : TransformerParams.Validate(values);
+        string scriptName = isTurbine ? TurbineScript : TransformerScript;
+        string productLabel = isTurbine ? "gas turbine" : "transformer";
         if (issues.Count > 0)
             return JobResult.Fail("Invalid inputs: " + issues[0].Message, retryable: false);
 
@@ -79,18 +83,18 @@ internal sealed class InventorJobExecutor
             {
                 // Máy biến áp được mô tả bằng script .gea: cùng file đó mở được trong add-in để sửa và Apply lại,
                 // vì script và giá trị được lưu kèm trong .ipt.
-                var scriptPath = GeaScriptLibrary.BundledPath(TransformerScript);
+                var scriptPath = GeaScriptLibrary.BundledPath(scriptName);
                 if (!File.Exists(scriptPath))
-                    return JobResult.Fail($"Script {TransformerScript} is missing next to the add-in ({scriptPath}).", retryable: false);
+                    return JobResult.Fail($"Script {scriptName} is missing next to the add-in ({scriptPath}).", retryable: false);
                 var script = GeaScript.Compile(File.ReadAllText(scriptPath));
                 if (script.HasErrors)
-                    return JobResult.Fail($"{TransformerScript} has errors: " + script.Diagnostics.First(d => d.Severity == GeaSeverity.Error).Format(TransformerScript), retryable: false);
+                    return JobResult.Fail($"{scriptName} has errors: " + script.Diagnostics.First(d => d.Severity == GeaSeverity.Error).Format(scriptName), retryable: false);
                 var form = script.EvaluateForm(values.ToDictionary(kv => kv.Key, kv => (object?)kv.Value));
                 if (!form.Ok)
                     return JobResult.Fail("Invalid inputs: " + form.Errors[0].Message, retryable: false);
 
-                progress("Building transformer", $"Running {TransformerScript}: tank, radiators, conservator and bushings.");
-                created = new GeaDocumentService(_app).Apply(doc, script, form, scriptPath, msg => progress("Building transformer", msg));
+                progress("Building " + productLabel, $"Running {scriptName}.");
+                created = new GeaDocumentService(_app).Apply(doc, script, form, scriptPath, msg => progress("Building " + productLabel, msg));
             }
             if (!created.Ok)
                 return JobResult.Fail(created.Message, retryable: false);
@@ -133,8 +137,11 @@ internal sealed class InventorJobExecutor
             // Bản vẽ 2D (PDF). Dựng sau ảnh vì tạo drawing làm đổi view đang active. Lỗi bản vẽ không làm hỏng job.
             progress("Drawing", "Creating the 2D drawing (views, section, dimensions).");
             var pdfPath = Path.Combine(workDir, job.Id + ".pdf");
+            double turbineAxis = isTurbine ? values[TurbineParams.BaseHeight] + TurbineParams.MaxDiameter(values) / 2 + TurbineParams.CradleGap : 0;
             var levels = isBox
                 ? new[] { 0, values[BoxParams.Bottom], values[BoxParams.Height] }
+                : isTurbine
+                ? new[] { 0, values[TurbineParams.BaseHeight], turbineAxis, turbineAxis + TurbineParams.MaxDiameter(values) / 2 }
                 : new[] { 0, values[TransformerParams.BaseThickness], values[TransformerParams.BaseThickness] + values[TransformerParams.TankHeight],
                           values[TransformerParams.BaseThickness] + values[TransformerParams.TankHeight] + values[TransformerParams.CoverThickness] };
             var drawing = new DrawingBuilder(_app).Build(doc, zUp: isBox, levels, pdfPath);

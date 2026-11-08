@@ -14,6 +14,7 @@
         -->
         <Compile Include="..\..\InventorAddin\InventorAddin\Models\BoxParams.cs" Link="Shared\BoxParams.cs" />
         <Compile Include="..\..\InventorAddin\InventorAddin\Models\TransformerParams.cs" Link="Shared\TransformerParams.cs" />
+        <Compile Include="..\..\InventorAddin\InventorAddin\Models\TurbineParams.cs" Link="Shared\TurbineParams.cs" />
     </ItemGroup>
 
 </Project>

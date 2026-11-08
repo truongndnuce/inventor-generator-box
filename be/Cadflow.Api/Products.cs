@@ -39,6 +39,9 @@ public static class Products
         new Product(TransformerParams.Code, "Power transformer",
             "Simplified power transformer: tank on a base plate, cover, radiators, conservator and bushings (levels 1-3 of the plan).", 1,
             TransformerParams.All, TransformerParams.Complete, TransformerParams.Validate),
+        new Product(TurbineParams.Code, "Gas turbine",
+            "Simplified industrial gas turbine: inlet, compressor with rings, combustor with a ring of cans, turbine, exhaust, enclosure and skid.", 1,
+            TurbineParams.All, TurbineParams.Complete, TurbineParams.Validate),
     };
 
     public static Product? Find(string? code) =>
