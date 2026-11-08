@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <AssemblyName>InventorAddin.Generator</AssemblyName>
+        <AddinClassId>C9A01552-DFC8-4C51-BFB9-B18388DCB671</AddinClassId>
+        <AddinDisplayName>Cadflow Generator</AddinDisplayName>
+        <AddinDescription>Build a large water-cooled generator (stator frame, water cooler, bearing housings, rotor shaft, exciter cabinet) from a .gea script.</AddinDescription>
+        <AddinFileName>InventorGeneratorAddin.addin</AddinFileName>
+    </PropertyGroup>
+
+    <Import Project="..\..\Addin.targets" />
+
+</Project>

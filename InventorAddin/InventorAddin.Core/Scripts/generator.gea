@@ -1,0 +1,341 @@
+! ============================================================================
+! Máy phát điện đồng bộ làm mát bằng nước (water-cooled generator, đơn giản hóa theo ảnh tham chiếu): thân stator dạng hộp
+! có gân đứng hai bên, hộp làm mát nước thò xuống dưới thân kèm ống nước vào/ra, hộp đầu cực và hai quạt trên đỉnh,
+! hai nắp ổ trục có gối đỡ, trục rotor xuyên suốt, tủ kích từ ở đầu trục, bệ máy.
+!
+! Mỗi bộ phận là một solid body có tên trong cùng một Part. Hệ tọa độ của builder:
+!   X  = trục máy (tâm thân ở X = 0, tủ kích từ ở phía âm, đầu trục ra ở phía dương)
+!   D  = chiều ngang (trục máy ở D = 0)
+!   Elevation = cao độ (đáy bệ ở 0, mặt trên bệ ở GN_BaseHeight)
+!
+! Mô hình là các khối đặc nên không có phần cắt lộ ruột (rotor, lõi stator, ruột bộ làm mát) như trong ảnh.
+! Luật ở FORM khớp với GeneratorParams.Validate (server dùng bản C# đó); các hằng số 0.55 / 0.8 / 0.6 / 300 mm khớp với
+! hằng số cùng tên ở file C#.
+! ============================================================================
+GEA_VERSION 1
+PRODUCT_NAME "Water-cooled generator (simplified)"
+PARAM_PREFIX GN_
+TARGET PART
+
+BEGIN_FORM
+
+  BEGIN_GROUP "Stator frame and rotor"
+    USER_INPUT_PARAM GN_FrameLength    LENGTH 4600 mm MIN 2500 MAX 7000 REQUIRED LABEL "Frame length"
+    USER_INPUT_PARAM GN_FrameWidth     LENGTH 2200 mm MIN 1200 MAX 3800 REQUIRED LABEL "Frame width"
+    USER_INPUT_PARAM GN_FrameHeight    LENGTH 2000 mm MIN 1000 MAX 3500 REQUIRED LABEL "Frame height"
+    USER_INPUT_PARAM GN_EndDiameter    LENGTH 1300 mm MIN 600  MAX 2500 REQUIRED LABEL "Bearing housing diameter"
+    USER_INPUT_PARAM GN_EndLength      LENGTH 800 mm  MIN 400  MAX 1500 REQUIRED LABEL "Bearing housing length"
+    USER_INPUT_PARAM GN_ShaftDiameter  LENGTH 500 mm  MIN 200  MAX 1000 REQUIRED LABEL "Shaft diameter"
+    USER_INPUT_PARAM GN_ShaftExtension LENGTH 900 mm  MIN 300  MAX 2000 REQUIRED LABEL "Shaft extension (drive end)"
+  END_GROUP
+
+  BEGIN_GROUP "Side ribs"
+    USER_INPUT_PARAM GN_RibCount INTEGER 12 MIN 0 MAX 24 LABEL "Rib count (each side)"
+    ! Không có gân thì ẩn các ô kích thước gân (ô ẩn không có giá trị)
+    IF GN_RibCount > 0
+      USER_INPUT_PARAM GN_RibThickness LENGTH 80 mm MIN 30 MAX 200 LABEL "Rib thickness"
+      USER_INPUT_PARAM GN_RibExtra     LENGTH 70 mm MIN 20 MAX 200 LABEL "Rib projection"
+    END_IF
+  END_GROUP
+
+  BEGIN_GROUP "Water cooler"
+    USER_INPUT_PARAM GN_CoolerLength  LENGTH 1500 mm MIN 800 MAX 3000 LABEL "Cooler length"
+    USER_INPUT_PARAM GN_CoolerWidth   LENGTH 1700 mm MIN 800 MAX 3000 LABEL "Cooler width"
+    USER_INPUT_PARAM GN_CoolerDepth   LENGTH 800 mm  MIN 300 MAX 1500 LABEL "Cooler depth below frame"
+    USER_INPUT_PARAM GN_PipeDiameter  LENGTH 250 mm  MIN 80  MAX 500  LABEL "Water pipe diameter"
+  END_GROUP
+
+  BEGIN_GROUP "Exciter cabinet"
+    USER_INPUT_PARAM GN_CabLength LENGTH 1500 mm MIN 800 MAX 3000 LABEL "Cabinet length"
+    USER_INPUT_PARAM GN_CabWidth  LENGTH 1400 mm MIN 800 MAX 2500 LABEL "Cabinet width"
+    USER_INPUT_PARAM GN_CabHeight LENGTH 1800 mm MIN 800 MAX 3500 LABEL "Cabinet height"
+  END_GROUP
+
+  BEGIN_GROUP "Base frame"
+    USER_INPUT_PARAM GN_BaseHeight   LENGTH 300 mm  MIN 100  MAX 800  LABEL "Base height"
+    USER_INPUT_PARAM GN_BaseWidth    LENGTH 3400 mm MIN 1500 MAX 6000 LABEL "Base width"
+    USER_INPUT_PARAM GN_BaseOverhang LENGTH 200 mm  MIN 0    MAX 800  LABEL "Base overhang beyond the ends"
+  END_GROUP
+
+  ! --- Luật kiểm tra ---
+  ASSERT GN_EndDiameter <= 0.8 * GN_FrameHeight "Bearing housing diameter must be at most 80 % of the frame height."
+  ASSERT GN_ShaftDiameter <= GN_EndDiameter - 200 mm "Shaft diameter must be at least 200 mm smaller than the bearing housing diameter."
+  ASSERT GN_CoolerLength <= GN_FrameLength - 400 mm "Cooler length must be at least 400 mm shorter than the frame."
+  ASSERT GN_CoolerWidth <= GN_FrameWidth "Cooler width must not exceed the frame width."
+  ASSERT GN_PipeDiameter <= 0.6 * GN_CoolerDepth "Water pipe diameter must be at most 60 % of the cooler depth."
+  ! Ô của gân bị ẩn khi không có gân (chưa có giá trị), nên các luật dùng chúng nằm trong IF
+  IF GN_RibCount > 0
+    ASSERT GN_RibCount * GN_RibThickness <= GN_FrameLength / 2 \
+      "The side ribs take more than half of the frame length (reduce count or thickness)."
+    ASSERT GN_BaseWidth >= GN_FrameWidth + 2 * GN_RibExtra + 300 mm \
+      "Base width must be at least the frame width + ribs + 300 mm."
+  END_IF
+  ASSERT GN_BaseWidth >= GN_FrameWidth + 300 mm "Base width must be at least the frame width + ribs + 300 mm."
+  ASSERT GN_BaseWidth >= GN_CoolerWidth + 700 mm "Base width must be at least the cooler width + 700 mm (the water pipes stick out at the sides)."
+  ASSERT GN_BaseWidth >= GN_CabWidth + 100 mm "Base width must be at least the cabinet width + 100 mm."
+
+END_FORM
+
+BEGIN_BUILD
+
+  DECLARE_VARIABLE LENGTH frameBot
+  DECLARE_VARIABLE LENGTH frameTop
+  DECLARE_VARIABLE LENGTH axisH
+  DECLARE_VARIABLE LENGTH xL
+  DECLARE_VARIABLE LENGTH xR
+  DECLARE_VARIABLE LENGTH xCab
+  DECLARE_VARIABLE LENGTH xCabLeft
+  DECLARE_VARIABLE LENGTH xShaftEnd
+  DECLARE_VARIABLE LENGTH pipeH
+  DECLARE_VARIABLE INTEGER index
+  DECLARE_REFERENCE body
+
+  frameBot = GN_BaseHeight + GN_CoolerDepth
+  frameTop = frameBot + GN_FrameHeight
+  axisH = frameBot + 0.55 * GN_FrameHeight
+  xL = -(GN_FrameLength / 2 + GN_EndLength)
+  xR = GN_FrameLength / 2 + GN_EndLength
+  xCab = xL - 100 mm - GN_CabLength / 2
+  xCabLeft = xL - 100 mm - GN_CabLength
+  xShaftEnd = xR + GN_ShaftExtension
+  pipeH = GN_BaseHeight + GN_CoolerDepth / 2
+
+  PROCESSING_BOX_START "Building the generator"
+
+  ! --- Bệ máy: trải từ tủ kích từ tới đầu trục ---
+  PROCESSING_BOX_SET_STATE "Base frame" 8
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "CenterX" (xCabLeft + xShaftEnd) / 2
+    FEATURE_IN "SizeX"   xShaftEnd - xCabLeft + 2 * GN_BaseOverhang
+    FEATURE_IN "SizeD"   GN_BaseWidth
+    FEATURE_IN "Height"  GN_BaseHeight
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GN_Base"
+  SET_REF_ATTR body "ROLE" "BASE"
+  SET_APPEARANCE body "Grey"
+
+  ! --- Thân stator dạng hộp ---
+  PROCESSING_BOX_SET_STATE "Stator frame" 20
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "CenterX"      0 mm
+    FEATURE_IN "Elevation"    frameBot
+    FEATURE_IN "SizeX"        GN_FrameLength
+    FEATURE_IN "SizeD"        GN_FrameWidth
+    FEATURE_IN "Height"       GN_FrameHeight
+    FEATURE_IN "CornerRadius" 60 mm
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GN_Frame"
+  SET_REF_ATTR body "ROLE" "STATOR_FRAME"
+  SET_APPEARANCE body "Grey"
+
+  ! --- Hộp làm mát nước dưới thân (chui vào thân 300 mm), ống nước vào/ra nhô ra một bên ---
+  PROCESSING_BOX_SET_STATE "Water cooler" 32
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "CenterX"      0 mm
+    FEATURE_IN "Elevation"    GN_BaseHeight
+    FEATURE_IN "SizeX"        GN_CoolerLength
+    FEATURE_IN "SizeD"        GN_CoolerWidth
+    FEATURE_IN "Height"       GN_CoolerDepth + 300 mm
+    FEATURE_IN "CornerRadius" 60 mm
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GN_Cooler"
+  SET_REF_ATTR body "ROLE" "WATER_COOLER"
+  SET_APPEARANCE body "Grey"
+
+  FOR p FROM 0 TO 1
+    CREATE_FEATURE builder:Cylinder
+      FEATURE_IN "Axis"      "D"
+      FEATURE_IN "CenterX"   (2 * p - 1) * GN_CoolerLength / 4
+      FEATURE_IN "CenterD"   GN_CoolerWidth / 2 + 125 mm
+      FEATURE_IN "Elevation" pipeH
+      FEATURE_IN "Diameter"  GN_PipeDiameter
+      FEATURE_IN "Length"    350 mm
+      FEATURE_OUT body "Body"
+    END_CREATE_FEATURE
+    SET_REF_NAME body "GN_WaterPipe_" + STR(p + 1)
+    SET_REF_ATTR body "ROLE" "WATER_PIPE"
+    SET_APPEARANCE body "Blue"
+
+    CREATE_FEATURE builder:Cylinder
+      FEATURE_IN "Axis"      "D"
+      FEATURE_IN "CenterX"   (2 * p - 1) * GN_CoolerLength / 4
+      FEATURE_IN "CenterD"   GN_CoolerWidth / 2 + 280 mm
+      FEATURE_IN "Elevation" pipeH
+      FEATURE_IN "Diameter"  1.5 * GN_PipeDiameter
+      FEATURE_IN "Length"    40 mm
+      FEATURE_OUT body "Body"
+    END_CREATE_FEATURE
+    SET_REF_NAME body "GN_PipeFlange_" + STR(p + 1)
+    SET_APPEARANCE body "LightGrey"
+  END_FOR
+
+  ! --- Gối đỡ hai nắp ổ trục ---
+  PROCESSING_BOX_SET_STATE "Bearing pedestals" 42
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "CenterX"   xL + GN_EndLength / 2
+    FEATURE_IN "Elevation" GN_BaseHeight
+    FEATURE_IN "SizeX"     GN_EndLength * 0.6
+    FEATURE_IN "SizeD"     0.5 * GN_EndDiameter
+    FEATURE_IN "Height"    axisH - GN_EndDiameter / 2 - GN_BaseHeight
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GN_Pedestal_DE"
+  SET_APPEARANCE body "Grey"
+
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "CenterX"   xR - GN_EndLength / 2
+    FEATURE_IN "Elevation" GN_BaseHeight
+    FEATURE_IN "SizeX"     GN_EndLength * 0.6
+    FEATURE_IN "SizeD"     0.5 * GN_EndDiameter
+    FEATURE_IN "Height"    axisH - GN_EndDiameter / 2 - GN_BaseHeight
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GN_Pedestal_NDE"
+  SET_APPEARANCE body "Grey"
+
+  ! --- Hai nắp ổ trục ---
+  CREATE_FEATURE builder:Cylinder
+    FEATURE_IN "Axis"      "X"
+    FEATURE_IN "CenterX"   xL + GN_EndLength / 2
+    FEATURE_IN "Elevation" axisH
+    FEATURE_IN "Diameter"  GN_EndDiameter
+    FEATURE_IN "Length"    GN_EndLength
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GN_Bearing_DE"
+  SET_REF_ATTR body "ROLE" "BEARING"
+  SET_APPEARANCE body "LightGrey"
+
+  CREATE_FEATURE builder:Cylinder
+    FEATURE_IN "Axis"      "X"
+    FEATURE_IN "CenterX"   xR - GN_EndLength / 2
+    FEATURE_IN "Elevation" axisH
+    FEATURE_IN "Diameter"  GN_EndDiameter
+    FEATURE_IN "Length"    GN_EndLength
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GN_Bearing_NDE"
+  SET_REF_ATTR body "ROLE" "BEARING"
+  SET_APPEARANCE body "LightGrey"
+
+  ! --- Gân đứng hai bên thân, chia đều dọc chiều dài ---
+  PROCESSING_BOX_SET_STATE "Side ribs" 55
+  index = 0
+  FOR i FROM 0 TO GN_RibCount - 1
+    FOR sd FROM 0 TO 1
+      CREATE_FEATURE builder:Block
+        FEATURE_IN "CenterX"   -GN_FrameLength / 2 + (i + 0.5) * GN_FrameLength / GN_RibCount
+        FEATURE_IN "CenterD"   (2 * sd - 1) * (GN_FrameWidth / 2 + GN_RibExtra / 2 - 5 mm)
+        FEATURE_IN "Elevation" frameBot + 0.2 * GN_FrameHeight
+        FEATURE_IN "SizeX"     GN_RibThickness
+        FEATURE_IN "SizeD"     GN_RibExtra + 10 mm
+        FEATURE_IN "Height"    0.6 * GN_FrameHeight
+        FEATURE_OUT body "Body"
+      END_CREATE_FEATURE
+      index++
+      SET_REF_NAME body "GN_Rib_" + STR(index)
+      SET_REF_ATTR body "ROLE" "RIB"
+      SET_APPEARANCE body "LightGrey"
+    END_FOR
+  END_FOR
+
+  ! --- Hộp đầu cực dài trên đỉnh thân và hai nắp quạt ---
+  PROCESSING_BOX_SET_STATE "Top box and fans" 65
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "CenterX"      0 mm
+    FEATURE_IN "Elevation"    frameTop - 30 mm
+    FEATURE_IN "SizeX"        0.6 * GN_FrameLength
+    FEATURE_IN "SizeD"        0.3 * GN_FrameWidth
+    FEATURE_IN "Height"       250 mm
+    FEATURE_IN "CornerRadius" 20 mm
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GN_TopBox"
+  SET_REF_ATTR body "ROLE" "TERMINAL_BOX"
+  SET_APPEARANCE body "LightGrey"
+
+  FOR f FROM 0 TO 1
+    CREATE_FEATURE builder:Cylinder
+      FEATURE_IN "Axis"      "H"
+      FEATURE_IN "CenterX"   (2 * f - 1) * 0.2 * GN_FrameLength
+      FEATURE_IN "CenterD"   0 mm
+      FEATURE_IN "Elevation" frameTop + 190 mm
+      FEATURE_IN "Diameter"  0.22 * GN_FrameWidth
+      FEATURE_IN "Length"    100 mm
+      FEATURE_OUT body "Body"
+    END_CREATE_FEATURE
+    SET_REF_NAME body "GN_Fan_" + STR(f + 1)
+    SET_APPEARANCE body "Grey"
+  END_FOR
+
+  ! --- Trục rotor, hai đĩa khớp nối ---
+  PROCESSING_BOX_SET_STATE "Rotor shaft" 78
+  CREATE_FEATURE builder:Cylinder
+    FEATURE_IN "Axis"      "X"
+    FEATURE_IN "CenterX"   (xCab + xShaftEnd) / 2
+    FEATURE_IN "Elevation" axisH
+    FEATURE_IN "Diameter"  GN_ShaftDiameter
+    FEATURE_IN "Length"    xShaftEnd - xCab
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GN_Shaft"
+  SET_REF_ATTR body "ROLE" "SHAFT"
+  SET_APPEARANCE body "Silver"
+
+  CREATE_FEATURE builder:Cylinder
+    FEATURE_IN "Axis"      "X"
+    FEATURE_IN "CenterX"   xShaftEnd - 150 mm
+    FEATURE_IN "Elevation" axisH
+    FEATURE_IN "Diameter"  1.6 * GN_ShaftDiameter
+    FEATURE_IN "Length"    120 mm
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GN_Coupling_Drive"
+  SET_APPEARANCE body "Silver"
+
+  CREATE_FEATURE builder:Cylinder
+    FEATURE_IN "Axis"      "X"
+    FEATURE_IN "CenterX"   xL - 50 mm
+    FEATURE_IN "Elevation" axisH
+    FEATURE_IN "Diameter"  1.6 * GN_ShaftDiameter
+    FEATURE_IN "Length"    100 mm
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GN_Coupling_Exciter"
+  SET_APPEARANCE body "Silver"
+
+  ! --- Tủ kích từ ở đầu trục, kèm hộp điều khiển phía trên ---
+  PROCESSING_BOX_SET_STATE "Exciter cabinet" 90
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "CenterX"      xCab
+    FEATURE_IN "Elevation"    GN_BaseHeight
+    FEATURE_IN "SizeX"        GN_CabLength
+    FEATURE_IN "SizeD"        GN_CabWidth
+    FEATURE_IN "Height"       GN_CabHeight
+    FEATURE_IN "CornerRadius" 20 mm
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GN_Cabinet"
+  SET_REF_ATTR body "ROLE" "CABINET"
+  SET_APPEARANCE body "White"
+
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "CenterX"   xCab
+    FEATURE_IN "Elevation" GN_BaseHeight + GN_CabHeight
+    FEATURE_IN "SizeX"     0.7 * GN_CabLength
+    FEATURE_IN "SizeD"     0.7 * GN_CabWidth
+    FEATURE_IN "Height"    300 mm
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GN_CabinetTop"
+  SET_APPEARANCE body "White"
+
+  PROCESSING_BOX_SET_STATE "Updating the model" 96
+  REGEN_MDL
+  PRINT "Built water-cooled generator " + STR(xShaftEnd - xCabLeft) + " long, " + STR(GN_RibCount) + " ribs per side"
+  PROCESSING_BOX_END
+
+END_BUILD

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -16,7 +16,7 @@ public sealed record PresetLoadResult(IReadOnlyList<Preset> Presets, string? War
 /// </summary>
 public sealed class PresetStore
 {
-    public const int SchemaVersion = 1;
+    public const int SchemaVersion = InventorBoxGateway.SchemaVersion;
     public const string FileName = "presets.json";
 
     private static readonly JsonSerializerOptions Json = new()
@@ -129,3 +129,4 @@ public sealed class PresetStore
         else File.Move(tmp, _userFile);
     }
 }
+

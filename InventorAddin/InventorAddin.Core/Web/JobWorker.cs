@@ -32,10 +32,11 @@ public sealed class JobWorker : IDisposable
     /// <summary>Phát khi trạng thái kết nối đổi (chạy trên thread nền; nơi nhận phải tự chuyển về UI thread).</summary>
     public event Action<string>? StatusChanged;
 
-    internal JobWorker(Inv.Application app, WorkerSettings settings, Func<Func<object?>, Task<object?>> onUiThread)
+    /// <param name="products">Mã sản phẩm add-in này dựng được (server chỉ giao job thuộc các mã đó); null = tất cả.</param>
+    public JobWorker(Inv.Application app, WorkerSettings settings, Func<Func<object?>, Task<object?>> onUiThread, string[]? products = null)
     {
         _settings = settings;
-        _client = new ServerClient(settings);
+        _client = new ServerClient(settings, products);
         _onUiThread = onUiThread;
         _executor = new InventorJobExecutor(app);
     }

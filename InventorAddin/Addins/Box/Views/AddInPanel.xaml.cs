@@ -5,15 +5,14 @@ using InventorAddin.ViewModels;
 
 namespace InventorAddin.Views;
 
-/// <summary>View thuần: chỉ binding vào <see cref="PanelViewModel"/> (tab Box) và <see cref="ScriptViewModel"/> (tab Script).
+/// <summary>View thuần: chỉ binding vào <see cref="PanelViewModel"/> (add-in Box).
 /// Code-behind chỉ chuyển sự kiện focus thành thuộc tính của ViewModel.</summary>
 public partial class AddInPanel : UserControl
 {
-    public AddInPanel(PanelViewModel viewModel, ScriptViewModel scriptViewModel)
+    public AddInPanel(PanelViewModel viewModel)
     {
         InitializeComponent();
         DataContext = viewModel;
-        ScriptView.DataContext = scriptViewModel;
 
         AddHandler(Keyboard.GotKeyboardFocusEvent, new KeyboardFocusChangedEventHandler(OnGotFocus), true);
         AddHandler(Keyboard.LostKeyboardFocusEvent, new KeyboardFocusChangedEventHandler(OnLostFocus), true);
@@ -22,7 +21,6 @@ public partial class AddInPanel : UserControl
             // Mỗi lần mở UI đọc lại giá trị từ model, phòng khi người dùng sửa Parameter bằng tay
             if (!(bool)e.NewValue) return;
             viewModel.Refresh();
-            scriptViewModel.Refresh();
         };
     }
 

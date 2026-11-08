@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Addin Type="Standard">
-    <ClassId>{7B5E3A62-4C1D-4F0B-9A27-5D8E1C3F6A94}</ClassId>
-    <ClientId>{7B5E3A62-4C1D-4F0B-9A27-5D8E1C3F6A94}</ClientId>
-    <DisplayName>Box Generator</DisplayName>
-    <Description>Create a box with a lid and edit its parameters on the active Part.</Description>
+    <ClassId>{$CLASSID$}</ClassId>
+    <ClientId>{$CLASSID$}</ClientId>
+    <DisplayName>$NAME$</DisplayName>
+    <Description>$DESCRIPTION$</Description>
     <Assembly>$ASSEMBLY$</Assembly>
     <UseInventorAssemblyContext>0</UseInventorAssemblyContext>
     <SupportedSoftwareVersionGreaterThan>30..</SupportedSoftwareVersionGreaterThan>

@@ -22,6 +22,13 @@ public sealed class WorkerSettings
     /// <summary>Thư mục làm việc riêng cho từng job (file .ipt, .stp, .png trước khi tải lên).</summary>
     public string WorkDir { get; set; } = Path.Combine(Log.DataDirectory, "jobs");
 
+    /// <summary>Bản sao dùng cho một add-in: tên worker thêm hậu tố để mỗi add-in là một worker riêng trên server.</summary>
+    public WorkerSettings ForAddin(string addinId) => new()
+    {
+        Enabled = Enabled, ServerUrl = ServerUrl, WorkerKey = WorkerKey, WorkerName = WorkerName + "-" + addinId,
+        PollSeconds = PollSeconds, HeartbeatSeconds = HeartbeatSeconds, WorkDir = WorkDir,
+    };
+
     public static string FilePath => Path.Combine(Log.DataDirectory, "worker.json");
 
     public static WorkerSettings Load()

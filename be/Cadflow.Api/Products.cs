@@ -16,7 +16,8 @@ public sealed record Product(
     Func<IReadOnlyDictionary<string, double>, IReadOnlyList<ValidationIssue>> Validate,
     string? ScriptFile = null) // file .gea đi kèm (trong thư mục Scripts cạnh server); null = sản phẩm dựng không qua .gea
 {
-    public object Schema() => new
+    /// <param name="defaults">Mặc định đang áp dụng (đã gồm cấu hình của tab Config); null = mặc định gốc.</param>
+    public object Schema(IReadOnlyDictionary<string, double>? defaults = null) => new
     {
         code = Code,
         name = Name,
@@ -27,7 +28,8 @@ public sealed record Product(
             name = d.Name, label = d.Label, group = d.Group, unit = d.Unit, integer = d.Integer,
             @default = d.Default, min = d.Min, max = d.Max,
         }),
-        defaults = Complete(null),
+        defaults = defaults ?? Complete(null),
+        factory = Complete(null),
     };
 }
 
@@ -43,6 +45,9 @@ public static class Products
         new Product(TurbineParams.Code, "Gas turbine",
             "Simplified industrial gas turbine: inlet, compressor with rings, combustor with a ring of cans, turbine, exhaust, enclosure and skid.", 1,
             TurbineParams.All, TurbineParams.Complete, TurbineParams.Validate, ScriptFile: "turbine.gea"),
+        new Product(GeneratorParams.Code, "Water-cooled generator",
+            "Simplified large water-cooled synchronous generator: box stator frame with side ribs, water cooler with pipes under the frame, top box with fans, bearing housings, rotor shaft, exciter cabinet and base frame.", 1,
+            GeneratorParams.All, GeneratorParams.Complete, GeneratorParams.Validate, ScriptFile: "generator.gea"),
     };
 
     public static Product? Find(string? code) =>

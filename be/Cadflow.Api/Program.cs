@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.RegularExpressions;
 using Cadflow.Api;
 using InventorAddin.Gea;
@@ -14,6 +14,7 @@ var frontendDir = Path.GetFullPath(builder.Configuration["Frontend:Path"] ?? Pat
 
 builder.Services.AddSingleton(new JobStore(dataDir));
 builder.Services.AddSingleton(new ScriptStore(dataDir));
+builder.Services.AddSingleton(new ConfigStore(dataDir));
 builder.Services.AddSingleton(new R2Store(builder.Configuration.GetSection("R2").Get<R2Options>() ?? new R2Options()));
 builder.Services.AddHostedService<StaleJobReaper>();
 builder.Services.AddHostedService<RetentionService>();
@@ -37,6 +38,7 @@ else
 
 var store = app.Services.GetRequiredService<JobStore>();
 var scripts = app.Services.GetRequiredService<ScriptStore>();
+var configs = app.Services.GetRequiredService<ConfigStore>();
 var r2 = app.Services.GetRequiredService<R2Store>();
 app.Logger.LogInformation("Artifact storage: {Mode}", r2.IsConfigured ? "Cloudflare R2" : "local disk (R2 not configured)");
 var safeName = new Regex(@"^[A-Za-z0-9][A-Za-z0-9._\- ]{0,119}$", RegexOptions.Compiled);
@@ -46,17 +48,46 @@ const string ImportedProduct = "imported"; // mã sản phẩm của job đặt 
 
 app.MapGet("/api/products", () => Products.All.Select(p => new { code = p.Code, name = p.Name, description = p.Description, version = p.Version }));
 
-app.MapGet("/api/products/{code}", (string code) =>
-    Products.Find(code) is { } p ? Results.Ok(p.Schema()) : Results.NotFound(new { error = $"Unknown product '{code}'." }));
+// `defaults` = giá trị của Configuration mặc định (hoặc ?config=<id>); `factory` = mặc định gốc trong code.
+app.MapGet("/api/products/{code}", (string code, string? config) =>
+{
+    if (Products.Find(code) is not { } p) return Results.NotFound(new { error = $"Unknown product '{code}'." });
+    var cfg = string.IsNullOrWhiteSpace(config) ? null : configs.Get(p, config);
+    if (!string.IsNullOrWhiteSpace(config) && cfg == null) return Results.NotFound(new { error = "Unknown configuration." });
+    return Results.Ok(p.Schema(configs.Effective(p, null, cfg)));
+});
 
 app.MapPost("/api/products/{code}/validate", (string code, ValidateRequest req) =>
 {
     if (Products.Find(code) is not { } product) return Results.NotFound(new { error = $"Unknown product '{code}'." });
-    var values = product.Complete(req.Values);
+    var values = configs.Effective(product, req.Values, null);
     var issues = product.Validate(values);
     return Results.Ok(new { valid = issues.Count == 0, values, issues });
 });
 
+// ================================================================= Configuration theo sản phẩm (tab Config)
+// Mỗi sản phẩm có nhiều Configuration (tên, trạng thái, Operation, CAD design condition, giá trị component).
+// Đơn đặt hàng chọn một Configuration (configId) hoặc dùng cái mặc định.
+
+app.MapGet("/api/config-schema", () => new { statuses = ConfigSchema.Statuses, groups = ConfigSchema.Groups });
+
+app.MapGet("/api/products/{code}/configs", (string code) =>
+    Products.Find(code) is { } p ? Results.Ok(configs.List(p).OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)) : Results.NotFound(new { error = $"Unknown product '{code}'." }));
+
+IResult ConfigResult((ProductConfig? Config, string? Error, bool NotFound) r, bool created = false) =>
+    r.NotFound ? Results.NotFound(new { error = r.Error })
+    : r.Error != null ? Results.BadRequest(new { error = r.Error })
+    : created ? Results.Created($"/api/configs/{r.Config!.Id}", r.Config) : Results.Ok(r.Config);
+
+app.MapPost("/api/products/{code}/configs", (string code, ConfigRequest req) =>
+    Products.Find(code) is { } p ? ConfigResult(configs.Save(p, null, req), created: true) : Results.NotFound(new { error = $"Unknown product '{code}'." }));
+
+app.MapPut("/api/products/{code}/configs/{id}", (string code, string id, ConfigRequest req) =>
+    Products.Find(code) is { } p ? ConfigResult(configs.Save(p, id, req)) : Results.NotFound(new { error = $"Unknown product '{code}'." }));
+
+app.MapDelete("/api/products/{code}/configs/{id}", (string code, string id) =>
+    Products.Find(code) is not { } p ? Results.NotFound(new { error = $"Unknown product '{code}'." })
+    : configs.Delete(p, id) ? Results.NoContent() : Results.NotFound(new { error = "Unknown configuration." }));
 // ================================================================= script .gea (import)
 // Import: nhận nội dung file .gea (có thể kèm khối giá trị !@ do CADFlow export), biên dịch, lưu theo mã băm và trả form.
 // Form của script có thể ẩn/hiện ô theo giá trị, nên giao diện gọi lại /form mỗi khi giá trị đổi.
@@ -137,7 +168,14 @@ app.MapPost("/api/jobs", (CreateJobRequest req) =>
     if (product == null) return Results.NotFound(new { error = $"Unknown product '{req.ProductCode}'." });
 
     // Server luôn kiểm tra lại lần cuối (là bản chuẩn), không tin form ở trình duyệt.
-    var values = product.Complete(req.Inputs);
+    ProductConfig? chosen = null;
+    if (!string.IsNullOrWhiteSpace(req.ConfigId))
+    {
+        chosen = configs.Get(product, req.ConfigId);
+        if (chosen == null) return Results.NotFound(new { error = "Unknown configuration." });
+        if (chosen.Status != "active") return Results.BadRequest(new { error = $"Configuration '{chosen.Name}' is {chosen.Status}; only active configurations can be ordered." });
+    }
+    var values = configs.Effective(product, req.Inputs, chosen); // thông số đơn không nêu thì lấy từ Configuration đã chọn (hoặc mặc định)
     var issues = product.Validate(values);
     if (issues.Count > 0)
         return Results.BadRequest(new { error = "The order violates product rules.", issues });
@@ -287,7 +325,7 @@ worker.MapPost("/heartbeat", (WorkerHello hello) =>
 worker.MapPost("/claim", (ClaimRequest req) =>
 {
     if (string.IsNullOrWhiteSpace(req.Worker)) return Results.BadRequest(new { error = "worker is required." });
-    if (store.Claim(req.Worker!) is not { } item) return Results.NoContent();
+    if (store.Claim(req.Worker!, req.Products) is not { } item) return Results.NoContent();
     // Kèm đúng bản script đã ghi cho job (bản đi kèm sản phẩm hoặc bản người dùng import).
     var scriptJob = store.Get(item.Id);
     return Results.Ok(scriptJob?.ScriptSha256 != null && scripts.Get(scriptJob.ScriptSha256) is { } text
@@ -367,3 +405,4 @@ static string ContentTypeFor(string name) => Path.GetExtension(name).ToLowerInva
     ".gea" => "text/plain; charset=utf-8",
     _ => "application/octet-stream", // .stp/.step/.ipt/.idw...
 };
+

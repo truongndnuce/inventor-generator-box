@@ -1,28 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
-import { Box, Button, Card, Flex, Heading, Select, Separator, Slider, Text, TextField } from '@radix-ui/themes';
+﻿import { useEffect, useRef, useState } from 'react';
+import { Box, Button, Card, Flex, Heading, Select, Separator, Text, TextField } from '@radix-ui/themes';
 import { api, go, postJson } from '../lib.js';
-import { ImportGeaButton, Notice } from '../components.jsx';
+import { Hero, ImportGeaButton, Notice, ParamField } from '../components.jsx';
 
-/** Một thông số: ô số + thanh trượt đồng bộ với nhau; ô đỏ khi vi phạm luật (do server báo). */
-function ParamField({ p, value, invalid, onChange }) {
-  const step = p.integer || p.max - p.min > 50 ? 1 : 0.1;
-  return (
-    <div className="field">
-      <Text as="label" htmlFor={p.name} size="2" weight="medium">{p.label}</Text>
-      <TextField.Root
-        id={p.name} type="number" size="2" min={p.min} max={p.max} step={p.integer ? 1 : 'any'}
-        value={value} color={invalid ? 'red' : undefined} variant={invalid ? 'soft' : 'surface'}
-        onChange={(e) => e.target.value !== '' && onChange(Number(e.target.value))}
-      />
-      <Slider className="slider" size="1" min={p.min} max={p.max} step={step} value={[Math.min(p.max, Math.max(p.min, value))]}
-        color={invalid ? 'red' : undefined} onValueChange={([v]) => onChange(v)} aria-label={p.label} />
-      <span className="range">{`${p.min}-${p.max} ${p.unit}`.trim()}</span>
-    </div>
-  );
-}
-
-export default function NewOrder({ code }) {
+export default function NewOrder({ code, configId }) {
   const [products, setProducts] = useState(null);
+  const [configs, setConfigs] = useState([]); // các Configuration đang active của sản phẩm
+  const [cfgId, setCfgId] = useState('');
   const [schema, setSchema] = useState(null);
   const [values, setValues] = useState({});
   const [issues, setIssues] = useState([]);
@@ -40,8 +24,12 @@ export default function NewOrder({ code }) {
       try {
         const list = await api('/api/products');
         const product = list.find((p) => p.code === code) || list[0];
-        const s = await api(`/api/products/${product.code}`);
+        // Configuration: cái được chọn trên URL (nếu còn active), không thì cái mặc định của sản phẩm.
+        const all = (await api(`/api/products/${product.code}/configs`)).filter((c) => c.status === 'active');
+        const chosen = all.find((c) => c.id === configId) || all.find((c) => c.isDefault) || null;
+        const s = await api(`/api/products/${product.code}${chosen ? `?config=${chosen.id}` : ''}`);
         if (!alive) return;
+        setConfigs(all); setCfgId(chosen ? chosen.id : '');
         const v = { ...s.defaults };
         // "Edit and resubmit" từ một job: nạp lại đầu vào cũ (chỉ lấy khóa có trong schema).
         const retry = sessionStorage.getItem('cadflow.retry');
@@ -55,7 +43,7 @@ export default function NewOrder({ code }) {
       } catch (e) { if (alive) setNote(e.message); }
     })();
     return () => { alive = false; };
-  }, [code]);
+  }, [code, configId]);
 
   // Kiểm tra luật ở server sau mỗi lần sửa (đợi 250 ms cho gõ xong).
   useEffect(() => {
@@ -80,7 +68,7 @@ export default function NewOrder({ code }) {
     setBusy(true);
     try {
       localStorage.setItem('cadflow.user', who);
-      const job = await postJson('/api/jobs', { productCode: schema.code, inputs: values, requestedBy: who });
+      const job = await postJson('/api/jobs', { productCode: schema.code, inputs: values, requestedBy: who, configId: cfgId || undefined });
       go(`#/jobs/${job.id}`);
     } catch (e) {
       setNote('Order rejected: ' + (e.body?.issues?.[0]?.message || e.message));
@@ -89,6 +77,8 @@ export default function NewOrder({ code }) {
   };
 
   return (
+    <>
+    <Hero product={schema.code} eyebrow="New order" title={schema.name} text={schema.description} />
     <Card size="3">
       <Flex direction="column" gap="4">
         <Flex align="center" gap="3" wrap="wrap">
@@ -99,13 +89,19 @@ export default function NewOrder({ code }) {
               {products.map((p) => <Select.Item key={p.code} value={p.code}>{p.name}</Select.Item>)}
             </Select.Content>
           </Select.Root>
+          <Text size="2" color="gray" ml="3">Configuration</Text>
+          <Select.Root value={cfgId || undefined} onValueChange={(v) => go(`#/new/${schema.code}?config=${v}`)}>
+            <Select.Trigger aria-label="Configuration" placeholder="Factory defaults" style={{ minWidth: 200 }} />
+            <Select.Content>
+              {configs.map((c) => <Select.Item key={c.id} value={c.id}>{c.name}{c.isDefault ? ' (default)' : ''}</Select.Item>)}
+            </Select.Content>
+          </Select.Root>
           <ImportGeaButton onError={setNote} />
         </Flex>
 
         <Box>
-          <Heading size="5">{schema.name}</Heading>
-          <Text as="p" size="2" color="gray" mt="1">
-            {schema.description} Rules are checked by the server; the same rules run again when the worker builds.
+          <Text as="p" size="2" color="gray">
+            Starting values come from the chosen configuration (see <a href={`#/config/${schema.code}`}>Config</a>). Rules are checked by the server; the same rules run again when the worker builds.
           </Text>
         </Box>
 
@@ -134,5 +130,10 @@ export default function NewOrder({ code }) {
         </Flex>
       </Flex>
     </Card>
+    </>
   );
 }
+
+
+
+

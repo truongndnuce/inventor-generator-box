@@ -1,6 +1,44 @@
-import { useRef } from 'react';
-import { Badge, Button, Callout, Flex, Text } from '@radix-ui/themes';
+﻿import { useRef } from 'react';
+import { Badge, Button, Callout, Flex, Slider, Text, TextField } from '@radix-ui/themes';
 import { API, STATUS_COLOR, go, postJson, reorder } from './lib.js';
+
+/** Dải tiêu đề trang: nền đen với ảnh sản phẩm (public/hero.jpg) mờ dần về bên trái. */
+const HERO_IMAGES = { 'gas-turbine': '/hero-turbine.jpg', generator: '/hero-generator.png', transformer: '/hero-transformer.png' };
+
+export function Hero({ product, eyebrow, title, text, children }) {
+  const img = HERO_IMAGES[product];
+  return (
+    <section className={`hero${img && img.endsWith('.png') ? ' cutout' : ''}${product === 'generator' ? ' wide' : ''}`} style={img ? { backgroundImage: `url('${img}')` } : { backgroundImage: 'none' }}>
+      <div className="hero-copy">
+        <span className="eyebrow">{eyebrow}</span>
+        <h1>{title}</h1>
+        {text && <p>{text}</p>}
+        {children}
+      </div>
+    </section>
+  );
+}
+
+/** Một thông số: ô số + thanh trượt đồng bộ với nhau; ô đỏ khi vi phạm luật (do server báo). `note` hiện dưới nhãn (vd. đã đổi so với gốc). */
+export function ParamField({ p, value, invalid, onChange, note }) {
+  const step = p.integer || p.max - p.min > 50 ? 1 : 0.1;
+  return (
+    <div className="field">
+      <Text as="label" htmlFor={p.name} size="2" weight="medium">
+        {p.label}
+        {note && <Text as="div" size="1" color="gray">{note}</Text>}
+      </Text>
+      <TextField.Root
+        id={p.name} type="number" size="2" min={p.min} max={p.max} step={p.integer ? 1 : 'any'}
+        value={value} color={invalid ? 'red' : undefined} variant={invalid ? 'soft' : 'surface'}
+        onChange={(e) => e.target.value !== '' && onChange(Number(e.target.value))}
+      />
+      <Slider className="slider" size="1" min={p.min} max={p.max} step={step} value={[Math.min(p.max, Math.max(p.min, value))]}
+        color={invalid ? 'red' : undefined} onValueChange={([v]) => onChange(v)} aria-label={p.label} />
+      <span className="range">{`${p.min}-${p.max} ${p.unit}`.trim()}</span>
+    </div>
+  );
+}
 
 export function StatusBadge({ status }) {
   return <Badge color={STATUS_COLOR[status] || 'gray'} variant="soft" radius="full">{status}</Badge>;
@@ -65,3 +103,5 @@ export function ImportGeaButton({ onError }) {
     </Flex>
   );
 }
+
+

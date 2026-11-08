@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { Theme, Flex, Box, Text, Badge, Container, IconButton, Tooltip } from '@radix-ui/themes';
 import { api, useHash, usePolling } from './lib.js';
 import NewOrder from './pages/NewOrder.jsx';
@@ -6,11 +6,13 @@ import ScriptOrder from './pages/ScriptOrder.jsx';
 import Orders from './pages/Orders.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Job from './pages/Job.jsx';
+import Config from './pages/Config.jsx';
 
 const NAV = [
   { key: 'configurator', href: '#/', label: 'New order' },
   { key: 'orders', href: '#/orders', label: 'Ordered' },
   { key: 'dashboard', href: '#/dashboard', label: 'Dashboard' },
+  { key: 'config', href: '#/config', label: 'Config' },
 ];
 
 function WorkerPill() {
@@ -31,22 +33,27 @@ function WorkerPill() {
 export default function App() {
   const hash = useHash();
   const [dark, setDark] = useState(() => {
-    try { return localStorage.getItem('cadflow.theme') === 'dark'; } catch { return false; }
+    try { return localStorage.getItem('cadflow.theme') !== 'light'; } catch { return true; } // giao diện tối là mặc định
   });
   // Trang job tự đặt mục nav theo trạng thái job (qua onNav): đang chờ/chạy thuộc Ordered, đã xong thuộc Dashboard.
   const [jobNav, setJobNav] = useState('orders');
 
   const active = hash.startsWith('#/orders') ? 'orders'
     : hash.startsWith('#/dashboard') ? 'dashboard'
+    : hash.startsWith('#/config') ? 'config'
     : hash.startsWith('#/jobs') ? jobNav
     : 'configurator';
 
   let page;
   if (hash.startsWith('#/jobs/')) page = <Job key={hash} id={decodeURIComponent(hash.slice(7))} onNav={setJobNav} />;
   else if (hash.startsWith('#/import/')) page = <ScriptOrder key={hash} scriptId={decodeURIComponent(hash.slice(9))} />;
+  else if (hash.startsWith('#/config')) page = <Config key={hash} code={hash.startsWith('#/config/') ? decodeURIComponent(hash.slice(9).split('?')[0]) : undefined} />;
   else if (hash.startsWith('#/orders')) page = <Orders />;
   else if (hash.startsWith('#/dashboard')) page = <Dashboard />;
-  else page = <NewOrder key={hash} code={hash.startsWith('#/new/') ? decodeURIComponent(hash.slice(6)) : undefined} />;
+  else {
+    const [path, query] = hash.split('?');
+    page = <NewOrder key={hash} code={path.startsWith('#/new/') ? decodeURIComponent(path.slice(6)) : undefined} configId={new URLSearchParams(query || '').get('config') || undefined} />;
+  }
 
   const toggle = () => {
     setDark((d) => {
@@ -88,3 +95,4 @@ export default function App() {
     </Theme>
   );
 }
+

@@ -20,10 +20,13 @@ public sealed class ServerClient : IDisposable
     // HttpClient riêng cho R2: không mang X-Worker-Key sang máy chủ khác.
     private readonly HttpClient _r2Http = new() { Timeout = TimeSpan.FromMinutes(10) };
     private readonly string _worker;
+    private readonly string[]? _products;
 
-    public ServerClient(WorkerSettings settings)
+    /// <param name="products">Mã sản phẩm worker này nhận; null = nhận mọi sản phẩm.</param>
+    public ServerClient(WorkerSettings settings, string[]? products = null)
     {
         _worker = settings.WorkerName;
+        _products = products;
         _http = new HttpClient { BaseAddress = new Uri(settings.ServerUrl.TrimEnd('/') + "/"), Timeout = TimeSpan.FromMinutes(5) };
         _http.DefaultRequestHeaders.Add("X-Worker-Key", settings.WorkerKey);
     }
@@ -38,7 +41,7 @@ public sealed class ServerClient : IDisposable
     /// <summary>Nhận job tiếp theo, null nếu hàng đợi trống.</summary>
     public async Task<WorkItem?> ClaimAsync(CancellationToken ct)
     {
-        using var res = await _http.PostAsJsonAsync("api/worker/claim", new { worker = _worker }, ct);
+        using var res = await _http.PostAsJsonAsync("api/worker/claim", new { worker = _worker, products = _products }, ct);
         if (res.StatusCode == HttpStatusCode.NoContent) return null;
         res.EnsureSuccessStatusCode();
         return await res.Content.ReadFromJsonAsync<WorkItem>(cancellationToken: ct);

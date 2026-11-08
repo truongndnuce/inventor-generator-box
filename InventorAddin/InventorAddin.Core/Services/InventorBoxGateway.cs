@@ -10,8 +10,10 @@ namespace InventorAddin.Services;
 /// Lớp duy nhất gọi Inventor API. Đơn vị nội bộ của API là cm: mọi chuyển đổi mm↔cm nằm ở <see cref="MmToCm"/>/<see cref="CmToMm"/>.
 /// Mọi thao tác ghi gói trong một Transaction để Ctrl+Z hoàn tác trọn vẹn.
 /// </summary>
-internal sealed class InventorBoxGateway : IBoxGateway
+public sealed class InventorBoxGateway : IBoxGateway
 {
+    public const int SchemaVersion = 1; // đánh dấu phiên bản cấu trúc dữ liệu Box ghi vào Part
+
     private const string MarkerSetName = "BX_Box";
 
     private readonly Inv.Application _app;
@@ -119,7 +121,7 @@ internal sealed class InventorBoxGateway : IBoxGateway
         {
             new BoxBuilder(_app, part, values).Build();
             var set = part.AttributeSets.Add(MarkerSetName, false);
-            set.Add("Schema", Inv.ValueTypeEnum.kIntegerType, PresetStore.SchemaVersion);
+            set.Add("Schema", Inv.ValueTypeEnum.kIntegerType, SchemaVersion);
         }, "Box created.");
     }
 
@@ -153,3 +155,4 @@ internal sealed class InventorBoxGateway : IBoxGateway
     internal OperationResult RunInTransaction(Inv.PartDocument part, string name, Action work, string okMessage) =>
         InventorTransactions.Run(_app, part, name, work, okMessage);
 }
+

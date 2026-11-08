@@ -196,7 +196,8 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
     private string? _lastDocKey;
     private ScriptTemplate? _selectedTemplate;
 
-    public ScriptViewModel(IScriptGateway gateway, IDialogService dialogs)
+    /// <param name="templateFilter">Chỉ liệt kê các mẫu có tên file thỏa điều kiện (mỗi add-in sản phẩm chỉ hiện mẫu của mình); null = tất cả.</param>
+    public ScriptViewModel(IScriptGateway gateway, IDialogService dialogs, Func<string, bool>? templateFilter = null)
     {
         _gateway = gateway;
         _dialogs = dialogs;
@@ -206,7 +207,9 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
         _compileTimer.Stop();
         _fileTimer.Stop();
 
-        Templates = new ObservableCollection<ScriptTemplate>(GeaScriptLibrary.BundledScripts().Select(p => new ScriptTemplate(p)));
+        Templates = new ObservableCollection<ScriptTemplate>(GeaScriptLibrary.BundledScripts()
+            .Where(p => templateFilter == null || templateFilter(Path.GetFileName(p)))
+            .Select(p => new ScriptTemplate(p)));
         _selectedTemplate = Templates.FirstOrDefault();
 
         OpenCommand = new RelayCommand(Open);
@@ -329,6 +332,13 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
         }
         EvaluateForm();
         SetStatus($"Opened {Path.GetFileName(path)}; loaded {applied} value(s) from the web export.", false);
+    }
+
+    /// <summary>Lần đầu mở cửa sổ của add-in sản phẩm: nếu chưa có script nào thì mở sẵn mẫu của sản phẩm để form hiện ngay.</summary>
+    public void OpenDefaultTemplateIfEmpty()
+    {
+        if (_scriptPath != null || _scriptText.Length > 0 || SelectedTemplate == null) return;
+        OpenTemplate();
     }
 
     private void OpenTemplate()

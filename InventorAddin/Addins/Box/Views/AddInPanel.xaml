@@ -48,9 +48,7 @@
         </DataTemplate>
     </UserControl.Resources>
 
-    <TabControl Padding="0" BorderThickness="0">
-    <!-- Tab 1: hộp viết cứng (BoxParams). Tab 2: dựng theo script .gea kiểu SmartAssembly. -->
-    <TabItem Header="Box">
+    <!-- Hộp viết cứng (BoxParams). Dựng theo script .gea nằm ở add-in Transformer / Gas turbine / Generator. -->
     <Grid Margin="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -128,9 +126,4 @@
                        Foreground="#9CA3AF" FontSize="10" TextWrapping="Wrap" Margin="0,4,0,0" />
         </StackPanel>
     </Grid>
-    </TabItem>
-    <TabItem Header="Script (.gea)">
-        <views:ScriptPanel x:Name="ScriptView" />
-    </TabItem>
-    </TabControl>
 </UserControl>

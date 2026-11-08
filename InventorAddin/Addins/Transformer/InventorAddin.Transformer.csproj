@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <AssemblyName>InventorAddin.Transformer</AssemblyName>
+        <AddinClassId>09177B53-BF27-477D-9A23-1B6C76E97E5F</AddinClassId>
+        <AddinDisplayName>Cadflow Transformer</AddinDisplayName>
+        <AddinDescription>Build a power transformer (tank, radiators, conservator, bushings) from .gea scripts.</AddinDescription>
+        <AddinFileName>InventorTransformerAddin.addin</AddinFileName>
+    </PropertyGroup>
+
+    <Import Project="..\..\Addin.targets" />
+
+</Project>
