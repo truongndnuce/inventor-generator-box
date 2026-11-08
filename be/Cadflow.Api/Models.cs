@@ -27,6 +27,8 @@ public sealed class ArtifactInfo
     public string Name { get; set; } = "";
     public string Kind { get; set; } = "";
     public long Size { get; set; }
+    /// <summary>Khóa object trong bucket R2 (<c>jobs/&lt;jobId&gt;/&lt;name&gt;</c>). Null nghĩa là file nằm trên đĩa của server (job cũ hoặc chưa cấu hình R2).</summary>
+    public string? Key { get; set; }
 }
 
 public sealed class Job
@@ -35,6 +37,8 @@ public sealed class Job
     public string ProductCode { get; set; } = "";
     public int ProductVersion { get; set; } = 1;
     public Dictionary<string, double> Inputs { get; set; } = new();
+    /// <summary>Giá trị chữ của ô text/radio (chỉ có ở job dựng từ script .gea có loại ô này).</summary>
+    public Dictionary<string, string> TextInputs { get; set; } = new();
     public string RequestedBy { get; set; } = "";
     public JobStatus Status { get; set; } = JobStatus.Queued;
     public string? Step { get; set; }
@@ -46,7 +50,14 @@ public sealed class Job
     public int Attempts { get; set; }
     public Dictionary<string, double> Summary { get; set; } = new();
     public string? Error { get; set; }
+    /// <summary>Script .gea dùng để dựng job (null nếu sản phẩm dựng không qua .gea). Nội dung nằm trong <see cref="ScriptStore"/>, khóa theo SHA-256.</summary>
+    public string? ScriptName { get; set; }
+    public string? ScriptSha256 { get; set; }
+    /// <summary>"bundled" (script đi kèm sản phẩm) hoặc "imported" (người dùng import file .gea). Null nếu không dùng script.</summary>
+    public string? ScriptSource { get; set; }
     public List<ArtifactInfo> Artifacts { get; set; } = new();
+    /// <summary>Thời điểm file kết quả bị xóa theo chính sách lưu giữ (Retention:Days). Job vẫn còn để thống kê và nhân bản đơn.</summary>
+    public DateTimeOffset? ArtifactsPurgedAt { get; set; }
     public List<JobEvent> Events { get; set; } = new();
 }
 
@@ -62,7 +73,12 @@ public sealed class WorkerInfo
 
 // ---- request/response contracts
 
-public sealed record CreateJobRequest(string? ProductCode, Dictionary<string, double>? Inputs, string? RequestedBy);
+/// <summary><paramref name="ScriptId"/>: đặt hàng từ script .gea đã import (xem POST /api/gea/import); khi có thì bỏ qua ProductCode.</summary>
+public sealed record CreateJobRequest(string? ProductCode, Dictionary<string, double>? Inputs, string? RequestedBy, string? ScriptId = null, Dictionary<string, string>? TextInputs = null);
+
+public sealed record GeaTextRequest(string? Text);
+
+public sealed record GeaFormRequest(Dictionary<string, double>? Values, Dictionary<string, string>? Texts = null);
 
 public sealed record ValidateRequest(Dictionary<string, double>? Values);
 
@@ -77,4 +93,4 @@ public sealed record CompleteRequest(Dictionary<string, double>? Summary);
 public sealed record FailRequest(string? Error, bool Retryable);
 
 /// <summary>Phần job gửi xuống worker: chỉ những gì worker cần để dựng.</summary>
-public sealed record WorkItem(string Id, string ProductCode, int ProductVersion, Dictionary<string, double> Inputs);
+public sealed record WorkItem(string Id, string ProductCode, int ProductVersion, Dictionary<string, double> Inputs, string? ScriptText = null, string? ScriptName = null, Dictionary<string, string>? TextInputs = null);

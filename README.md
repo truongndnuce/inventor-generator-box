@@ -33,11 +33,13 @@ Dùng trong add-in, tab **Script (.gea)**:
 4. **Apply**: lưu script, rồi trong **một Transaction** xóa mọi body/feature/sketch/work plane do script tạo lần trước, đồng bộ thông số thành User Parameter, chạy lại `BEGIN_BUILD`. Lỗi ở bất kỳ bước nào thì model giữ nguyên; Ctrl+Z hoàn tác cả lần Apply. Hình học người dùng tự vẽ (không mang dấu `GEA_Owner`) được giữ.
 5. Script và giá trị được lưu trong Part (AttributeSet `GEA_Script`): mở lại `.ipt` là add-in nạp lại script để sửa tiếp (**Load from model**).
 
-Builder có sẵn cho `CREATE_FEATURE builder:<Tên>`: `Tank`, `Cover`, `Block`, `Cylinder`, `Bushing`, `Radiator` (manifest ở `Gea/GeaManifests.cs`). Web worker dựng máy biến áp bằng `Scripts/transformer.gea`, nên file `.ipt` trả về cũng mở và sửa được bằng tab Script.
+Builder có sẵn cho `CREATE_FEATURE builder:<Tên>`: `Tank`, `Cover`, `Block`, `Cylinder`, `Bushing`, `Radiator` (manifest ở `Gea/GeaManifests.cs`). Web worker dựng máy biến áp bằng `Scripts/transformer.gea` và hộp bằng `Scripts/box.gea`, nên file `.ipt` trả về cũng mở và sửa được bằng tab Script. Trên web, mỗi job dựng bằng script có nút **Export .gea** (script + giá trị đã đặt) và **Import .gea** ở trang New order dựng lại form từ file đó (xem `docs/r2-dashboard-gea-roundtrip-plan.md` và `sa-docs/gea-language-spec.md` mục 19).
 
 ## Cấu hình
 
 - **Add-in**: `%AppData%\InventorBoxAddin\worker.json` (tự tạo lần đầu): `enabled`, `serverUrl`, `workerKey`, `workerName`, `pollSeconds`. Log ở `%AppData%\InventorBoxAddin\logs`.
+- **R2 (tùy chọn)**: `dotnet user-secrets set "R2:AccountId" ... --project be/Cadflow.Api` cho `R2:AccountId`, `R2:Bucket`, `R2:AccessKeyId`, `R2:SecretAccessKey` (hoặc biến môi trường `R2__AccountId`...; thêm `R2:Endpoint` nếu dùng jurisdiction EU). Có đủ thì worker tải kết quả thẳng lên bucket R2 (private) và web tải qua URL ký sẵn; không có thì lưu ở `data/artifacts` như cũ. Log khởi động ghi chế độ đang dùng.
+- **Lưu giữ file**: `Retention:Days` (mặc định 0 = giữ mãi) xóa file kết quả của job đã xong quá số ngày đó; thông tin job vẫn còn.
 - **Server**: `be/Cadflow.Api/appsettings.json`: `Urls`, `Worker:Key`. **Đổi `Worker:Key` mặc định `dev-worker-key` trước khi mở ra ngoài localhost.**
 - Muốn Inventor ở máy khác: đặt `Urls` thành `http://0.0.0.0:18080` và `serverUrl` của add-in trỏ tới máy chủ (nên đặt sau VPN/mạng riêng, xem mục 10 của kế hoạch).
 

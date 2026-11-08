@@ -88,6 +88,32 @@ public sealed class GeaScript
 
     public GeaFormResult EvaluateForm(IReadOnlyDictionary<string, object?>? inputs) => new GeaInterpreter(this).EvaluateForm(inputs);
 
+    /// <summary>
+    /// Tính FORM với giá trị số do web gửi (đơn vị hiển thị của từng ô; ô tích là 1/0). Tên không có trong FORM bị bỏ qua.
+    /// </summary>
+    public GeaFormResult EvaluateFormNumbers(IReadOnlyDictionary<string, double>? values) => EvaluateFormValues(values, null);
+
+    /// <summary>Như <see cref="EvaluateFormNumbers"/>, thêm giá trị chữ cho ô text và ô chọn một (radio).</summary>
+    public GeaFormResult EvaluateFormValues(IReadOnlyDictionary<string, double>? numbers, IReadOnlyDictionary<string, string>? texts)
+    {
+        var inputs = new Dictionary<string, object?>(StringComparer.Ordinal);
+        if (numbers != null || texts != null)
+        {
+            var kinds = EvaluateForm(null).Fields.ToDictionary(f => f.Name, f => f.Kind, StringComparer.Ordinal);
+            if (numbers != null)
+                foreach (var (name, v) in numbers)
+                {
+                    if (!kinds.TryGetValue(name, out var kind) || kind is GeaFieldKind.Text or GeaFieldKind.Radio) continue;
+                    inputs[name] = kind == GeaFieldKind.Checkbox ? v != 0 : v;
+                }
+            if (texts != null)
+                foreach (var (name, s) in texts)
+                    if (kinds.TryGetValue(name, out var kind) && kind is GeaFieldKind.Text or GeaFieldKind.Radio)
+                        inputs[name] = s;
+        }
+        return EvaluateForm(inputs);
+    }
+
     public GeaRunResult RunBuild(GeaFormResult form, IGeaHost host) => new GeaInterpreter(this).RunBuild(form, host);
 }
 
@@ -97,7 +123,11 @@ public sealed class GeaScript
 public sealed class GeaInterpreter
 {
     public const int MaxIterations = 10000;
+    /// <summary>Tổng số lệnh thực thi tối đa trong một lần chạy FORM hoặc BUILD. Chặn vòng FOR lồng nhau chạy quá lâu (script do người dùng gửi lên).</summary>
+    public const int MaxSteps = 1_000_000;
     private const string FailCode = "GEA4000";
+
+    private int _steps;
 
     private enum Flow { Normal, Break, Continue, Return }
 
@@ -332,6 +362,8 @@ public sealed class GeaInterpreter
         foreach (var s in stmts)
         {
             _run?.ExecutedLines.Add(s.Line);
+            if (++_steps > MaxSteps)
+                throw new GeaRuntimeException("GEA5001", $"Script vượt quá {MaxSteps} lệnh thực thi.", s.Line, s.Col);
             Flow flow;
             try
             {

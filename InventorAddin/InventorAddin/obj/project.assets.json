@@ -8,19 +8,19 @@
     "net10.0-windows": []
   },
   "packageFolders": {
-    "C:\\Users\\Administrator\\.nuget\\packages\\": {}
+    "C:\\Users\\Admin\\.nuget\\packages\\": {}
   },
   "project": {
     "version": "0.1.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\Administrator\\Documents\\GitHub\\inventor-generator-box\\InventorAddin\\InventorAddin\\InventorAddin.csproj",
+      "projectUniqueName": "C:\\Users\\Admin\\Documents\\GitHub\\inventor-generator-box\\InventorAddin\\InventorAddin\\InventorAddin.csproj",
       "projectName": "InventorAddin",
-      "projectPath": "C:\\Users\\Administrator\\Documents\\GitHub\\inventor-generator-box\\InventorAddin\\InventorAddin\\InventorAddin.csproj",
-      "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\Administrator\\Documents\\GitHub\\inventor-generator-box\\InventorAddin\\InventorAddin\\obj\\",
+      "projectPath": "C:\\Users\\Admin\\Documents\\GitHub\\inventor-generator-box\\InventorAddin\\InventorAddin\\InventorAddin.csproj",
+      "packagesPath": "C:\\Users\\Admin\\.nuget\\packages\\",
+      "outputPath": "C:\\Users\\Admin\\Documents\\GitHub\\inventor-generator-box\\InventorAddin\\InventorAddin\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
-        "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        "C:\\Users\\Admin\\AppData\\Roaming\\NuGet\\NuGet.Config"
       ],
       "originalTargetFrameworks": [
         "net10.0-windows"
@@ -70,7 +70,7 @@
             "privateAssets": "none"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\dn10\\sdk\\10.0.403/PortableRuntimeIdentifierGraph.json",
+        "runtimeIdentifierGraphPath": "C:\\Users\\Admin\\AppData\\Local\\Temp\\claude\\5b52259e0e58b63d\\f3224b92-0332-4fde-aa0f-42ed17fedfe9\\scratchpad\\sdk\\sdk\\10.0.403/PortableRuntimeIdentifierGraph.json",
         "packagesToPrune": {
           "Microsoft.CSharp": "(,4.7.32767]",
           "Microsoft.VisualBasic": "(,10.4.32767]",

@@ -8,7 +8,7 @@ using Inv = Inventor;
 namespace InventorAddin.Services;
 
 /// <summary>Kết quả dựng bản vẽ. Dim hụt (không tìm thấy cạnh) chỉ làm giảm <see cref="Dimensions"/>, không làm hỏng bản vẽ.</summary>
-public sealed record DrawingResult(bool Ok, string Sheet, double ScaleDenominator, int Views, int Dimensions, string? Warning);
+public sealed record DrawingResult(bool Ok, string Sheet, double ScaleDenominator, int Views, int Dimensions, string? Warning, bool DwgOk = false);
 
 /// <summary>
 /// Dựng bản vẽ 2D của một Part theo quy ước bản vẽ kỹ thuật cơ khí chung (ISO 128 / ISO 129 / ISO 5455 / ISO 5457, TCVN tương đương):
@@ -20,6 +20,7 @@ public sealed record DrawingResult(bool Ok, string Sheet, double ScaleDenominato
 internal sealed class DrawingBuilder
 {
     private const string PdfTranslatorId = "{0AC6FD96-2F4D-42CE-8BE0-8AEA580399E4}";
+    private const string DwgTranslatorId = "{C24E3AC2-122E-11D5-8E91-0010B541CD80}"; // "Translator: DWG" (Inventor 2027.2), chạy được không cần tùy chọn
 
     // ISO 5457 (nằm ngang, cm) và ISO 5455 (tỉ lệ ưu tiên, từ lớn đến nhỏ).
     private static readonly (Inv.DrawingSheetSizeEnum Size, double W, double H, string Name)[] Sheets =
@@ -46,7 +47,8 @@ internal sealed class DrawingBuilder
     /// <param name="part">Part đã dựng và đã lưu, đang mở.</param>
     /// <param name="zUp">Trục đứng của mô hình là Z (hộp) hay Y (máy biến áp).</param>
     /// <param name="sectionLevelsMm">Các mức cao (mm từ đáy mô hình) để ghi chuỗi dim trên mặt cắt; rỗng thì bỏ qua.</param>
-    public DrawingResult Build(Inv.PartDocument part, bool zUp, IReadOnlyList<double> sectionLevelsMm, string pdfPath)
+    /// <param name="dwgPath">Nếu có, xuất thêm bản vẽ dạng DWG. Lỗi DWG chỉ thành cảnh báo, không làm hỏng PDF.</param>
+    public DrawingResult Build(Inv.PartDocument part, bool zUp, IReadOnlyList<double> sectionLevelsMm, string pdfPath, string? dwgPath = null)
     {
         Inv.DrawingDocument? dd = null;
         try
@@ -117,8 +119,25 @@ internal sealed class DrawingBuilder
                 dims += Guard(() => HeightChain(sheet, tg, (Inv.DrawingView)section, sectionLevelsMm, scale, FirstDimOffset), "section chain", warnings);
 
             ExportPdf(dd, pdfPath);
+
+            bool dwgOk = false;
+            if (dwgPath != null)
+            {
+                try
+                {
+                    ExportDwg(dd, dwgPath);
+                    dwgOk = File.Exists(dwgPath);
+                    if (!dwgOk) warnings.Add("DWG export produced no file");
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn("Drawing: DWG export failed: " + ex.Message);
+                    warnings.Add("DWG export failed");
+                }
+            }
+
             return new DrawingResult(File.Exists(pdfPath), sheetInfo.Name, Math.Round(1 / scale, 2), views, dims,
-                warnings.Count > 0 ? string.Join("; ", warnings) : null);
+                warnings.Count > 0 ? string.Join("; ", warnings) : null, dwgOk);
         }
         catch (Exception ex)
         {
@@ -271,9 +290,13 @@ internal sealed class DrawingBuilder
 
     // ---------------------------------------------------------------- PDF
 
-    private void ExportPdf(Inv.DrawingDocument dd, string path)
+    private void ExportPdf(Inv.DrawingDocument dd, string path) => ExportWithTranslator(dd, path, PdfTranslatorId);
+
+    private void ExportDwg(Inv.DrawingDocument dd, string path) => ExportWithTranslator(dd, path, DwgTranslatorId);
+
+    private void ExportWithTranslator(Inv.DrawingDocument dd, string path, string translatorId)
     {
-        var translator = (Inv.TranslatorAddIn)_app.ApplicationAddIns.ItemById[PdfTranslatorId];
+        var translator = (Inv.TranslatorAddIn)_app.ApplicationAddIns.ItemById[translatorId];
         if (!translator.Activated) translator.Activate();
         var context = _app.TransientObjects.CreateTranslationContext();
         context.Type = Inv.IOMechanismEnum.kFileBrowseIOMechanism;

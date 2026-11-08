@@ -93,7 +93,7 @@ Khi có tiêu chuẩn riêng của công ty (ví dụ template của GE Vernova)
 - [ ] Máy biến áp là khối đặc nên mặt cắt gạch chéo kín; chưa có vỏ rỗng/chi tiết bên trong.
 - [ ] Chưa áp dụng tiêu chuẩn nội bộ của GE Vernova (không có tài liệu); đang dùng ISO chung. Khi có template `.idw` của họ: đổi `GetTemplateFile` và các hằng số bố cục trong `DrawingBuilder`.
 - [ ] Hình iso đặt ở vị trí cố định (0.72 W, 0.3 H); chưa kiểm tra tránh chồng lên dim/mặt cắt ở mọi cỡ. Ca nhỏ nhất/lớn nhất mới kiểm tra "ra PDF", chưa xem kỹ từng bản vẽ.
-- [ ] Chưa có tuỳ chọn "Include drawing" trên form; chưa lưu `.idw` gốc (chỉ PDF); chưa xuất DWG.
+- [ ] Chưa có tuỳ chọn "Include drawing" trên form; chưa lưu `.idw` gốc (chỉ PDF); DWG đã xuất được từ 2026-11-08 (translator `{C24E3AC2-122E-11D5-8E91-0010B541CD80}`, xem `r2-dashboard-gea-roundtrip-plan.md`, mục 4).
 - [ ] Chưa kiểm thử đường lỗi (Inventor treo/hộp thoại) và nhiều worker.
 - [ ] README chưa cập nhật cho sản phẩm máy biến áp, bản vẽ và DevRunner (công cụ thử nằm ngoài repo, `%TEMP%\devrun`).
 

@@ -5,7 +5,13 @@
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <RootNamespace>Cadflow.Api</RootNamespace>
+        <!-- Khóa R2 nằm ở user-secrets của máy (ngoài repo): dotnet user-secrets set "R2:SecretAccessKey" ... -->
+        <UserSecretsId>cadflow-api-r2</UserSecretsId>
     </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="AWSSDK.S3" Version="4.0.104.3" />
+    </ItemGroup>
 
     <ItemGroup>
         <!--
@@ -14,6 +20,14 @@
         -->
         <Compile Include="..\..\InventorAddin\InventorAddin\Models\BoxParams.cs" Link="Shared\BoxParams.cs" />
         <Compile Include="..\..\InventorAddin\InventorAddin\Models\TransformerParams.cs" Link="Shared\TransformerParams.cs" />
+        <!-- Trình thông dịch .gea (không phụ thuộc Inventor): server tự biên dịch và tính FORM của script được import. -->
+        <Compile Include="..\..\InventorAddin\InventorAddin\Gea\*.cs" Link="Shared\Gea\%(Filename)%(Extension)" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <!-- Script .gea mà worker chạy: server giữ cùng một bản (để export và để ghi nhận bản đã dùng cho từng job). -->
+        <Content Include="..\..\InventorAddin\InventorAddin\Scripts\transformer.gea" Link="Scripts\transformer.gea" CopyToOutputDirectory="PreserveNewest" />
+        <Content Include="..\..\InventorAddin\InventorAddin\Scripts\box.gea" Link="Scripts\box.gea" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
 </Project>
