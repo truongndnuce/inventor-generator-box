@@ -524,3 +524,43 @@ Rủi ro chính:
 4. Làm lexer, parser và bước ngữ nghĩa (kiểu, đơn vị, khối, manifest) với bộ test file đúng và sai.
 5. Làm **thông dịch khối FORM** (hàm thuần, kết quả như mục 7.3), nối vào endpoint đánh giá form của API.
 6. Làm mô phỏng Host rồi Inventor Host cho P0, và builder `Tank`, `Cover` kèm manifest.
+
+---
+
+## 19. Giá trị đi kèm của CADFlow (export/import hai chiều)
+
+Khi web CADFlow export một đơn hàng, file `.gea` gồm **script đã chạy** và, ở cuối file, một khối **chú thích** ghi lại giá trị đã đặt. Đây không phải cú pháp mới của ngôn ngữ: mỗi dòng của khối bắt đầu bằng `!@`, mà `!` đã là chú thích (mục 2), nên lexer, parser và add-in bỏ qua. File vẫn mở và chạy được ở mọi nơi dùng được `.gea`.
+
+```
+! ---------------------------------------------------------------------------
+! CADFlow export: job AJ-20261108-112028-7e4c, product transformer
+! Ordinary .gea tools ignore the lines below; CADFlow reads them back on import.
+!@CADFLOW 1
+!@JOB AJ-20261108-112028-7e4c
+!@PRODUCT transformer 1
+!@SCRIPT_SHA256 72d2ef08...
+!@VALUE TR_TankLength 2400
+!@VALUE TR_RadiatorCount 4
+```
+
+| Dòng | Ý nghĩa |
+|------|---------|
+| `!@CADFLOW 1` | Dấu nhận biết và phiên bản của khối. Không có dòng này thì file bị coi là `.gea` thường, không có giá trị đi kèm |
+| `!@JOB <id>` | Job đã tạo file (chỉ để tham khảo) |
+| `!@PRODUCT <mã> <phiên bản>` | Sản phẩm và phiên bản của nó trên server |
+| `!@SCRIPT_SHA256 <hex>` | SHA-256 của script **không có khối này**, đã chuẩn hóa: xuống dòng LF, đúng một dấu xuống dòng ở cuối, UTF-8 không BOM. Dùng để biết giá trị có còn khớp với script không |
+| `!@VALUE <tên> <số>` | Giá trị một thông số số của FORM, số thực dấu chấm, **theo đơn vị hiển thị của ô** (đúng đơn vị khai báo trong `USER_INPUT_PARAM`, ví dụ `mm`, `deg`). `INTEGER` là số nguyên. `CHECKBOX_PARAM` dùng `1`/`0` |
+| `!@TEXT <tên> "<chuỗi>"` | Giá trị của ô `RADIOBUTTON_PARAM` hoặc ô nhập chuỗi. Chuỗi viết dạng JSON (thoát `\"`, `\\`, `\n`, `\uXXXX`) để nằm gọn trên một dòng; ký tự Unicode như tiếng Việt giữ nguyên |
+
+Quy tắc:
+- Khối luôn nằm cuối file. Export một file đã có khối thì khối cũ bị thay, không nhân đôi.
+- Import đọc `!@VALUE` làm giá trị ban đầu của form thay cho giá trị mặc định ghi trong `USER_INPUT_PARAM`. Tên không có trong FORM của script thì bỏ qua và báo; giá trị vi phạm `MIN`/`MAX`/`ASSERT` hiện thành lỗi ở form như nhập tay.
+- `SCRIPT_SHA256` không khớp (script đã bị sửa sau khi export) không phải lỗi: import vẫn chạy, kèm cảnh báo rằng giá trị có thể không còn hợp với script.
+- Mã nguồn tham chiếu: `be/Cadflow.Api/GeaExport.cs` (`Build`, `ParseBlock`, `StripBlock`).
+
+### 19.1. Chạy script được import trên web
+
+- Server biên dịch lại script và tính FORM trước khi nhận đơn (không tin trình duyệt); worker làm lại một lần nữa khi dựng.
+- Chỉ nhận `TARGET PART`, file tối đa 256 KB, tối đa 200 ô trên form.
+- Mỗi lần chạy FORM hoặc BUILD tối đa **1.000.000 lệnh** (`GeaInterpreter.MaxSteps`, mã lỗi `GEA5001`), ngoài giới hạn 10.000 vòng cho mỗi `FOR`/`WHILE`. Nhờ vậy vòng lặp lồng nhau không treo server hay worker.
+- Ngôn ngữ không có lệnh chạy chương trình ngoài hay đọc ghi file; BUILD chỉ gọi được builder trong danh mục (mục 12) trên Part mới của job.

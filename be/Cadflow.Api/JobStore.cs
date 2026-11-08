@@ -71,7 +71,7 @@ public sealed class JobStore
 
     // ---------------------------------------------------------------- người đặt hàng
 
-    public Job Create(string productCode, Dictionary<string, double> inputs, string requestedBy)
+    public Job Create(string productCode, Dictionary<string, double> inputs, string requestedBy, string? scriptName = null, string? scriptSha256 = null, string? scriptSource = null, Dictionary<string, string>? textInputs = null)
     {
         var now = DateTimeOffset.UtcNow;
         var job = new Job
@@ -79,7 +79,11 @@ public sealed class JobStore
             Id = $"AJ-{now:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N")[..4]}",
             ProductCode = productCode,
             Inputs = inputs,
+            TextInputs = textInputs ?? new(),
             RequestedBy = requestedBy,
+            ScriptName = scriptName,
+            ScriptSha256 = scriptSha256,
+            ScriptSource = scriptSource,
             Status = JobStatus.Queued,
             CreatedAt = now,
         };
@@ -142,7 +146,8 @@ public sealed class JobStore
             w.Busy = true;
             AddEvent(job, $"Picked up by worker '{worker}' (attempt {job.Attempts}).");
             Save();
-            return new WorkItem(job.Id, job.ProductCode, job.ProductVersion, new Dictionary<string, double>(job.Inputs));
+            return new WorkItem(job.Id, job.ProductCode, job.ProductVersion, new Dictionary<string, double>(job.Inputs),
+                TextInputs: job.TextInputs.Count == 0 ? null : new Dictionary<string, string>(job.TextInputs));
         }
     }
 
@@ -249,6 +254,28 @@ public sealed class JobStore
         }
     }
 
+    /// <summary>Job đã kết thúc trước <paramref name="cutoff"/> mà vẫn còn file kết quả.</summary>
+    public IReadOnlyList<Job> ExpiredWithArtifacts(DateTimeOffset cutoff)
+    {
+        lock (_gate)
+            return _jobs.Where(j => j.Status is JobStatus.Succeeded or JobStatus.Failed or JobStatus.Cancelled
+                                    && j.Artifacts.Count > 0 && (j.FinishedAt ?? j.CreatedAt) < cutoff).Select(Clone).ToList();
+    }
+
+    /// <summary>Bỏ danh sách file của job sau khi file thật đã bị xóa.</summary>
+    public void MarkArtifactsPurged(string id, int days)
+    {
+        lock (_gate)
+        {
+            var job = _jobs.FirstOrDefault(j => j.Id == id);
+            if (job == null) return;
+            job.Artifacts.Clear();
+            job.ArtifactsPurgedAt = DateTimeOffset.UtcNow;
+            AddEvent(job, $"Result files deleted after {days} days (retention policy).");
+            Save();
+        }
+    }
+
     // ---------------------------------------------------------------- nội bộ
 
     private Job? OwnedRunning(string id, string worker)
@@ -304,6 +331,39 @@ public sealed class JobStore
         {
             Console.Error.WriteLine("Could not write jobs.json: " + ex.Message);
         }
+    }
+}
+
+/// <summary>
+/// Xóa file kết quả (R2 và đĩa) của job đã kết thúc quá <c>Retention:Days</c> ngày. Mặc định 0 = giữ mãi.
+/// Chỉ xóa file: bản ghi job, thông số và script vẫn còn nên Dashboard và "Nhân bản đơn" không mất.
+/// </summary>
+public sealed class RetentionService(JobStore store, R2Store r2, IConfiguration config, ILogger<RetentionService> log) : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        var days = config.GetValue<int>("Retention:Days");
+        if (days <= 0) return;
+        log.LogInformation("Retention: result files are deleted {Days} day(s) after the job finishes.", days);
+        using var timer = new PeriodicTimer(TimeSpan.FromHours(1));
+        do
+        {
+            foreach (var job in store.ExpiredWithArtifacts(DateTimeOffset.UtcNow.AddDays(-days)))
+            {
+                try
+                {
+                    foreach (var a in job.Artifacts.Where(a => a.Key != null && r2.IsConfigured))
+                        await r2.DeleteAsync(a.Key!, stoppingToken);
+                    var dir = store.ArtifactDir(job.Id);
+                    if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+                    store.MarkArtifactsPurged(job.Id, days);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    log.LogWarning(ex, "Retention: could not delete files of job {Id}; will retry next hour.", job.Id);
+                }
+            }
+        } while (await timer.WaitForNextTickAsync(stoppingToken));
     }
 }
 

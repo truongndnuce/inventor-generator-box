@@ -33,6 +33,7 @@ internal sealed class InventorJobExecutor
 {
     private const string StepTranslatorId = "{90AF7F40-0C01-11D5-8E83-0010B541CD80}";
     private const string TransformerScript = "transformer.gea";
+    private const string ImportedProduct = "imported"; // khớp hằng cùng tên ở be/Cadflow.Api/Program.cs
 
     private readonly Inv.Application _app;
     private readonly InventorBoxGateway _gateway;
@@ -54,13 +55,21 @@ internal sealed class InventorJobExecutor
         // Server đã kiểm tra, nhưng worker kiểm tra lại: sai thì dừng mà chưa đụng tới Inventor.
         bool isBox = job.ProductCode == "box";
         bool isTransformer = job.ProductCode == TransformerParams.Code;
-        if (!isBox && !isTransformer)
+        bool isImported = job.ProductCode == ImportedProduct; // script .gea do người dùng import trên web
+        if (!isBox && !isTransformer && !isImported)
             return JobResult.Fail($"Unknown product '{job.ProductCode}'.", retryable: false);
+        if (isImported && string.IsNullOrEmpty(job.ScriptText))
+            return JobResult.Fail("The job has no script text.", retryable: false);
 
-        var values = isBox ? BoxParams.Complete(job.Inputs) : TransformerParams.Complete(job.Inputs);
-        var issues = isBox ? BoxParams.Validate(values) : TransformerParams.Validate(values);
-        if (issues.Count > 0)
-            return JobResult.Fail("Invalid inputs: " + issues[0].Message, retryable: false);
+        // Script nhập vào được kiểm tra bằng chính khối FORM của nó (bên dưới); sản phẩm có sẵn dùng luật C# dùng chung.
+        var values = isImported ? new Dictionary<string, double>(job.Inputs)
+            : isBox ? BoxParams.Complete(job.Inputs) : TransformerParams.Complete(job.Inputs);
+        if (!isImported)
+        {
+            var issues = isBox ? BoxParams.Validate(values) : TransformerParams.Validate(values);
+            if (issues.Count > 0)
+                return JobResult.Fail("Invalid inputs: " + issues[0].Message, retryable: false);
+        }
 
         Directory.CreateDirectory(workDir);
         Inv.PartDocument? doc = null;
@@ -69,28 +78,52 @@ internal sealed class InventorJobExecutor
             progress("Creating Part", "Creating a new Part document.");
             doc = NewPart();
 
+            // Box dựng bằng script box.gea khi server gửi kèm script (để export/import .gea khớp với những gì đã dựng);
+            // server cũ không gửi script thì dùng cổng C# như trước.
+            bool useScript = !isBox || !string.IsNullOrEmpty(job.ScriptText);
+
             OperationResult created;
-            if (isBox)
+            if (!useScript)
             {
                 progress("Building box", "Building body and lid.");
                 created = _gateway.Create(values, allowForeignContent: true);
             }
             else
             {
-                // Máy biến áp được mô tả bằng script .gea: cùng file đó mở được trong add-in để sửa và Apply lại,
+                // Dựng bằng script .gea: cùng script đó mở được trong add-in để sửa và Apply lại,
                 // vì script và giá trị được lưu kèm trong .ipt.
-                var scriptPath = GeaScriptLibrary.BundledPath(TransformerScript);
-                if (!File.Exists(scriptPath))
-                    return JobResult.Fail($"Script {TransformerScript} is missing next to the add-in ({scriptPath}).", retryable: false);
-                var script = GeaScript.Compile(File.ReadAllText(scriptPath));
+                // Ưu tiên bản script server gửi kèm (đúng bản đã ghi cho job, để export khớp); không có thì dùng bản đi kèm add-in.
+                string scriptName, scriptText;
+                string? scriptPath = null;
+                if (!string.IsNullOrEmpty(job.ScriptText))
+                {
+                    scriptName = string.IsNullOrWhiteSpace(job.ScriptName) ? "script.gea" : job.ScriptName!;
+                    scriptText = job.ScriptText!;
+                }
+                else
+                {
+                    // Server không gửi script (server cũ): máy biến áp dùng bản đi kèm add-in. (Box không vào nhánh này.)
+                    scriptName = TransformerScript;
+                    scriptPath = GeaScriptLibrary.BundledPath(TransformerScript);
+                    if (!File.Exists(scriptPath))
+                        return JobResult.Fail($"Script {TransformerScript} is missing next to the add-in ({scriptPath}).", retryable: false);
+                    scriptText = File.ReadAllText(scriptPath);
+                }
+
+                var script = GeaScript.Compile(scriptText);
                 if (script.HasErrors)
-                    return JobResult.Fail($"{TransformerScript} has errors: " + script.Diagnostics.First(d => d.Severity == GeaSeverity.Error).Format(TransformerScript), retryable: false);
-                var form = script.EvaluateForm(values.ToDictionary(kv => kv.Key, kv => (object?)kv.Value));
+                    return JobResult.Fail($"{scriptName} has errors: " + script.Diagnostics.First(d => d.Severity == GeaSeverity.Error).Format(scriptName), retryable: false);
+                if (script.Program.Target != "PART")
+                    return JobResult.Fail($"{scriptName}: TARGET {script.Program.Target} is not supported (only PART).", retryable: false);
+                var form = script.EvaluateFormValues(values, job.TextInputs);
                 if (!form.Ok)
                     return JobResult.Fail("Invalid inputs: " + form.Errors[0].Message, retryable: false);
 
-                progress("Building transformer", $"Running {TransformerScript}: tank, radiators, conservator and bushings.");
-                created = new GeaDocumentService(_app).Apply(doc, script, form, scriptPath, msg => progress("Building transformer", msg));
+                var stage = isImported ? "Building from script" : isBox ? "Building box" : "Building transformer";
+                progress(stage, isImported ? $"Running the imported script \"{scriptName}\"."
+                    : isBox ? $"Running {scriptName}: body and lid."
+                    : $"Running {scriptName}: tank, radiators, conservator and bushings.");
+                created = new GeaDocumentService(_app).Apply(doc, script, form, scriptPath, msg => progress(stage, msg));
             }
             if (!created.Ok)
                 return JobResult.Fail(created.Message, retryable: false);
@@ -133,14 +166,18 @@ internal sealed class InventorJobExecutor
             // Bản vẽ 2D (PDF). Dựng sau ảnh vì tạo drawing làm đổi view đang active. Lỗi bản vẽ không làm hỏng job.
             progress("Drawing", "Creating the 2D drawing (views, section, dimensions).");
             var pdfPath = Path.Combine(workDir, job.Id + ".pdf");
-            var levels = isBox
-                ? new[] { 0, values[BoxParams.Bottom], values[BoxParams.Height] }
-                : new[] { 0, values[TransformerParams.BaseThickness], values[TransformerParams.BaseThickness] + values[TransformerParams.TankHeight],
-                          values[TransformerParams.BaseThickness] + values[TransformerParams.TankHeight] + values[TransformerParams.CoverThickness] };
-            var drawing = new DrawingBuilder(_app).Build(doc, zUp: isBox, levels, pdfPath);
+            // Mức cao để ghi chuỗi dim trên mặt cắt: chỉ biết với hai sản phẩm có sẵn. Script nhập vào thì bỏ chuỗi dim này.
+            var levels = isImported ? Array.Empty<double>()
+                : isBox
+                    ? new[] { 0, values[BoxParams.Bottom], values[BoxParams.Height] }
+                    : new[] { 0, values[TransformerParams.BaseThickness], values[TransformerParams.BaseThickness] + values[TransformerParams.TankHeight],
+                              values[TransformerParams.BaseThickness] + values[TransformerParams.TankHeight] + values[TransformerParams.CoverThickness] };
+            var dwgPath = Path.Combine(workDir, job.Id + ".dwg");
+            var drawing = new DrawingBuilder(_app).Build(doc, zUp: isBox && !useScript, levels, pdfPath, dwgPath); // box dựng bằng C# có trục đứng Z; dựng bằng builder .gea thì trục đứng là Y
             if (drawing.Ok)
             {
                 files.Add(new OutputFile(pdfPath, "pdf"));
+                if (drawing.DwgOk) files.Add(new OutputFile(dwgPath, "dwg"));
                 summary["drawingViews"] = drawing.Views;
                 summary["drawingDims"] = drawing.Dimensions;
                 summary["drawingScaleDenominator"] = drawing.ScaleDenominator;

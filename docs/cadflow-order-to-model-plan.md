@@ -81,7 +81,7 @@ Người dùng ──► Web (form, danh sách job, tải file)
 | **API Server** | Danh mục, nhận đơn, xác thực lại giá trị bằng lõi DSL, quản lý job, cấp file | ASP.NET Core, để dùng chung thư viện DSL với worker |
 | **CSDL** | Sản phẩm và phiên bản, đơn, job, artifact, worker | PostgreSQL |
 | **Hàng đợi** | Giữ job chờ | Bắt đầu bằng bảng job trong CSDL, worker nhận bằng khóa dòng (`FOR UPDATE SKIP LOCKED`); chưa cần SQS hay broker |
-| **Kho file** | Lưu hồ sơ | Thư mục trên server lúc đầu, về sau S3 hoặc R2 |
+| **Kho file** | Lưu hồ sơ | Thư mục trên server lúc đầu, về sau Cloudflare R2 (xem `r2-dashboard-gea-roundtrip-plan.md`, mục 3) |
 | **Worker** | Chạy Inventor và dựng hồ sơ | Ứng dụng .NET chạy trên máy Windows có Inventor |
 | **Thư viện thành phần** | Part, iPart, assembly mẫu (sứ, cánh tản nhiệt, bình dầu...) | Quản lý phiên bản, đặt trong thư mục cố định hoặc kho chung |
 
@@ -336,6 +336,8 @@ Hệ quả cho các quyết định trước:
 | **Product Studio** (soạn sản phẩm) | Kỹ sư viết định nghĩa | Soạn DSL, bảng catalog, mẫu bản vẽ; báo lỗi theo dòng cột; chạy thử không cần Inventor; xuất bản phiên bản |
 | Admin | Quản trị | Worker, job, thư viện thành phần, người dùng |
 
+**Cập nhật giao diện (xem `r2-dashboard-gea-roundtrip-plan.md`, mục 5):** khu "Orders và Viewer" được tách thành 3 trang: **New order**, **Ordered** (chỉ job đang chạy, không mở được kết quả) và **Dashboard** (thống kê, lọc, xem lại job đã xong, tải PDF/DWG/STEP/`.gea`, nhân bản đơn).
+
 ### 15.3. Luồng người dùng
 
 1. Mở danh mục, chọn sản phẩm (ví dụ máy biến áp lực).
@@ -388,7 +390,7 @@ Phần này **tốn công nhất, nên làm sau**.
 | Xem 3D | three.js (xem trước), APS Viewer (model thật) | Xem mục 15.4 |
 | API | ASP.NET Core | Dùng chung thư viện DSL với worker |
 | Cập nhật trạng thái | Polling, sau đó SSE hoặc SignalR | |
-| CSDL, kho file | PostgreSQL, thư mục máy chủ rồi S3 hoặc R2 | |
+| CSDL, kho file | PostgreSQL, thư mục máy chủ rồi Cloudflare R2 (xem `r2-dashboard-gea-roundtrip-plan.md`) | |
 | Đăng nhập | Tài khoản nội bộ hoặc SSO | Xem phần bảo mật ở mục 10 |
 
 ### 15.7. Lộ trình điều chỉnh (W0-W5)

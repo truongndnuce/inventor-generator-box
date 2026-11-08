@@ -11,12 +11,14 @@ using System.Threading.Tasks;
 namespace InventorAddin.Web;
 
 /// <summary>Job server giao xuống worker: chỉ những gì cần để dựng.</summary>
-public sealed record WorkItem(string Id, string ProductCode, int ProductVersion, Dictionary<string, double> Inputs);
+public sealed record WorkItem(string Id, string ProductCode, int ProductVersion, Dictionary<string, double> Inputs, string? ScriptText = null, string? ScriptName = null, Dictionary<string, string>? TextInputs = null);
 
 /// <summary>Gọi API worker của web server (xem be/Cadflow.Api). Worker chỉ kết nối đi ra, không mở cổng.</summary>
 public sealed class ServerClient : IDisposable
 {
     private readonly HttpClient _http;
+    // HttpClient riêng cho R2: không mang X-Worker-Key sang máy chủ khác.
+    private readonly HttpClient _r2Http = new() { Timeout = TimeSpan.FromMinutes(10) };
     private readonly string _worker;
 
     public ServerClient(WorkerSettings settings)
@@ -48,6 +50,31 @@ public sealed class ServerClient : IDisposable
     public async Task UploadAsync(string jobId, string filePath, string kind, CancellationToken ct)
     {
         var name = Path.GetFileName(filePath);
+
+        // Server có R2: tải thẳng lên R2 bằng URL ký sẵn rồi báo commit. Server cũ (404) hoặc chưa cấu hình R2 ("direct"): upload qua server.
+        using (var pre = await _http.PostAsync(
+            $"api/worker/jobs/{jobId}/artifacts/presign?worker={Uri.EscapeDataString(_worker)}&name={Uri.EscapeDataString(name)}", null, ct))
+        {
+            if (pre.StatusCode != HttpStatusCode.NotFound)
+            {
+                pre.EnsureSuccessStatusCode();
+                using var doc = System.Text.Json.JsonDocument.Parse(await pre.Content.ReadAsStringAsync(ct));
+                if (doc.RootElement.GetProperty("mode").GetString() == "r2")
+                {
+                    var url = doc.RootElement.GetProperty("url").GetString()!;
+                    await using var src = File.OpenRead(filePath);
+                    using var put = new StreamContent(src);
+                    // Không có header nào ngoài thân file: chữ ký URL không ràng buộc Content-Type.
+                    using var putRes = await _r2Http.PutAsync(url, put, ct);
+                    putRes.EnsureSuccessStatusCode();
+                    using var commit = await _http.PostAsync(
+                        $"api/worker/jobs/{jobId}/artifacts/commit?worker={Uri.EscapeDataString(_worker)}&name={Uri.EscapeDataString(name)}&kind={Uri.EscapeDataString(kind)}", null, ct);
+                    commit.EnsureSuccessStatusCode();
+                    return;
+                }
+            }
+        }
+
         await using var fs = File.OpenRead(filePath);
         using var content = new StreamContent(fs);
         content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
@@ -71,5 +98,5 @@ public sealed class ServerClient : IDisposable
         return true;
     }
 
-    public void Dispose() => _http.Dispose();
+    public void Dispose() { _http.Dispose(); _r2Http.Dispose(); }
 }

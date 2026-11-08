@@ -179,6 +179,8 @@ SmartAssembly không vẽ từng feature mà gọi UDF có sẵn, truyền tham 
 
 **Về an toàn:** vì script chạy trên máy worker có quyền lớn, nguyên tắc là **người đặt hàng chỉ cung cấp giá trị, không cung cấp script**. Script chỉ do người soạn sản phẩm đã đăng nhập và có quyền xuất bản. Phiên bản đã xuất bản không sửa được.
 
+> **Cập nhật:** quyết định R1 trong `r2-dashboard-gea-roundtrip-plan.md` cho phép người đặt hàng import `.gea` và chạy chính script đó. Nguyên tắc trên được nới có điều kiện: script phải qua `GeaChecker`, giới hạn kích thước và số bước, chỉ ghi trong thư mục job, và job được đánh dấu `ScriptSource = "imported"`. Khi có đăng nhập, nên giới hạn import script theo vai trò (xem mục 6.3 của doc đó).
+
 ---
 
 ## 12. Phân tích hình học

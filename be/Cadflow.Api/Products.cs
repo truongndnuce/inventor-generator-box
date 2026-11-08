@@ -13,7 +13,8 @@ public sealed record Product(
     int Version,
     IReadOnlyList<ParameterDef> Parameters,
     Func<IReadOnlyDictionary<string, double>?, Dictionary<string, double>> Complete,
-    Func<IReadOnlyDictionary<string, double>, IReadOnlyList<ValidationIssue>> Validate)
+    Func<IReadOnlyDictionary<string, double>, IReadOnlyList<ValidationIssue>> Validate,
+    string? ScriptFile = null) // file .gea đi kèm (trong thư mục Scripts cạnh server); null = sản phẩm dựng không qua .gea
 {
     public object Schema() => new
     {
@@ -35,10 +36,10 @@ public static class Products
     public static readonly IReadOnlyList<Product> All = new[]
     {
         new Product("box", "Box with lid", "Parametric box (body + lid) built in Inventor.", 1,
-            BoxParams.All, BoxParams.Complete, BoxParams.Validate),
+            BoxParams.All, BoxParams.Complete, BoxParams.Validate, ScriptFile: "box.gea"),
         new Product(TransformerParams.Code, "Power transformer",
             "Simplified power transformer: tank on a base plate, cover, radiators, conservator and bushings (levels 1-3 of the plan).", 1,
-            TransformerParams.All, TransformerParams.Complete, TransformerParams.Validate),
+            TransformerParams.All, TransformerParams.Complete, TransformerParams.Validate, ScriptFile: "transformer.gea"),
     };
 
     public static Product? Find(string? code) =>

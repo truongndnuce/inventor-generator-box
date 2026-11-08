@@ -1,0 +1,96 @@
+! ============================================================================
+! Hộp có nắp: thân rỗng mở nắp (bo góc đứng, thành dày Wall, đáy dày Bottom) và nắp phẳng có gờ lồng vào lòng hộp.
+!
+! Thông số, giá trị mặc định, MIN/MAX và luật kiểm tra khớp BoxParams.cs (server và add-in dùng bản C# đó):
+! hai nơi phải luôn đồng nhất, nếu sửa một nơi thì sửa nơi kia.
+!
+! Dựng bằng builder Tank + Cover (cùng bộ builder với máy biến áp). Hệ tọa độ của builder: tâm hộp ở X = 0, D = 0,
+! chiều cao theo trục Y của Inventor, đáy hộp ở cao độ 0, nắp đặt ngay trên miệng hộp.
+! ============================================================================
+GEA_VERSION 1
+PRODUCT_NAME "Box with lid"
+PARAM_PREFIX BX_
+TARGET PART
+
+BEGIN_FORM
+
+  BEGIN_GROUP "Box body"
+    USER_INPUT_PARAM BX_Length       LENGTH 100 mm MIN 40 MAX 500 REQUIRED LABEL "Length"
+    USER_INPUT_PARAM BX_Width        LENGTH 60 mm  MIN 30 MAX 300 REQUIRED LABEL "Width"
+    USER_INPUT_PARAM BX_Height       LENGTH 40 mm  MIN 20 MAX 200 REQUIRED LABEL "Body height"
+    USER_INPUT_PARAM BX_Wall         LENGTH 2 mm   MIN 1  MAX 10  REQUIRED LABEL "Wall thickness"
+    USER_INPUT_PARAM BX_Bottom       LENGTH 2 mm   MIN 1  MAX 10  REQUIRED LABEL "Bottom thickness"
+    USER_INPUT_PARAM BX_CornerRadius LENGTH 3 mm   MIN 0  MAX 20  LABEL "Corner radius"
+  END_GROUP
+
+  BEGIN_GROUP "Lid"
+    USER_INPUT_PARAM BX_LidThickness LENGTH 2 mm   MIN 1 MAX 10 REQUIRED LABEL "Lid thickness"
+    USER_INPUT_PARAM BX_LidLip       LENGTH 4 mm   MIN 2 MAX 15 REQUIRED LABEL "Lid lip height"
+    USER_INPUT_PARAM BX_LidClearance LENGTH 0.3 mm MIN 0 MAX 1  LABEL "Lid lip clearance"
+  END_GROUP
+
+  ! --- Luật kiểm tra: giống BoxParams.Validate ---
+  DECLARE_VARIABLE LENGTH shortSide
+  DECLARE_VARIABLE LENGTH innerHeight
+  shortSide   = MIN(BX_Length, BX_Width)
+  innerHeight = BX_Height - BX_Bottom
+
+  ASSERT BX_Wall < shortSide / 2 "Wall thickness must be less than half of the shorter side of the box."
+  ASSERT BX_Wall < innerHeight "Wall thickness must be less than (height - bottom thickness)."
+  ASSERT BX_Bottom < BX_Height "Bottom thickness must be less than the body height."
+  ASSERT BX_CornerRadius <= shortSide / 2 "Corner radius must not exceed half of the shorter side of the box."
+  ASSERT BX_CornerRadius > BX_Wall + BX_LidClearance "Corner radius must be greater than (wall thickness + lid clearance) so the inner corners and lid lip can be rounded."
+  ASSERT BX_LidLip < innerHeight "Lid lip must be shorter than (height - bottom thickness) so it does not touch the bottom."
+  ASSERT BX_LidClearance < BX_Wall "Lid clearance must be less than the wall thickness."
+
+END_FORM
+
+BEGIN_BUILD
+
+  DECLARE_VARIABLE LENGTH innerRadius
+  DECLARE_REFERENCE body
+  DECLARE_REFERENCE lid
+
+  innerRadius = MAX(BX_CornerRadius - BX_Wall, 0 mm)
+
+  PROCESSING_BOX_START "Building box"
+
+  ! --- Thân ---
+  PROCESSING_BOX_SET_STATE "Building body" 10
+  CREATE_FEATURE builder:Tank
+    FEATURE_IN "Length"       BX_Length
+    FEATURE_IN "Width"        BX_Width
+    FEATURE_IN "Height"       BX_Height
+    FEATURE_IN "Wall"         BX_Wall
+    FEATURE_IN "Bottom"       BX_Bottom
+    FEATURE_IN "CornerRadius" BX_CornerRadius
+    FEATURE_IN "InnerRadius"  innerRadius
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "BX_Box*"
+  SET_REF_ATTR body "ROLE" "BODY"
+
+  ! --- Nắp ---
+  PROCESSING_BOX_SET_STATE "Building lid" 55
+  BEGIN_CATCH_ERROR
+    CREATE_FEATURE builder:Cover
+      FEATURE_IN "Tank"      body
+      FEATURE_IN "Thickness" BX_LidThickness
+      FEATURE_IN "Lip"       BX_LidLip
+      FEATURE_IN "Clearance" BX_LidClearance
+      FEATURE_OUT lid "Body"
+    END_CREATE_FEATURE
+  END_CATCH_ERROR
+  IF ERROR
+    FAIL "Could not build the lid: " + ERROR_MESSAGE
+  END_IF
+  SET_REF_NAME lid "BX_Lid*"
+  SET_REF_ATTR lid "ROLE" "LID"
+
+  PROCESSING_BOX_SET_STATE "Updating the model" 90
+  REGEN_MDL
+
+  PRINT "Built box " + STR(BX_Length) + " x " + STR(BX_Width) + " x " + STR(BX_Height)
+  PROCESSING_BOX_END
+
+END_BUILD
