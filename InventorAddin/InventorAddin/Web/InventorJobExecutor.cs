@@ -33,6 +33,7 @@ internal sealed class InventorJobExecutor
 {
     private const string StepTranslatorId = "{90AF7F40-0C01-11D5-8E83-0010B541CD80}";
     private const string TransformerScript = "transformer.gea";
+    private const string TurbineScript = "turbine.gea";
     private const string ImportedProduct = "imported"; // khớp hằng cùng tên ở be/Cadflow.Api/Program.cs
 
     private readonly Inv.Application _app;
@@ -55,18 +56,19 @@ internal sealed class InventorJobExecutor
         // Server đã kiểm tra, nhưng worker kiểm tra lại: sai thì dừng mà chưa đụng tới Inventor.
         bool isBox = job.ProductCode == "box";
         bool isTransformer = job.ProductCode == TransformerParams.Code;
+        bool isTurbine = job.ProductCode == TurbineParams.Code;
         bool isImported = job.ProductCode == ImportedProduct; // script .gea do người dùng import trên web
-        if (!isBox && !isTransformer && !isImported)
+        if (!isBox && !isTransformer && !isTurbine && !isImported)
             return JobResult.Fail($"Unknown product '{job.ProductCode}'.", retryable: false);
         if (isImported && string.IsNullOrEmpty(job.ScriptText))
             return JobResult.Fail("The job has no script text.", retryable: false);
 
         // Script nhập vào được kiểm tra bằng chính khối FORM của nó (bên dưới); sản phẩm có sẵn dùng luật C# dùng chung.
         var values = isImported ? new Dictionary<string, double>(job.Inputs)
-            : isBox ? BoxParams.Complete(job.Inputs) : TransformerParams.Complete(job.Inputs);
+            : isBox ? BoxParams.Complete(job.Inputs) : isTurbine ? TurbineParams.Complete(job.Inputs) : TransformerParams.Complete(job.Inputs);
         if (!isImported)
         {
-            var issues = isBox ? BoxParams.Validate(values) : TransformerParams.Validate(values);
+            var issues = isBox ? BoxParams.Validate(values) : isTurbine ? TurbineParams.Validate(values) : TransformerParams.Validate(values);
             if (issues.Count > 0)
                 return JobResult.Fail("Invalid inputs: " + issues[0].Message, retryable: false);
         }
@@ -103,10 +105,10 @@ internal sealed class InventorJobExecutor
                 else
                 {
                     // Server không gửi script (server cũ): máy biến áp dùng bản đi kèm add-in. (Box không vào nhánh này.)
-                    scriptName = TransformerScript;
-                    scriptPath = GeaScriptLibrary.BundledPath(TransformerScript);
+                    scriptName = isTurbine ? TurbineScript : TransformerScript;
+                    scriptPath = GeaScriptLibrary.BundledPath(scriptName);
                     if (!File.Exists(scriptPath))
-                        return JobResult.Fail($"Script {TransformerScript} is missing next to the add-in ({scriptPath}).", retryable: false);
+                        return JobResult.Fail($"Script {scriptName} is missing next to the add-in ({scriptPath}).", retryable: false);
                     scriptText = File.ReadAllText(scriptPath);
                 }
 
@@ -119,9 +121,10 @@ internal sealed class InventorJobExecutor
                 if (!form.Ok)
                     return JobResult.Fail("Invalid inputs: " + form.Errors[0].Message, retryable: false);
 
-                var stage = isImported ? "Building from script" : isBox ? "Building box" : "Building transformer";
+                var stage = isImported ? "Building from script" : isBox ? "Building box" : isTurbine ? "Building gas turbine" : "Building transformer";
                 progress(stage, isImported ? $"Running the imported script \"{scriptName}\"."
                     : isBox ? $"Running {scriptName}: body and lid."
+                    : isTurbine ? $"Running {scriptName}: casings, rings, enclosure, combustor cans and skid."
                     : $"Running {scriptName}: tank, radiators, conservator and bushings.");
                 created = new GeaDocumentService(_app).Apply(doc, script, form, scriptPath, msg => progress(stage, msg));
             }
@@ -170,6 +173,10 @@ internal sealed class InventorJobExecutor
             var levels = isImported ? Array.Empty<double>()
                 : isBox
                     ? new[] { 0, values[BoxParams.Bottom], values[BoxParams.Height] }
+                    : isTurbine
+                    ? new[] { 0, values[TurbineParams.BaseHeight],
+                              values[TurbineParams.BaseHeight] + TurbineParams.MaxDiameter(values) / 2 + TurbineParams.CradleGap,
+                              values[TurbineParams.BaseHeight] + TurbineParams.MaxDiameter(values) + TurbineParams.CradleGap }
                     : new[] { 0, values[TransformerParams.BaseThickness], values[TransformerParams.BaseThickness] + values[TransformerParams.TankHeight],
                               values[TransformerParams.BaseThickness] + values[TransformerParams.TankHeight] + values[TransformerParams.CoverThickness] };
             var dwgPath = Path.Combine(workDir, job.Id + ".dwg");

@@ -20,6 +20,7 @@
         -->
         <Compile Include="..\..\InventorAddin\InventorAddin\Models\BoxParams.cs" Link="Shared\BoxParams.cs" />
         <Compile Include="..\..\InventorAddin\InventorAddin\Models\TransformerParams.cs" Link="Shared\TransformerParams.cs" />
+        <Compile Include="..\..\InventorAddin\InventorAddin\Models\TurbineParams.cs" Link="Shared\TurbineParams.cs" />
         <!-- Trình thông dịch .gea (không phụ thuộc Inventor): server tự biên dịch và tính FORM của script được import. -->
         <Compile Include="..\..\InventorAddin\InventorAddin\Gea\*.cs" Link="Shared\Gea\%(Filename)%(Extension)" />
     </ItemGroup>
@@ -28,6 +29,7 @@
         <!-- Script .gea mà worker chạy: server giữ cùng một bản (để export và để ghi nhận bản đã dùng cho từng job). -->
         <Content Include="..\..\InventorAddin\InventorAddin\Scripts\transformer.gea" Link="Scripts\transformer.gea" CopyToOutputDirectory="PreserveNewest" />
         <Content Include="..\..\InventorAddin\InventorAddin\Scripts\box.gea" Link="Scripts\box.gea" CopyToOutputDirectory="PreserveNewest" />
+        <Content Include="..\..\InventorAddin\InventorAddin\Scripts\turbine.gea" Link="Scripts\turbine.gea" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
 </Project>
