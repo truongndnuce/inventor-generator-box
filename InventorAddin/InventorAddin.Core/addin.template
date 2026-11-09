@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Addin Type="Standard">
+    <ClassId>{$CLASSID$}</ClassId>
+    <ClientId>{$CLASSID$}</ClientId>
+    <DisplayName>$NAME$</DisplayName>
+    <Description>$DESCRIPTION$</Description>
+    <Assembly>$ASSEMBLY$</Assembly>
+    <UseInventorAssemblyContext>0</UseInventorAssemblyContext>
+    <SupportedSoftwareVersionGreaterThan>30..</SupportedSoftwareVersionGreaterThan>
+    <LoadOnStartUp>1</LoadOnStartUp>
+    <UserUnloadable>1</UserUnloadable>
+    <Hidden>0</Hidden>
+</Addin>

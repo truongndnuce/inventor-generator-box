@@ -3,20 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CADFlow - Assembly orders</title>
-  <link rel="stylesheet" href="styles.css">
+  <title>CAD Automation - Assembly orders</title>
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="#/">CADFlow <span>Assembly orders</span></a>
-    <nav>
-      <a href="#/" data-nav="configurator">New order</a>
-      <a href="#/orders" data-nav="orders">Ordered</a>
-      <a href="#/dashboard" data-nav="dashboard">Dashboard</a>
-    </nav>
-    <div id="worker-pill" class="pill pill-off" title="Inventor worker status">worker: checking...</div>
-  </header>
-  <main id="view"></main>
-  <script type="module" src="app.js"></script>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>

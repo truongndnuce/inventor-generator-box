@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Cadflow.Api;
@@ -74,7 +74,7 @@ public sealed class WorkerInfo
 // ---- request/response contracts
 
 /// <summary><paramref name="ScriptId"/>: đặt hàng từ script .gea đã import (xem POST /api/gea/import); khi có thì bỏ qua ProductCode.</summary>
-public sealed record CreateJobRequest(string? ProductCode, Dictionary<string, double>? Inputs, string? RequestedBy, string? ScriptId = null, Dictionary<string, string>? TextInputs = null);
+public sealed record CreateJobRequest(string? ProductCode, Dictionary<string, double>? Inputs, string? RequestedBy, string? ScriptId = null, Dictionary<string, string>? TextInputs = null, string? ConfigId = null);
 
 public sealed record GeaTextRequest(string? Text);
 
@@ -84,7 +84,8 @@ public sealed record ValidateRequest(Dictionary<string, double>? Values);
 
 public sealed record WorkerHello(string? Worker, string? InventorVersion, string? AddinVersion, bool Busy);
 
-public sealed record ClaimRequest(string? Worker);
+/// <param name="Products">Mã sản phẩm worker nhận (mỗi add-in Inventor chỉ nhận sản phẩm của mình); null/rỗng = nhận tất cả (worker cũ).</param>
+public sealed record ClaimRequest(string? Worker, string[]? Products = null);
 
 public sealed record ProgressRequest(string? Step, string? Message);
 
@@ -94,3 +95,4 @@ public sealed record FailRequest(string? Error, bool Retryable);
 
 /// <summary>Phần job gửi xuống worker: chỉ những gì worker cần để dựng.</summary>
 public sealed record WorkItem(string Id, string ProductCode, int ProductVersion, Dictionary<string, double> Inputs, string? ScriptText = null, string? ScriptName = null, Dictionary<string, string>? TextInputs = null);
+

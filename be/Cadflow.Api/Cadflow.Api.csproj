@@ -18,16 +18,20 @@
           Dùng chung đúng một file định nghĩa thông số/ràng buộc với add-in (một định nghĩa duy nhất, mục 3.2 của cadflow-order-to-model-plan.md).
           File chỉ phụ thuộc System nên biên dịch được cho net10.0 thuần.
         -->
-        <Compile Include="..\..\InventorAddin\InventorAddin\Models\BoxParams.cs" Link="Shared\BoxParams.cs" />
-        <Compile Include="..\..\InventorAddin\InventorAddin\Models\TransformerParams.cs" Link="Shared\TransformerParams.cs" />
+        <Compile Include="..\..\InventorAddin\InventorAddin.Core\Models\BoxParams.cs" Link="Shared\BoxParams.cs" />
+        <Compile Include="..\..\InventorAddin\InventorAddin.Core\Models\TransformerParams.cs" Link="Shared\TransformerParams.cs" />
+        <Compile Include="..\..\InventorAddin\InventorAddin.Core\Models\TurbineParams.cs" Link="Shared\TurbineParams.cs" />
+        <Compile Include="..\..\InventorAddin\InventorAddin.Core\Models\GeneratorParams.cs" Link="Shared\GeneratorParams.cs" />
         <!-- Trình thông dịch .gea (không phụ thuộc Inventor): server tự biên dịch và tính FORM của script được import. -->
-        <Compile Include="..\..\InventorAddin\InventorAddin\Gea\*.cs" Link="Shared\Gea\%(Filename)%(Extension)" />
+        <Compile Include="..\..\InventorAddin\InventorAddin.Core\Gea\*.cs" Link="Shared\Gea\%(Filename)%(Extension)" />
     </ItemGroup>
 
     <ItemGroup>
         <!-- Script .gea mà worker chạy: server giữ cùng một bản (để export và để ghi nhận bản đã dùng cho từng job). -->
-        <Content Include="..\..\InventorAddin\InventorAddin\Scripts\transformer.gea" Link="Scripts\transformer.gea" CopyToOutputDirectory="PreserveNewest" />
-        <Content Include="..\..\InventorAddin\InventorAddin\Scripts\box.gea" Link="Scripts\box.gea" CopyToOutputDirectory="PreserveNewest" />
+        <Content Include="..\..\InventorAddin\InventorAddin.Core\Scripts\transformer.gea" Link="Scripts\transformer.gea" CopyToOutputDirectory="PreserveNewest" />
+        <Content Include="..\..\InventorAddin\InventorAddin.Core\Scripts\box.gea" Link="Scripts\box.gea" CopyToOutputDirectory="PreserveNewest" />
+        <Content Include="..\..\InventorAddin\InventorAddin.Core\Scripts\turbine.gea" Link="Scripts\turbine.gea" CopyToOutputDirectory="PreserveNewest" />
+        <Content Include="..\..\InventorAddin\InventorAddin.Core\Scripts\generator.gea" Link="Scripts\generator.gea" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
 </Project>

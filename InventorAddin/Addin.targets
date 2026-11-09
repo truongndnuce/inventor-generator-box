@@ -1,0 +1,29 @@
+<Project>
+
+    <!--
+      Dùng chung cho các csproj add-in (import ở cuối file csproj). Mỗi csproj khai báo:
+        AddinClassId (GUID, trùng [Guid] của lớp add-in), AddinDisplayName, AddinDescription, AddinFileName.
+      Sau build, sinh file .addin trỏ tới DLL vừa build và đặt vào thư mục Addins của người dùng (regfree, không cần quyền admin).
+      Đặt -p:DeployAddin=false để không ghi vào %AppData%.
+    -->
+    <PropertyGroup>
+        <EnableDynamicLoading>true</EnableDynamicLoading>
+        <DeployAddin Condition="'$(DeployAddin)' == ''">true</DeployAddin>
+        <InventorAddinsDir Condition="'$(InventorAddinsDir)' == ''">$(AppData)\Autodesk\Inventor 2027\Addins\</InventorAddinsDir>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="$(MSBuildThisFileDirectory)InventorAddin.Core\InventorAddin.Core.csproj" />
+    </ItemGroup>
+
+    <Target Name="DeployAddinManifest" AfterTargets="Build" Condition="'$(DeployAddin)' == 'true' And '$(OS)' == 'Windows_NT'">
+        <PropertyGroup>
+            <AddinTemplateText>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)InventorAddin.Core\addin.template'))</AddinTemplateText>
+            <AddinText>$(AddinTemplateText.Replace('$ASSEMBLY$', '$(TargetPath)').Replace('$CLASSID$', '$(AddinClassId)').Replace('$NAME$', '$(AddinDisplayName)').Replace('$DESCRIPTION$', '$(AddinDescription)'))</AddinText>
+        </PropertyGroup>
+        <MakeDir Directories="$(InventorAddinsDir)" />
+        <WriteLinesToFile File="$(InventorAddinsDir)$(AddinFileName)" Lines="$(AddinText)" Overwrite="true" Encoding="UTF-8" />
+        <Message Importance="high" Text="Đã ghi $(InventorAddinsDir)$(AddinFileName)" />
+    </Target>
+
+</Project>

@@ -128,12 +128,15 @@ public sealed class JobStore
     }
 
     /// <summary>Giao job Queued cũ nhất cho worker (khóa bằng lock, mỗi job chỉ một worker nhận).</summary>
-    public WorkItem? Claim(string worker)
+    public WorkItem? Claim(string worker, string[]? products = null)
     {
         lock (_gate)
         {
             var w = TouchWorker(worker);
-            var job = _jobs.Where(j => j.Status == JobStatus.Queued).OrderBy(j => j.CreatedAt).FirstOrDefault();
+            var job = _jobs
+                .Where(j => j.Status == JobStatus.Queued
+                    && (products == null || products.Length == 0 || products.Contains(j.ProductCode, StringComparer.OrdinalIgnoreCase)))
+                .OrderBy(j => j.CreatedAt).FirstOrDefault();
             if (job == null) return null;
 
             var now = DateTimeOffset.UtcNow;

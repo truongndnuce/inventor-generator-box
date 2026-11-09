@@ -1,0 +1,23 @@
+﻿
+/* Màn hình Config: ma trận so sánh các Configuration (cột = configuration, hàng = nhóm tham số) */
+.cfg-card { padding: 0; overflow: hidden; }
+.cfg-scroll { overflow: auto; max-height: calc(100vh - 260px); }
+.cfg-grid { display: grid; min-width: max-content; font-size: 13px; }
+.cfg-corner, .cfg-head { position: sticky; top: 0; z-index: 3; background: var(--color-panel-solid); border-bottom: 2px solid var(--accent-9); padding: 12px 12px; display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.cfg-corner { left: 0; z-index: 4; font-size: 16px; font-weight: 600; }
+.cfg-name { font-weight: 600; font-size: 14px; color: var(--accent-11); text-decoration: underline; text-underline-offset: 3px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sicon { display: inline-flex; width: 20px; height: 20px; align-items: center; justify-content: center; border-radius: 50%; font-size: 12px; font-weight: 700; }
+.sicon-active { background: #1f9d55; color: #fff; }
+.sicon-draft { color: #e0a100; font-size: 17px; }
+.sicon-deprecated { background: #d93f3a; color: #fff; }
+.cfg-label { position: sticky; left: 0; z-index: 2; background: var(--color-panel-solid); padding: 7px 12px; border: 0; border-bottom: 1px solid var(--gray-4); text-align: left; color: var(--gray-12); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: inherit; }
+.cfg-label.l2 { padding-left: 34px; color: var(--gray-11); }
+.cfg-cell { padding: 7px 12px; border-bottom: 1px solid var(--gray-4); border-left: 1px solid var(--gray-3); color: var(--gray-12); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.cfg-cell.differs { color: var(--accent-11); font-weight: 600; }
+button.cfg-label.gh { cursor: pointer; display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.cfg-label.gh1, .cfg-cell.gh1 { background: var(--gray-3); border-bottom-color: var(--gray-5); }
+.cfg-label.gh2, .cfg-cell.gh2 { background: var(--gray-2); }
+.cfg-label.gh2 { padding-left: 22px; font-weight: 500; }
+button.cfg-label.gh:hover { color: var(--accent-11); }
+.cfg-label .chev { width: 12px; display: inline-block; font-size: 14px; }
+.field.cfg-field { grid-template-columns: 220px minmax(120px, 1fr); }

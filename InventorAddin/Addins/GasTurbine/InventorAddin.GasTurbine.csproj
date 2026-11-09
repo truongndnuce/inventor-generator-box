@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <AssemblyName>InventorAddin.GasTurbine</AssemblyName>
+        <AddinClassId>AC1D2DE6-5E6E-4D4B-9D11-30C202F749C8</AddinClassId>
+        <AddinDisplayName>Cadflow Gas Turbine</AddinDisplayName>
+        <AddinDescription>Build an industrial gas turbine (casings, rings, combustor cans, enclosure, skid) from .gea scripts.</AddinDescription>
+        <AddinFileName>InventorGasTurbineAddin.addin</AddinFileName>
+    </PropertyGroup>
+
+    <Import Project="..\..\Addin.targets" />
+
+</Project>

@@ -1,0 +1,334 @@
+! ============================================================================
+! Turbine khí công nghiệp (đơn giản hóa, theo ảnh tham chiếu): cửa hút, vỏ máy nén có vành gân,
+! buồng đốt với vòng ống đốt, tầng turbine, cửa xả, hộp bao (enclosure) trên cửa hút, đế skid.
+!
+! Mỗi bộ phận là một solid body có tên trong cùng một Part. Hệ tọa độ của builder:
+!   X  = trục máy (tâm máy ở X = 0, cửa hút ở phía âm, cửa xả ở phía dương)
+!   D  = chiều ngang (trục máy ở D = 0)
+!   Elevation = cao độ (đáy skid ở 0, mặt trên skid ở GT_BaseHeight)
+!
+! Các vỏ là khối trụ đặc nằm ngang (builder:Cylinder, Axis "X"). Vòng ống đốt đặt quanh buồng đốt
+! bằng xấp xỉ sin/cos (công thức Bhaskara, sai số < 0.2 %) vì ngôn ngữ chưa có hàm lượng giác.
+! Luật ở FORM khớp với TurbineParams.Validate (server dùng bản C# đó).
+! ============================================================================
+GEA_VERSION 1
+PRODUCT_NAME "Gas turbine (simplified)"
+PARAM_PREFIX GT_
+TARGET PART
+
+BEGIN_FORM
+
+  BEGIN_GROUP "Casing sections"
+    USER_INPUT_PARAM GT_InletDiameter LENGTH 2200 mm MIN 1200 MAX 3500 REQUIRED LABEL "Inlet casing diameter"
+    USER_INPUT_PARAM GT_InletLength   LENGTH 1100 mm MIN 600  MAX 2000 REQUIRED LABEL "Inlet casing length"
+    USER_INPUT_PARAM GT_CompDiameter  LENGTH 1700 mm MIN 1000 MAX 3000 REQUIRED LABEL "Compressor casing diameter"
+    USER_INPUT_PARAM GT_CompLength    LENGTH 1800 mm MIN 800  MAX 3000 REQUIRED LABEL "Compressor casing length"
+    USER_INPUT_PARAM GT_CombDiameter  LENGTH 1500 mm MIN 800  MAX 3000 REQUIRED LABEL "Combustor casing diameter"
+    USER_INPUT_PARAM GT_CombLength    LENGTH 1400 mm MIN 800  MAX 2500 REQUIRED LABEL "Combustor casing length"
+    USER_INPUT_PARAM GT_TurbDiameter  LENGTH 1800 mm MIN 1000 MAX 3000 REQUIRED LABEL "Turbine casing diameter"
+    USER_INPUT_PARAM GT_TurbLength    LENGTH 1300 mm MIN 600  MAX 2500 REQUIRED LABEL "Turbine casing length"
+    USER_INPUT_PARAM GT_ExhDiameter   LENGTH 2300 mm MIN 1200 MAX 3500 REQUIRED LABEL "Exhaust casing diameter"
+    USER_INPUT_PARAM GT_ExhLength     LENGTH 1100 mm MIN 600  MAX 2000 REQUIRED LABEL "Exhaust casing length"
+  END_GROUP
+
+  BEGIN_GROUP "Enclosure"
+    USER_INPUT_PARAM GT_EncLength LENGTH 1700 mm MIN 800 MAX 3000 LABEL "Enclosure length"
+    USER_INPUT_PARAM GT_EncWidth  LENGTH 1500 mm MIN 800 MAX 2500 LABEL "Enclosure width"
+    USER_INPUT_PARAM GT_EncHeight LENGTH 1000 mm MIN 400 MAX 2000 LABEL "Enclosure height"
+    USER_INPUT_PARAM GT_EncStart  LENGTH 300 mm  MIN 0   MAX 1500 LABEL "Enclosure start from inlet end"
+  END_GROUP
+
+  BEGIN_GROUP "Compressor rings"
+    USER_INPUT_PARAM GT_FlangeCount INTEGER 6 MIN 0 MAX 12 LABEL "Ring count"
+    ! Không có vành thì ẩn các ô kích thước vành (ô ẩn giữ giá trị mặc định)
+    IF GT_FlangeCount > 0
+      USER_INPUT_PARAM GT_FlangeThickness LENGTH 40 mm  MIN 15 MAX 120 LABEL "Ring thickness"
+      USER_INPUT_PARAM GT_FlangeExtra     LENGTH 100 mm MIN 20 MAX 150 LABEL "Ring radial height"
+    END_IF
+  END_GROUP
+
+  BEGIN_GROUP "Combustor cans"
+    USER_INPUT_PARAM GT_CanCount    INTEGER 8 MIN 4 MAX 16 LABEL "Can count (multiple of 4)"
+    USER_INPUT_PARAM GT_CanDiameter LENGTH 140 mm MIN 60 MAX 300 LABEL "Can diameter"
+    USER_INPUT_PARAM GT_CanOffset   LENGTH 120 mm MIN 40 MAX 300 LABEL "Can clearance from casing"
+  END_GROUP
+
+  BEGIN_GROUP "Skid"
+    USER_INPUT_PARAM GT_BaseHeight   LENGTH 250 mm  MIN 100  MAX 600  LABEL "Skid height"
+    USER_INPUT_PARAM GT_BaseWidth    LENGTH 3200 mm MIN 1500 MAX 5000 LABEL "Skid width"
+    USER_INPUT_PARAM GT_BaseOverhang LENGTH 200 mm  MIN 0    MAX 600  LABEL "Skid overhang beyond the ends"
+  END_GROUP
+
+  ! --- Luật kiểm tra ---
+  DECLARE_VARIABLE LENGTH maxD
+  DECLARE_VARIABLE LENGTH ringR
+
+  maxD = MAX(MAX(MAX(GT_InletDiameter, GT_CompDiameter), MAX(GT_CombDiameter, GT_TurbDiameter)), GT_ExhDiameter)
+  ringR = GT_CombDiameter / 2 + GT_CanOffset + GT_CanDiameter / 2
+
+  ASSERT FLOOR(GT_CanCount / 4) * 4 == GT_CanCount \
+    "Can count must be a multiple of 4 (the cans are placed symmetrically around the axis)."
+  ASSERT GT_EncStart + GT_EncLength <= GT_InletLength + GT_CompLength \
+    "The enclosure must end before the combustor (start + length must be at most inlet length + compressor length)."
+  ASSERT GT_BaseWidth >= maxD + 300 mm "Skid width must be at least the largest casing diameter + 300 mm."
+  ASSERT GT_BaseWidth >= GT_EncWidth + 100 mm "Skid width must be at least the enclosure width + 100 mm."
+  ASSERT GT_CanCount * GT_CanDiameter * 1.1 <= 6.2831853 * ringR \
+    "The combustor cans overlap each other (reduce count or diameter, or increase clearance)."
+  ASSERT GT_CombDiameter + 2 * GT_CanOffset + 2 * GT_CanDiameter <= GT_BaseWidth "The combustor can ring is wider than the skid."
+
+END_FORM
+
+BEGIN_BUILD
+
+  DECLARE_VARIABLE LENGTH maxD
+  DECLARE_VARIABLE LENGTH total
+  DECLARE_VARIABLE LENGTH axisH
+  DECLARE_VARIABLE LENGTH xI
+  DECLARE_VARIABLE LENGTH xC
+  DECLARE_VARIABLE LENGTH xB
+  DECLARE_VARIABLE LENGTH xT
+  DECLARE_VARIABLE LENGTH xE
+  DECLARE_VARIABLE LENGTH xEnd
+  DECLARE_VARIABLE LENGTH ringR
+  DECLARE_VARIABLE LENGTH canL
+  DECLARE_VARIABLE LENGTH dPos
+  DECLARE_VARIABLE LENGTH hPos
+  DECLARE_VARIABLE INTEGER q
+  DECLARE_VARIABLE INTEGER index
+  DECLARE_VARIABLE DOUBLE a
+  DECLARE_VARIABLE DOUBLE b
+  DECLARE_VARIABLE DOUBLE ya
+  DECLARE_VARIABLE DOUBLE yb
+  DECLARE_VARIABLE DOUBLE sn
+  DECLARE_VARIABLE DOUBLE cs
+  DECLARE_REFERENCE body
+
+  maxD = MAX(MAX(MAX(GT_InletDiameter, GT_CompDiameter), MAX(GT_CombDiameter, GT_TurbDiameter)), GT_ExhDiameter)
+  total = GT_InletLength + GT_CompLength + GT_CombLength + GT_TurbLength + GT_ExhLength
+  axisH = GT_BaseHeight + maxD / 2 + 50 mm
+  xI = -total / 2
+  xC = xI + GT_InletLength
+  xB = xC + GT_CompLength
+  xT = xB + GT_CombLength
+  xE = xT + GT_TurbLength
+  xEnd = xE + GT_ExhLength
+
+  PROCESSING_BOX_START "Building the gas turbine"
+
+  ! --- Skid và các gối đỡ vỏ ---
+  PROCESSING_BOX_SET_STATE "Skid and cradles" 10
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "SizeX"  total + 2 * GT_BaseOverhang
+    FEATURE_IN "SizeD"  GT_BaseWidth
+    FEATURE_IN "Height" GT_BaseHeight
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GT_Skid"
+  SET_REF_ATTR body "ROLE" "SKID"
+  SET_APPEARANCE body "Grey"
+
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "CenterX"   xC + GT_CompLength / 2
+    FEATURE_IN "Elevation" GT_BaseHeight
+    FEATURE_IN "SizeX"     300 mm
+    FEATURE_IN "SizeD"     0.5 * GT_CompDiameter
+    FEATURE_IN "Height"    axisH - GT_CompDiameter / 2 - GT_BaseHeight
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GT_Cradle_Compressor"
+  SET_APPEARANCE body "Grey"
+
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "CenterX"   xT + GT_TurbLength / 2
+    FEATURE_IN "Elevation" GT_BaseHeight
+    FEATURE_IN "SizeX"     300 mm
+    FEATURE_IN "SizeD"     0.5 * GT_TurbDiameter
+    FEATURE_IN "Height"    axisH - GT_TurbDiameter / 2 - GT_BaseHeight
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GT_Cradle_Turbine"
+  SET_APPEARANCE body "Grey"
+
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "CenterX"   xE + GT_ExhLength / 2
+    FEATURE_IN "Elevation" GT_BaseHeight
+    FEATURE_IN "SizeX"     300 mm
+    FEATURE_IN "SizeD"     0.5 * GT_ExhDiameter
+    FEATURE_IN "Height"    axisH - GT_ExhDiameter / 2 - GT_BaseHeight
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GT_Cradle_Exhaust"
+  SET_APPEARANCE body "Grey"
+
+  ! --- Năm vỏ máy dọc trục X ---
+  PROCESSING_BOX_SET_STATE "Casing sections" 30
+  CREATE_FEATURE builder:Cylinder
+    FEATURE_IN "Axis"      "X"
+    FEATURE_IN "CenterX"   xI + GT_InletLength / 2
+    FEATURE_IN "Elevation" axisH
+    FEATURE_IN "Diameter"  GT_InletDiameter
+    FEATURE_IN "Length"    GT_InletLength
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GT_Inlet"
+  SET_REF_ATTR body "ROLE" "INLET"
+  SET_APPEARANCE body "Grey"
+
+  CREATE_FEATURE builder:Cylinder
+    FEATURE_IN "Axis"      "X"
+    FEATURE_IN "CenterX"   xC + GT_CompLength / 2
+    FEATURE_IN "Elevation" axisH
+    FEATURE_IN "Diameter"  GT_CompDiameter
+    FEATURE_IN "Length"    GT_CompLength
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GT_Compressor"
+  SET_REF_ATTR body "ROLE" "COMPRESSOR"
+  SET_APPEARANCE body "Grey"
+
+  CREATE_FEATURE builder:Cylinder
+    FEATURE_IN "Axis"      "X"
+    FEATURE_IN "CenterX"   xB + GT_CombLength / 2
+    FEATURE_IN "Elevation" axisH
+    FEATURE_IN "Diameter"  GT_CombDiameter
+    FEATURE_IN "Length"    GT_CombLength
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GT_Combustor"
+  SET_REF_ATTR body "ROLE" "COMBUSTOR"
+  SET_APPEARANCE body "Grey"
+
+  CREATE_FEATURE builder:Cylinder
+    FEATURE_IN "Axis"      "X"
+    FEATURE_IN "CenterX"   xT + GT_TurbLength / 2
+    FEATURE_IN "Elevation" axisH
+    FEATURE_IN "Diameter"  GT_TurbDiameter
+    FEATURE_IN "Length"    GT_TurbLength
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GT_Turbine"
+  SET_REF_ATTR body "ROLE" "TURBINE"
+  SET_APPEARANCE body "Grey"
+
+  CREATE_FEATURE builder:Cylinder
+    FEATURE_IN "Axis"      "X"
+    FEATURE_IN "CenterX"   xE + GT_ExhLength / 2
+    FEATURE_IN "Elevation" axisH
+    FEATURE_IN "Diameter"  GT_ExhDiameter
+    FEATURE_IN "Length"    GT_ExhLength
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GT_Exhaust"
+  SET_REF_ATTR body "ROLE" "EXHAUST"
+  SET_APPEARANCE body "Grey"
+
+  ! Vành đầu cửa hút (lớn hơn vỏ 300 mm đường kính) và trục ra ở cửa xả
+  CREATE_FEATURE builder:Cylinder
+    FEATURE_IN "Axis"      "X"
+    FEATURE_IN "CenterX"   xI + 40 mm
+    FEATURE_IN "Elevation" axisH
+    FEATURE_IN "Diameter"  GT_InletDiameter + 300 mm
+    FEATURE_IN "Length"    80 mm
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GT_InletFlange"
+  SET_APPEARANCE body "LightGrey"
+
+  CREATE_FEATURE builder:Cylinder
+    FEATURE_IN "Axis"      "X"
+    FEATURE_IN "CenterX"   xEnd + 300 mm
+    FEATURE_IN "Elevation" axisH
+    FEATURE_IN "Diameter"  320 mm
+    FEATURE_IN "Length"    600 mm
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GT_Shaft"
+  SET_APPEARANCE body "LightGrey"
+
+  ! --- Vành gân quanh vỏ máy nén, chia đều dọc chiều dài ---
+  PROCESSING_BOX_SET_STATE "Compressor rings" 50
+  FOR i FROM 0 TO GT_FlangeCount - 1
+    CREATE_FEATURE builder:Cylinder
+      FEATURE_IN "Axis"      "X"
+      FEATURE_IN "CenterX"   xC + (i + 0.5) * GT_CompLength / GT_FlangeCount
+      FEATURE_IN "Elevation" axisH
+      FEATURE_IN "Diameter"  GT_CompDiameter + 2 * GT_FlangeExtra
+      FEATURE_IN "Length"    GT_FlangeThickness
+      FEATURE_OUT body "Body"
+    END_CREATE_FEATURE
+    SET_REF_NAME body "GT_Ring_" + STR(i + 1)
+    SET_REF_ATTR body "ROLE" "RING"
+    SET_APPEARANCE body "LightGrey"
+  END_FOR
+
+  ! --- Hộp bao trên cửa hút / máy nén ---
+  PROCESSING_BOX_SET_STATE "Enclosure" 60
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "CenterX"      xI + GT_EncStart + GT_EncLength / 2
+    FEATURE_IN "Elevation"    axisH + GT_InletDiameter / 2 - 100 mm
+    FEATURE_IN "SizeX"        GT_EncLength
+    FEATURE_IN "SizeD"        GT_EncWidth
+    FEATURE_IN "Height"       GT_EncHeight
+    FEATURE_IN "CornerRadius" 20 mm
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "GT_Enclosure"
+  SET_REF_ATTR body "ROLE" "ENCLOSURE"
+  SET_APPEARANCE body "LightGrey"
+
+  ! --- Vòng ống đốt: hai vòng góp ở hai đầu buồng đốt, các ống nằm giữa hai vòng ---
+  PROCESSING_BOX_SET_STATE "Combustor cans" 75
+  ringR = GT_CombDiameter / 2 + GT_CanOffset + GT_CanDiameter / 2
+  canL = GT_CombLength - 120 mm
+
+  FOR mf FROM 0 TO 1
+    CREATE_FEATURE builder:Cylinder
+      FEATURE_IN "Axis"      "X"
+      FEATURE_IN "CenterX"   xB + 30 mm + mf * (GT_CombLength - 60 mm)
+      FEATURE_IN "Elevation" axisH
+      FEATURE_IN "Diameter"  2 * (ringR + GT_CanDiameter / 2)
+      FEATURE_IN "Length"    60 mm
+      FEATURE_OUT body "Body"
+    END_CREATE_FEATURE
+    SET_REF_NAME body "GT_Manifold_" + STR(mf + 1)
+    SET_APPEARANCE body "LightGrey"
+  END_FOR
+
+  ! Mỗi góc phần tư có CanCount/4 ống, đặt ở góc (j + 0.5) * 90 độ / q, rồi lấy đối xứng qua hai trục.
+  ! sin(a) ~ 16 y / (5 pi^2 - 4 y) với y = a (pi - a); cos(a) = sin(pi/2 - a).
+  q = FLOOR(GT_CanCount / 4)
+  index = 0
+  FOR j FROM 0 TO q - 1
+    a = 1.5707963 * (j + 0.5) / q
+    b = 1.5707963 - a
+    ya = a * (3.1415927 - a)
+    yb = b * (3.1415927 - b)
+    sn = 16 * ya / (49.348022 - 4 * ya)
+    cs = 16 * yb / (49.348022 - 4 * yb)
+    FOR sx FROM 0 TO 1
+      FOR sy FROM 0 TO 1
+        dPos = (2 * sx - 1) * ringR * cs
+        hPos = (2 * sy - 1) * ringR * sn
+        CREATE_FEATURE builder:Cylinder
+          FEATURE_IN "Axis"      "X"
+          FEATURE_IN "CenterX"   xB + GT_CombLength / 2
+          FEATURE_IN "CenterD"   dPos
+          FEATURE_IN "Elevation" axisH + hPos
+          FEATURE_IN "Diameter"  GT_CanDiameter
+          FEATURE_IN "Length"    canL
+          FEATURE_OUT body "Body"
+        END_CREATE_FEATURE
+        index++
+        SET_REF_NAME body "GT_Can_" + STR(index)
+        SET_REF_ATTR body "ROLE" "CAN"
+        SET_APPEARANCE body "Grey"
+      END_FOR
+    END_FOR
+  END_FOR
+
+  PROCESSING_BOX_SET_STATE "Updating the model" 95
+  REGEN_MDL
+  PRINT "Built gas turbine " + STR(total) + " long, " + STR(GT_CanCount) + " cans, " + STR(GT_FlangeCount) + " rings"
+  PROCESSING_BOX_END
+
+END_BUILD
