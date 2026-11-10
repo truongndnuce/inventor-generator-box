@@ -88,3 +88,10 @@ Cập nhật `sa-docs/gea-language-spec.md` (mục INCLUDE, đóng Q1, mục P1)
 
 - Add-in Inventor không thể build/test ở máy này (không có Inventor). Phần add-in (resolver theo thư mục) chỉ build được, không chạy được; logic mở rộng nằm trong Core nên được test ở server.
 - Tham số `TR_` xuất hiện trong script của sản phẩm khác có thể gây nhầm. Đổi tên sang tiền tố trung tính cần đổi `TransformerParams.cs` và job cũ nên để lại sau.
+
+## Thay đổi khi triển khai (so với thiết kế ban đầu)
+
+- **`PARAM_PREFIX` nhận nhiều tiền tố** (`PARAM_PREFIX GT_ TR_`). Bản đã mở rộng được lưu và biên dịch lại không có resolver, nên dòng `PARAM_PREFIX` của script cha phải liệt kê cả tiền tố của thư viện, nếu không tham số `TR_...` bị `GEA2030`. `GeaIncludes.Expand` tự viết lại dòng này.
+- Mã lỗi INCLUDE là `GEA1010`-`GEA1015` (dải cú pháp), không phải `GEA3xxx` (dải đó dành cho kiểm tra giá trị).
+- `tank-base-cover` tự khai báo `hTank`, `hCover`, `hTop` và dùng biến tham chiếu riêng `tbcBody`; script cha không khai báo lại các biến đó. Ba lệnh gán `hTank/hCover/hTop` nay nằm sau `PROCESSING_BOX_START` (không đổi kết quả, đã kiểm bằng test tương đương trên Host mô phỏng).
+- Test tương đương của `transformer.gea` chạy cả hai bản trên `GeaSimulationHost` và so sánh vết lệnh, nên không phụ thuộc thứ tự câu lệnh.

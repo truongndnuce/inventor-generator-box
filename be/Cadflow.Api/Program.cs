@@ -30,6 +30,7 @@ var frontendDir = Path.GetFullPath(builder.Configuration["Frontend:Path"] ?? Pat
 var dbConn = builder.Configuration.GetConnectionString("Cadflow")
     ?? throw new InvalidOperationException("Missing ConnectionStrings:Cadflow (PostgreSQL). Set it in appsettings.json or .env (ConnectionStrings__Cadflow).");
 builder.Services.AddSingleton(new JobStore(dataDir, dbConn));
+builder.Services.AddSingleton(new Cadflow.Api.Chat.ChatStore(dbConn));
 builder.Services.AddSingleton(new ScriptStore(dataDir));
 builder.Services.AddSingleton(new ConfigStore(dataDir));
 builder.Services.AddSingleton<JobService>();

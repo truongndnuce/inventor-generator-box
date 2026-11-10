@@ -6,7 +6,8 @@ using Cadflow.Api.Mcp;
 namespace Cadflow.Api.Chat;
 
 public sealed record ChatTurn(string? Role, string? Content);
-public sealed record ChatRequest(List<ChatTurn>? Messages, string? RequestedBy);
+public sealed record ChatRequest(List<ChatTurn>? Messages, string? RequestedBy, string? ConversationId = null);
+public sealed record RenameRequest(string? Title);
 public sealed record ConfirmRequest(string? RequestedBy);
 
 /// <summary>
@@ -50,10 +51,25 @@ public static class ChatEndpoint
             : string.IsNullOrWhiteSpace(baseUrl) ? new AnthropicClient { ApiKey = apiKey }
             : new AnthropicClient { ApiKey = apiKey, BaseUrl = baseUrl };
 
-        app.MapPost("/api/chat/confirm/{draftId}", (string draftId, ConfirmRequest req, CadTools tools) =>
+        var chats = app.Services.GetRequiredService<ChatStore>();
+        static string Owner(string? s) => (s ?? "").Trim();
+
+        // ---- lịch sử hội thoại (PostgreSQL), lọc theo owner
+        app.MapGet("/api/chats", async (string? owner, CancellationToken ct) => Results.Ok(await chats.ListAsync(Owner(owner), ct)));
+        app.MapGet("/api/chats/{id}", async (string id, string? owner, CancellationToken ct) =>
+            await chats.GetAsync(id, Owner(owner), ct) is { } d ? Results.Ok(d) : Results.NotFound());
+        app.MapPatch("/api/chats/{id}", async (string id, string? owner, RenameRequest req, CancellationToken ct) =>
+            string.IsNullOrWhiteSpace(req.Title) ? Results.BadRequest(new { error = "Title is required." })
+            : await chats.RenameAsync(id, Owner(owner), req.Title.Trim()[..Math.Min(req.Title.Trim().Length, 120)], ct) ? Results.NoContent() : Results.NotFound());
+        app.MapDelete("/api/chats/{id}", async (string id, string? owner, CancellationToken ct) =>
+            await chats.DeleteAsync(id, Owner(owner), ct) ? Results.NoContent() : Results.NotFound());
+
+        app.MapPost("/api/chat/confirm/{draftId}", async (string draftId, ConfirmRequest req, CadTools tools) =>
         {
             var r = tools.Confirm(draftId, req.RequestedBy);
-            return r.Ok ? Results.Created($"/api/jobs/{r.Job!.Id}", r.Job) : Results.Json(r.Error, statusCode: r.Status);
+            if (!r.Ok) return Results.Json(r.Error, statusCode: r.Status);
+            await chats.MarkProposalCreatedAsync(draftId, r.Job!.Id);
+            return Results.Created($"/api/jobs/{r.Job!.Id}", r.Job);
         }).RequireRateLimiting("chat");
 
         app.MapPost("/api/chat", async (ChatRequest req, CadTools tools, HttpContext http) =>
@@ -66,6 +82,11 @@ public static class ChatEndpoint
             if (turns.Count > MaxTurns || turns.Sum(t => t.Content!.Length) > MaxChars)
                 return Results.BadRequest(new { error = "The conversation is too long. Start a new chat." });
 
+            var owner = Owner(req.RequestedBy);
+            var convId = req.ConversationId;
+            if (!string.IsNullOrEmpty(convId) && !await chats.ExistsAsync(convId, owner))
+                return Results.NotFound(new { error = "Conversation not found." });
+
             http.Response.ContentType = "text/event-stream";
             http.Response.Headers.CacheControl = "no-cache";
             var ct = http.RequestAborted;
@@ -77,6 +98,14 @@ public static class ChatEndpoint
 
             try
             {
+                if (string.IsNullOrEmpty(convId))
+                {
+                    var created = await chats.CreateAsync(owner, ChatStore.TitleOf(turns[0].Content!), ct);
+                    convId = created.Id;
+                    await Send(new { type = "conversation", id = created.Id, title = created.Title });
+                }
+                await chats.AddAsync(convId, "user", turns[^1].Content, null, ct);
+
                 var messages = new List<MessageParam>();
                 foreach (var t in turns)
                     messages.Add(t.Role == "user" ? new UserMessageParam { Content = t.Content! } : new AssistantMessageParam { Content = t.Content! });
@@ -99,7 +128,11 @@ public static class ChatEndpoint
                         if (block.TryPickText(out TextBlock? text))
                         {
                             assistant.Add(new TextBlockParam { Text = text.Text });
-                            if (!string.IsNullOrWhiteSpace(text.Text)) await Send(new { type = "text", text = text.Text });
+                            if (!string.IsNullOrWhiteSpace(text.Text))
+                            {
+                                await chats.AddAsync(convId, "assistant", text.Text, null, ct);
+                                await Send(new { type = "text", text = text.Text });
+                            }
                         }
                         else if (block.TryPickThinking(out ThinkingBlock? thinking))
                             assistant.Add(new ThinkingBlockParam { Thinking = thinking.Thinking, Signature = thinking.Signature });
@@ -111,9 +144,17 @@ public static class ChatEndpoint
                             await Send(new { type = "tool", name = use.Name });
                             var (output, isError, draft, job) = Run(tools, use.Name, use.Input, req.RequestedBy, autoCreate);
                             if (draft != null)
-                                await Send(new { type = "proposal", draftId = draft.Id, product = draft.Product, values = draft.Values, scriptId = draft.Request.ScriptId, configId = draft.Request.ConfigId });
+                            {
+                                var card = new { draftId = draft.Id, product = draft.Product, values = draft.Values, scriptId = draft.Request.ScriptId, configId = draft.Request.ConfigId };
+                                await chats.AddAsync(convId, "proposal", null, card, ct);
+                                await Send(new { type = "proposal", card.draftId, card.product, card.values, card.scriptId, card.configId });
+                            }
                             if (job != null)
-                                await Send(new { type = "job", jobId = job.Id, product = job.ProductCode, values = job.Inputs });
+                            {
+                                var card = new { jobId = job.Id, product = job.ProductCode, values = job.Inputs };
+                                await chats.AddAsync(convId, "job", null, card, ct);
+                                await Send(new { type = "job", card.jobId, card.product, card.values });
+                            }
                             results.Add(new ToolResultBlockParam { ToolUseID = use.ID, Content = output, IsError = isError });
                         }
                     }

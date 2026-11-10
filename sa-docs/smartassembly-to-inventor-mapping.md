@@ -149,9 +149,9 @@ SmartAssembly không vẽ từng feature mà gọi UDF có sẵn, truyền tham 
 
 | SmartAssembly | Đề xuất |
 |---------------|---------|
-| `INCLUDE lib:Ten_File.tab` | Giữ lệnh `INCLUDE lib:Ten_File` |
+| `INCLUDE lib:Ten_File.tab` | Giữ lệnh `INCLUDE lib:Ten_File` (đã làm: `Scripts/lib/<tên>.gea`, xem `gea-language-spec.md` mục 20) |
 | Tiền tố `lib:` phân giải qua cấu hình (`SA_Paths.txt`), không dùng đường dẫn cứng | Phân giải theo **kho thư viện của phiên bản sản phẩm** (cấu hình trên server, mỗi worker có bản sao đồng bộ); cấm đường dẫn cứng |
-| Module dùng chung biến của file cha (phạm vi không cô lập) | **Quyết định cần chốt.** Giữ như SmartAssembly cho đơn giản, hay cô lập mặc định và truyền tham số rõ ràng (ít lỗi hơn khi thư viện lớn dần) |
+| Module dùng chung biến của file cha (phạm vi không cô lập) | **Đã chốt (D6): dùng chung biến** như SmartAssembly. Trùng tên khai báo là lỗi `GEA2003`; thư viện có `PARAM_PREFIX` riêng được thêm vào tiền tố hợp lệ của script cha |
 
 ---
 
@@ -339,7 +339,7 @@ END_BUILD
 | D3 | Parser | Viết tay theo dòng, bảng lệnh khai báo hình dạng tham số cho từng lệnh |
 | D4 | Đơn vị | Có `LENGTH`, `ANGLE` với kiểm tra tĩnh |
 | D5 | Tên tham chiếu | Dùng tên Parameter trực tiếp; nhãn thuộc tính cho thực thể |
-| D6 | Phạm vi biến của module | Chọn giữa chung biến như SmartAssembly và cô lập (mục 9) |
+| D6 | Phạm vi biến của module | **Đã chốt: chung biến như SmartAssembly** (mục 9, `gea-language-spec.md` mục 20) |
 | D7 | Phiên bản ngôn ngữ | Có dòng khai báo phiên bản ở đầu file |
 | D8 | Thông báo lỗi | Dòng, cột, lệnh, đoạn trích; tiếng Việt |
 | **D9 (mới)** | Khi nào FORM tính lại | Chạy lại mỗi khi bất kỳ giá trị nào đổi (mục 8) |
@@ -367,7 +367,7 @@ END_BUILD
 
 ## 18. Việc làm ngay tiếp theo
 
-1. Chốt D6 (phạm vi biến của module) và đuôi file; xác nhận D1 là mệnh lệnh kiểu SmartAssembly.
+1. (D6 đã chốt: chung biến) Chốt đuôi file; xác nhận D1 là mệnh lệnh kiểu SmartAssembly.
 2. **D0 (viết tay):** hoàn thiện ví dụ ở mục 15 thành file thật cho Cấp 1, dùng làm thước đo cho cú pháp.
 3. Viết **bảng lệnh P0** (số tham số, kiểu, hành vi ở Inventor Host và mô phỏng Host).
 4. Làm lexer, parser và thông dịch cho P0 cùng **mô phỏng Host** (không cần Inventor), kèm test và vết lệnh.

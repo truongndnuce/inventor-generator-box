@@ -65,7 +65,7 @@ BEGIN_BUILD ... END_BUILD      (bắt buộc)
 ```
 
 - Thứ tự khối cố định: FORM, TABLES, BUILD.
-- `PARAM_PREFIX`: mọi thông số khai báo trong FORM phải bắt đầu bằng tiền tố này (kiểm tra ở bước ngữ nghĩa). Mục đích: tránh đụng tên với Parameter của người dùng trong Inventor.
+- `PARAM_PREFIX`: mọi thông số khai báo trong FORM phải bắt đầu bằng tiền tố này (kiểm tra ở bước ngữ nghĩa). Có thể liệt kê nhiều tiền tố (`PARAM_PREFIX GT_ TR_`); xem mục 20 về `INCLUDE`. Mục đích: tránh đụng tên với Parameter của người dùng trong Inventor.
 - `TARGET`: loại document mà BUILD tạo ra hoặc dùng. Việc mở document nào (đang mở hay tạo mới từ template) do **Host** quyết định, không do script.
 - Biến khai báo trong một khối **chỉ có hiệu lực trong khối đó**. Chỉ **thông số** (khai báo bằng lệnh `*_PARAM`) được truyền từ FORM sang BUILD.
 
@@ -357,7 +357,7 @@ Các tên sau **bị dành riêng** để sau này thêm không đụng tên.
 
 | Ưu tiên | Lệnh |
 |---------|------|
-| P1 | `INCLUDE lib:<tên>`, `CHOICE_PARAM`, `MESSAGE_BOX`, `MESSAGE_BOX_EX`, `SET_OUTPUT`, `JSON_LOAD_DOCUMENT`, `JSON_GET_VALUE`, `JSON_SET_VALUE`, `TABLE_*`, `ADD_ARRAY_ELEM`, `GET_ARRAY_ELEM`, `GET_ARRAY_SIZE`, `CLEAR_ARRAY`, `SET_MAP_VALUE`, `GET_MAP_VALUE`, `HAS_MAP_KEY` |
+| P1 | `CHOICE_PARAM`, `MESSAGE_BOX`, `MESSAGE_BOX_EX`, `SET_OUTPUT`, `JSON_LOAD_DOCUMENT`, `JSON_GET_VALUE`, `JSON_SET_VALUE`, `TABLE_*`, `ADD_ARRAY_ELEM`, `GET_ARRAY_ELEM`, `GET_ARRAY_SIZE`, `CLEAR_ARRAY`, `SET_MAP_VALUE`, `GET_MAP_VALUE`, `HAS_MAP_KEY` |
 | P2 | `ADD_COMPONENT`, `BEGIN_ASSEMBLE`/`END_ASSEMBLE` với `MATE`, `FLUSH`, `INSERT`, `ANGLE_CONSTRAINT`; `EXPORT_STEP`, `EXPORT_IMAGE`, `EXPORT_PDF`; `DRW_NEW`, `DRW_ADD_VIEW`, `DRW_ADD_SECTION`, `DRW_ADD_BALLOONS`, `DRW_ADD_PARTSLIST`, `DRW_ADD_NOTE`; `DECLARE_STRUCT`, `START_STOPWATCH`, `GET_STOPWATCH_TIME`; `FILE_OPEN`, `FILE_READ_LINE`, `FILE_WRITE_LINE`, `FILE_CLOSE` (chỉ trong thư mục job) |
 | P3 | `USER_SELECT`, `USER_SELECT_MULTIPLE` (chỉ add-in), `GET_SURFACE_NORM`, `MEASURE_DISTANCE`, `GET_SURFACE_CONTOUR`, `GET_REF_VERTEX`, `GET_REF_POS`, `VECTOR_NORMALIZE`, `VECTOR_FROM_POINTS`, `FIX_FAIL_FEATURE` |
 
@@ -411,7 +411,7 @@ Job ghi lại **phiên bản của mỗi builder** đã dùng.
 
 | Dải mã | Loại | Ví dụ |
 |--------|------|-------|
-| `GEA1xxx` | Cú pháp | `GEA1001` lệnh không nhận ra; `GEA1002` thiếu `END_*`; `GEA1003` sai số tham số; `GEA1004` chuỗi chưa đóng |
+| `GEA1xxx` | Cú pháp | `GEA1001` lệnh không nhận ra; `GEA1002` thiếu `END_*`; `GEA1003` sai số tham số; `GEA1004` chuỗi chưa đóng; `GEA1010-1015` lỗi `INCLUDE` (mục 20) |
 | `GEA2xxx` | Ngữ nghĩa | `GEA2001` tên chưa khai báo; `GEA2002` sai kiểu hoặc đơn vị; `GEA2003` khai báo trùng; `GEA2010-2013` lỗi `CREATE_FEATURE`; `GEA2020` lệnh dùng sai khối; `GEA2030` thiếu tiền tố thông số |
 | `GEA3xxx` | Kiểm tra giá trị | `GEA3001` `ASSERT` sai; `GEA3002` vi phạm `MIN`/`MAX`; `GEA3003` thiếu giá trị `REQUIRED` |
 | `GEA4xxx` | Thực thi trên Host | `GEA4010` Parameter trùng không thuộc `.gea`; `GEA4011` trùng tên đối tượng; `GEA4012` tham chiếu chưa gán; `GEA4020` ngoại hình không có; `GEA4030` không có hàng trong bảng; `GEA4099` lỗi Inventor chưa phân loại (kèm nội dung gốc) |
@@ -499,7 +499,7 @@ Gợi ý hiện thực: mỗi lệnh có một **bảng khai báo hình dạng**
 
 | # | Vấn đề | Tạm chọn trong bản nháp | Cần chốt |
 |---|--------|--------------------------|----------|
-| Q1 | `INCLUDE` dùng chung biến với file cha hay cô lập | Chưa đặc tả (P1) | Có, trước khi làm P1 (đây là D6 trong `smartassembly-to-inventor-mapping.md`) |
+| Q1 | `INCLUDE` dùng chung biến với file cha hay cô lập | **Đã chốt: dùng chung biến** (mục 20) | Không còn |
 | Q2 | Chỉ số mảng bắt đầu từ 0 | Từ 0 | Xác nhận |
 | Q3 | `FOR ... TO` bao gồm giá trị cuối | Bao gồm | Xác nhận |
 | Q4 | Ô ẩn nhận giá trị mặc định và vẫn đọc được | Như mô tả mục 7.2 | Xác nhận |
@@ -564,3 +564,39 @@ Quy tắc:
 - Chỉ nhận `TARGET PART`, file tối đa 256 KB, tối đa 200 ô trên form.
 - Mỗi lần chạy FORM hoặc BUILD tối đa **1.000.000 lệnh** (`GeaInterpreter.MaxSteps`, mã lỗi `GEA5001`), ngoài giới hạn 10.000 vòng cho mỗi `FOR`/`WHILE`. Nhờ vậy vòng lặp lồng nhau không treo server hay worker.
 - Ngôn ngữ không có lệnh chạy chương trình ngoài hay đọc ghi file; BUILD chỉ gọi được builder trong danh mục (mục 12) trên Part mới của job.
+
+---
+
+## 20. `INCLUDE lib:` (component dùng lại)
+
+Dùng lại một đoạn script (nhóm tham số trong FORM và các bước dựng trong BUILD) ở script khác mà không copy. Thư viện là file `.gea` trong `Scripts/lib/<tên>.gea` (ví dụ `tank-base-cover.gea`: nhóm "Tank, base and cover" của máy biến áp).
+
+```
+! Thư viện (Scripts/lib/tank-base-cover.gea)       ! Script dùng thư viện
+GEA_VERSION 1                                      BEGIN_FORM
+PRODUCT_NAME "Tank, base and cover"                  INCLUDE lib:tank-base-cover   ! chèn thân FORM của thư viện
+PARAM_PREFIX TR_                                     BEGIN_GROUP "Radiators" ... END_GROUP
+TARGET PART                                        END_FORM
+BEGIN_FORM ... END_FORM                            BEGIN_BUILD
+BEGIN_BUILD ... END_BUILD                            INCLUDE lib:tank-base-cover   ! chèn thân BUILD của thư viện
+                                                     ... các bước dựng của script cha ...
+                                                   END_BUILD
+```
+
+- `INCLUDE lib:<tên>` đứng **một mình trên dòng, bên trong** `BEGIN_FORM` hoặc `BEGIN_BUILD` (chú thích `!` ở cuối dòng được phép). Trong FORM nó chèn thân khối FORM của thư viện, trong BUILD chèn thân khối BUILD. Thư viện không có khối tương ứng thì chèn không gì cả. Vị trí và thứ tự do script cha quyết định.
+- **Dùng chung biến** (quyết định Q1/D6): nội dung được chèn thẳng vào script cha, nên hai bên thấy và đặt được mọi biến và thông số. Khai báo trùng tên là lỗi `GEA2003`. Thư viện nên khai báo biến của mình và ghi trong chú thích đầu file những biến script cha được dùng.
+- **Tiền tố**: header của thư viện không được chèn, nhưng `PARAM_PREFIX` của nó được thêm vào danh sách tiền tố hợp lệ của script cha. `PARAM_PREFIX` nhận một hoặc nhiều tiền tố (`PARAM_PREFIX GT_ TR_`); thông số hợp lệ nếu bắt đầu bằng một trong số đó.
+- **Mở rộng trước lexer**: một bước tiền xử lý (`GeaIncludes.Expand`) thay các dòng INCLUDE bằng nội dung thư viện, trước khi lexer chạy. Bản đã mở rộng là script bình thường (không còn INCLUDE, dòng `PARAM_PREFIX` đã liệt kê cả tiền tố thư viện) nên tự biên dịch lại được.
+- **Chẩn đoán**: số dòng luôn là dòng của file gốc; lỗi nằm trong thư viện có thông báo bắt đầu bằng `<tên>.gea:` và số dòng trong thư viện. Mã mới: `GEA1010` INCLUDE ngoài khối; `GEA1011` tên thư viện không hợp lệ (chỉ `A-Z a-z 0-9 _ -`, tối đa 64 ký tự, không đường dẫn); `GEA1012` không tìm thấy thư viện hoặc không có nơi nạp; `GEA1013` lồng quá 8 tầng; `GEA1014` vòng lặp; `GEA1015` cùng một thư viện được INCLUDE hai lần trong cùng loại khối.
+- Giới hạn của bộ mở rộng: xử lý theo dòng, nên không nhận biết chú thích khối `/* ... */` trải nhiều dòng chứa `INCLUDE`.
+
+### 20.1. Nơi nạp thư viện
+
+| Nơi | Cách tìm |
+|-----|----------|
+| Server (import, tạo job) | `Scripts/lib/<tên>.gea` cạnh file chạy (`GeaLibraries`). Server mở rộng **trước khi lưu**: `ScriptStore` lưu và worker nhận bản đã mở rộng nên worker không cần thư viện, và **Export .gea** trả bản đã mở rộng (không còn dòng INCLUDE). |
+| Add-in Inventor (Open .gea) | `<thư mục file>/lib/<tên>.gea`, rồi `<thư mục file>/<tên>.gea`, rồi `Scripts/lib` cạnh add-in (`GeaLibraryResolver`). |
+
+Thêm thư viện mới: đặt `Scripts/lib/<tên>.gea` (cùng header như script thường, khối FORM/BUILD tùy chọn). Thư viện đi kèm server và add-in nhờ cấu hình ở `Cadflow.Api.csproj` và `InventorAddin.Core.csproj`.
+
+Mã nguồn: `InventorAddin.Core/Gea/GeaIncludes.cs`, `GeaLibraryResolver.cs`; `GeaScript.Compile(text, resolveLib, fileName)`.
