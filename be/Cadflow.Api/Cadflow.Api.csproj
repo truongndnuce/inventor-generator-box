@@ -35,6 +35,8 @@
         <Content Include="..\..\InventorAddin\InventorAddin.Core\Scripts\box.gea" Link="Scripts\box.gea" CopyToOutputDirectory="PreserveNewest" />
         <Content Include="..\..\InventorAddin\InventorAddin.Core\Scripts\turbine.gea" Link="Scripts\turbine.gea" CopyToOutputDirectory="PreserveNewest" />
         <Content Include="..\..\InventorAddin\InventorAddin.Core\Scripts\generator.gea" Link="Scripts\generator.gea" CopyToOutputDirectory="PreserveNewest" />
+        <!-- Thư viện component cho INCLUDE lib:<tên> (Scripts\lib\*.gea). -->
+        <Content Include="..\..\InventorAddin\InventorAddin.Core\Scripts\lib\*.gea" Link="Scripts\lib\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
 </Project>

@@ -16,6 +16,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="Fixtures\*.gea" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 

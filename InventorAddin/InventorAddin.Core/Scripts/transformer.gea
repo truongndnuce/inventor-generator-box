@@ -17,15 +17,7 @@ TARGET PART
 
 BEGIN_FORM
 
-  BEGIN_GROUP "Tank, base and cover"
-    USER_INPUT_PARAM TR_TankLength     LENGTH 2000 mm MIN 1000 MAX 5000 REQUIRED LABEL "Tank length"
-    USER_INPUT_PARAM TR_TankWidth      LENGTH 1100 mm MIN 600  MAX 2500 REQUIRED LABEL "Tank width"
-    USER_INPUT_PARAM TR_TankHeight     LENGTH 1500 mm MIN 800  MAX 3500 REQUIRED LABEL "Tank height"
-    USER_INPUT_PARAM TR_BaseThickness  LENGTH 80 mm   MIN 40   MAX 200  LABEL "Base plate thickness"
-    USER_INPUT_PARAM TR_BaseOverhang   LENGTH 120 mm  MIN 40   MAX 300  LABEL "Base plate overhang"
-    USER_INPUT_PARAM TR_CoverThickness LENGTH 50 mm   MIN 20   MAX 150  LABEL "Cover thickness"
-    USER_INPUT_PARAM TR_CoverOverhang  LENGTH 40 mm   MIN 0    MAX 120  LABEL "Cover overhang"
-  END_GROUP
+  INCLUDE lib:tank-base-cover
 
   BEGIN_GROUP "Radiators"
     USER_INPUT_PARAM TR_RadiatorCount INTEGER 3 MIN 0 MAX 6 LABEL "Radiator count"
@@ -94,9 +86,6 @@ END_FORM
 
 BEGIN_BUILD
 
-  DECLARE_VARIABLE LENGTH hTank
-  DECLARE_VARIABLE LENGTH hCover
-  DECLARE_VARIABLE LENGTH hTop
   DECLARE_VARIABLE LENGTH span
   DECLARE_VARIABLE LENGTH x0
   DECLARE_VARIABLE LENGTH consX
@@ -111,45 +100,10 @@ BEGIN_BUILD
   DECLARE_VARIABLE INTEGER index
   DECLARE_REFERENCE body
 
-  hTank = TR_BaseThickness
-  hCover = TR_BaseThickness + TR_TankHeight
-  hTop = hCover + TR_CoverThickness
 
   PROCESSING_BOX_START "Building the transformer"
 
-  ! --- Đế, thùng, nắp ---
-  PROCESSING_BOX_SET_STATE "Base, tank and cover" 10
-  CREATE_FEATURE builder:Block
-    FEATURE_IN "SizeX"  TR_TankLength + 2 * TR_BaseOverhang
-    FEATURE_IN "SizeD"  TR_TankWidth + 2 * TR_BaseOverhang
-    FEATURE_IN "Height" TR_BaseThickness
-    FEATURE_OUT body "Body"
-  END_CREATE_FEATURE
-  SET_REF_NAME body "TR_Base"
-  SET_REF_ATTR body "ROLE" "BASE"
-  SET_APPEARANCE body "Grey"
-
-  CREATE_FEATURE builder:Block
-    FEATURE_IN "Elevation" hTank
-    FEATURE_IN "SizeX"     TR_TankLength
-    FEATURE_IN "SizeD"     TR_TankWidth
-    FEATURE_IN "Height"    TR_TankHeight
-    FEATURE_OUT body "Body"
-  END_CREATE_FEATURE
-  SET_REF_NAME body "TR_Tank"
-  SET_REF_ATTR body "ROLE" "TANK"
-  SET_APPEARANCE body "Grey"
-
-  CREATE_FEATURE builder:Block
-    FEATURE_IN "Elevation" hCover
-    FEATURE_IN "SizeX"     TR_TankLength + 2 * TR_CoverOverhang
-    FEATURE_IN "SizeD"     TR_TankWidth + 2 * TR_CoverOverhang
-    FEATURE_IN "Height"    TR_CoverThickness
-    FEATURE_OUT body "Body"
-  END_CREATE_FEATURE
-  SET_REF_NAME body "TR_Cover"
-  SET_REF_ATTR body "ROLE" "COVER"
-  SET_APPEARANCE body "Grey"
+  INCLUDE lib:tank-base-cover
 
   ! --- Cánh tản nhiệt (phía D dương, cách thành thùng 30 mm, cao hơn đáy thùng 150 mm) ---
   PROCESSING_BOX_SET_STATE "Radiators" 30

@@ -1,0 +1,77 @@
+! ============================================================================
+! Component dùng lại: đế, thùng và nắp (nhóm "Tank, base and cover" của máy biến áp).
+!
+! Dùng trong script khác bằng một dòng INCLUDE ở HAI chỗ (xem sa-docs/gea-language-spec.md, mục INCLUDE):
+!     BEGIN_FORM   ...  INCLUDE lib:tank-base-cover  ...  END_FORM    ! nhóm tham số TR_Tank*, TR_Base*, TR_Cover*
+!     BEGIN_BUILD  ...  INCLUDE lib:tank-base-cover  ...  END_BUILD   ! dựng ba solid body TR_Base, TR_Tank, TR_Cover
+!
+! Biến dùng chung với script cha (đọc được sau khi INCLUDE): hTank (cao độ đáy thùng), hCover (cao độ đáy nắp),
+! hTop (cao độ đỉnh nắp). Script cha không được khai báo lại các biến này. Thư viện tự khai báo biến tham chiếu
+! tbcBody để không đụng tên `body` của script cha. Tham số giữ tiền tố TR_ (PARAM_PREFIX bên dưới).
+! Hệ tọa độ như transformer.gea: tâm thùng ở X = 0, D = 0, đế nằm trên cao độ 0.
+! ============================================================================
+GEA_VERSION 1
+PRODUCT_NAME "Tank, base and cover"
+PARAM_PREFIX TR_
+TARGET PART
+
+BEGIN_FORM
+
+  BEGIN_GROUP "Tank, base and cover"
+    USER_INPUT_PARAM TR_TankLength     LENGTH 2000 mm MIN 1000 MAX 5000 REQUIRED LABEL "Tank length"
+    USER_INPUT_PARAM TR_TankWidth      LENGTH 1100 mm MIN 600  MAX 2500 REQUIRED LABEL "Tank width"
+    USER_INPUT_PARAM TR_TankHeight     LENGTH 1500 mm MIN 800  MAX 3500 REQUIRED LABEL "Tank height"
+    USER_INPUT_PARAM TR_BaseThickness  LENGTH 80 mm   MIN 40   MAX 200  LABEL "Base plate thickness"
+    USER_INPUT_PARAM TR_BaseOverhang   LENGTH 120 mm  MIN 40   MAX 300  LABEL "Base plate overhang"
+    USER_INPUT_PARAM TR_CoverThickness LENGTH 50 mm   MIN 20   MAX 150  LABEL "Cover thickness"
+    USER_INPUT_PARAM TR_CoverOverhang  LENGTH 40 mm   MIN 0    MAX 120  LABEL "Cover overhang"
+  END_GROUP
+
+END_FORM
+
+BEGIN_BUILD
+
+  DECLARE_VARIABLE LENGTH hTank
+  DECLARE_VARIABLE LENGTH hCover
+  DECLARE_VARIABLE LENGTH hTop
+  DECLARE_REFERENCE tbcBody
+
+  hTank = TR_BaseThickness
+  hCover = TR_BaseThickness + TR_TankHeight
+  hTop = hCover + TR_CoverThickness
+
+  ! --- Đế, thùng, nắp ---
+  PROCESSING_BOX_SET_STATE "Base, tank and cover" 10
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "SizeX"  TR_TankLength + 2 * TR_BaseOverhang
+    FEATURE_IN "SizeD"  TR_TankWidth + 2 * TR_BaseOverhang
+    FEATURE_IN "Height" TR_BaseThickness
+    FEATURE_OUT tbcBody "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME tbcBody "TR_Base"
+  SET_REF_ATTR tbcBody "ROLE" "BASE"
+  SET_APPEARANCE tbcBody "Grey"
+
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "Elevation" hTank
+    FEATURE_IN "SizeX"     TR_TankLength
+    FEATURE_IN "SizeD"     TR_TankWidth
+    FEATURE_IN "Height"    TR_TankHeight
+    FEATURE_OUT tbcBody "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME tbcBody "TR_Tank"
+  SET_REF_ATTR tbcBody "ROLE" "TANK"
+  SET_APPEARANCE tbcBody "Grey"
+
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "Elevation" hCover
+    FEATURE_IN "SizeX"     TR_TankLength + 2 * TR_CoverOverhang
+    FEATURE_IN "SizeD"     TR_TankWidth + 2 * TR_CoverOverhang
+    FEATURE_IN "Height"    TR_CoverThickness
+    FEATURE_OUT tbcBody "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME tbcBody "TR_Cover"
+  SET_REF_ATTR tbcBody "ROLE" "COVER"
+  SET_APPEARANCE tbcBody "Grey"
+
+END_BUILD

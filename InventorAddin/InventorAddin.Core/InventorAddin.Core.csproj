@@ -13,6 +13,10 @@
         <None Include="Scripts\*.gea">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
+        <!-- Thư viện component cho INCLUDE lib:<tên>: Scripts\lib\*.gea cạnh add-in. -->
+        <None Include="Scripts\lib\*.gea">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
         <None Update="addin.template">
             <CopyToOutputDirectory>Never</CopyToOutputDirectory>
         </None>
