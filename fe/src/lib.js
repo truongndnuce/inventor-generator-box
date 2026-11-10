@@ -19,6 +19,18 @@ export async function api(path, opts) {
 export const postJson = (path, data) =>
   api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
 
+/**
+ * Gửi nội dung một script .gea lên server để biên dịch; thành công thì lưu kết quả cho trang đặt hàng từ script và chuyển sang đó.
+ * Lỗi biên dịch được ném lại (e.body.diagnostics có danh sách lỗi), dùng chung cho nút Import .gea và nút Order của trang Components.
+ */
+export async function importScriptText(text, fileName) {
+  const res = await postJson('/api/gea/import', { text });
+  sessionStorage.setItem('cadflow.import', JSON.stringify({
+    scriptId: res.scriptId, values: res.values, texts: res.texts, warnings: res.warnings, hasValues: res.hasValues, fileName,
+  }));
+  go(`#/import/${res.scriptId}`);
+}
+
 export const fmtTime = (iso) => (iso ? new Date(iso).toLocaleTimeString() : '-');
 export const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString() : '-');
 export const fmtSize = (n) => (n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');

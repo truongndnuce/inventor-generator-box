@@ -8,10 +8,12 @@ import Dashboard from './pages/Dashboard.jsx';
 import Job from './pages/Job.jsx';
 import Config from './pages/Config.jsx';
 import Chat from './pages/Chat.jsx';
+import Components from './pages/Components.jsx';
 
 const NAV = [
   { key: 'configurator', href: '#/', label: 'New order' },
   { key: 'chat', href: '#/chat', label: 'Chat' },
+  { key: 'components', href: '#/components', label: 'Components' },
   { key: 'orders', href: '#/orders', label: 'Ordered' },
   { key: 'dashboard', href: '#/dashboard', label: 'Dashboard' },
   { key: 'config', href: '#/config', label: 'Config' },
@@ -41,6 +43,7 @@ export default function App() {
   const [jobNav, setJobNav] = useState('orders');
 
   const active = hash.startsWith('#/chat') ? 'chat'
+    : hash.startsWith('#/components') ? 'components'
     : hash.startsWith('#/orders') ? 'orders'
     : hash.startsWith('#/dashboard') ? 'dashboard'
     : hash.startsWith('#/config') ? 'config'
@@ -52,6 +55,7 @@ export default function App() {
   else if (hash.startsWith('#/import/')) page = <ScriptOrder key={hash} scriptId={decodeURIComponent(hash.slice(9))} />;
   else if (hash.startsWith('#/config')) page = <Config key={hash} code={hash.startsWith('#/config/') ? decodeURIComponent(hash.slice(9).split('?')[0]) : undefined} />;
   else if (hash.startsWith('#/chat')) page = <Chat />;
+  else if (hash.startsWith('#/components')) page = <Components />;
   else if (hash.startsWith('#/orders')) page = <Orders />;
   else if (hash.startsWith('#/dashboard')) page = <Dashboard />;
   else {

@@ -206,3 +206,9 @@ button.cfg-label.gh:hover { color: var(--accent-11); }
 .chat-values { border-collapse: collapse; font-size: var(--font-size-2); }
 .chat-values td { padding: 2px 16px 2px 0; }
 .chat-values td:last-child { font-variant-numeric: tabular-nums; font-weight: 500; }
+
+/* Trang Components */
+.comp-more { margin-top: 10px; }
+.comp-more summary { cursor: pointer; }
+.comp-pre { margin: 8px 0 0; padding: 10px 12px; white-space: pre-wrap; font: inherit; font-size: var(--font-size-2); color: var(--gray-11); background: var(--gray-a2); border-radius: var(--radius-3); }
+.comp-code { padding: 4px 8px; border-radius: var(--radius-2); background: var(--gray-a3); font-size: var(--font-size-2); }

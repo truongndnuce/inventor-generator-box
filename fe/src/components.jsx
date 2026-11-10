@@ -1,6 +1,6 @@
 ﻿import { useRef } from 'react';
 import { Badge, Button, Callout, Flex, Slider, Text, TextField } from '@radix-ui/themes';
-import { API, STATUS_COLOR, go, postJson, reorder } from './lib.js';
+import { API, STATUS_COLOR, importScriptText, reorder } from './lib.js';
 
 /** Dải tiêu đề trang: nền đen với ảnh sản phẩm (public/hero.jpg) mờ dần về bên trái. */
 const HERO_IMAGES = { 'gas-turbine': '/hero-turbine.jpg', generator: '/hero-generator.png', transformer: '/hero-transformer.png' };
@@ -79,11 +79,7 @@ export function ImportGeaButton({ onError }) {
     onError(null);
     try {
       const text = await file.text();
-      const res = await postJson('/api/gea/import', { text });
-      sessionStorage.setItem('cadflow.import', JSON.stringify({
-        scriptId: res.scriptId, values: res.values, texts: res.texts, warnings: res.warnings, hasValues: res.hasValues, fileName: file.name,
-      }));
-      go(`#/import/${res.scriptId}`);
+      await importScriptText(text, file.name);
     } catch (e) {
       const diags = (e.body?.diagnostics || []).filter((d) => d.severity === 'error').slice(0, 5);
       onError(
