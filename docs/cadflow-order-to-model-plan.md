@@ -1,422 +1,422 @@
-# Kế hoạch: Hệ thống "đặt hàng → tự động dựng model Inventor → trả hồ sơ"
+# Plan: an "order → automatic Inventor model build → return the dossier" system
 
-Tài liệu này nối tiếp `inventor-addin-plan.md`. Add-in và DSL trong kế hoạch đó là **lõi dựng model**; tài liệu này thêm phần **web đặt hàng, hàng đợi và máy worker** để biến lõi đó thành một dịch vụ.
+This document continues `inventor-addin-plan.md`. The add-in and the DSL in that plan are the **model-building core**; this document adds the **ordering web, the queue and the worker machines** to turn that core into a service.
 
 ---
 
-## 1. Những gì thấy trong video
+## 1. What can be seen in the video
 
-Video dài khoảng 43 giây, quay màn hình, **không có tiếng**. Hình mờ nên một số chữ nhỏ là suy đoán.
+The video is about 43 seconds, a screen recording, **with no sound**. The picture is blurry so some small text is a guess.
 
-### 1.1. Giao diện web "CADFlow – Assembly orders"
-- Có danh mục sản phẩm (nút "All products"). Sản phẩm demo là **Power transformer** (máy biến áp), tiêu đề ghi "full Smart Assembly demo".
-- **Form đặt hàng** gồm:
-  - Rating (công suất, ví dụ 1000 kVA) và HV voltage class (cấp điện áp cao áp, ví dụ 35 kV). Có ghi chú nhỏ cho biết **kích thước và giá lấy từ catalog**, và **chỉ cho phép các cấp điện áp hợp lệ với công suất đã chọn**.
-  - Cooling (làm mát, hộp chọn có hai giá trị, trông như ONAN và ONAF).
+### 1.1. The web interface "CADFlow – Assembly orders"
+- There is a product catalog (the "All products" button). The demo product is a **Power transformer**, the title says "full Smart Assembly demo".
+- The **order form** has:
+    - Rating (power, for example 1000 kVA) and HV voltage class (high-voltage class, for example 35 kV). A small note says that **dimensions and price come from the catalog**, and that **only the voltage classes valid for the chosen rating are allowed**.
+    - Cooling (a choice box with two values, looking like ONAN and ONAF).
   - Options: air neutral bushing, manhole on the cover, shipping configuration (no breather).
-  - Paint (màu sơn, ví dụ Grey, Green).
+    - Paint (paint color, for example Grey, Green).
   - Documents: Drawing and PDF.
-  - Requested by, nút **Submit order**.
-- **Trang chi tiết job** (mã dạng `AJ-20261105-090449-933f`):
-  - Trạng thái chuyển: **chờ máy nhận** ("Waiting for an Inventor worker to pick up the job...") → **đang dựng** ("The worker is building the assembly...") → **thành công**.
-  - Hiện Product, Created, Started, Finished, **Worker** (tên máy chạy Inventor), danh sách **Inputs**, và dòng **Summary** (khối lượng kg và giá).
-  - Sau khi xong có **Picture** (ảnh chụp model) và mục **Downloads**: PDF drawing, STEP model, BOM, Costing, ZIP package, Report, Picture, Inventor drawing.
-- Địa chỉ dạng `100.x.x.x:18080/assembly/jobs/...` và có đường dẫn `api/assembly/...`, nên có một API phía sau. Dải `100.x` thường là mạng riêng kiểu Tailscale (suy đoán).
+    - Requested by, and a **Submit order** button.
+- The **job detail page** (an id like `AJ-20261105-090449-933f`):
+    - The status moves: **waiting for a machine** ("Waiting for an Inventor worker to pick up the job...") → **building** ("The worker is building the assembly...") → **succeeded**.
+    - It shows Product, Created, Started, Finished, **Worker** (the name of the machine running Inventor), the list of **Inputs**, and a **Summary** line (mass in kg and price).
+    - When done there is a **Picture** (a screenshot of the model) and a **Downloads** section: PDF drawing, STEP model, BOM, Costing, ZIP package, Report, Picture, Inventor drawing.
+- The address looks like `100.x.x.x:18080/assembly/jobs/...` and there is a path `api/assembly/...`, so there is an API behind it. The `100.x` range is usually a private network such as Tailscale (a guess).
 
-### 1.2. Máy worker (nửa trái màn hình)
-- Đây là một máy Windows (thấy chữ "Activate Windows") mở Inventor, được xem từ xa qua trình duyệt.
-- Khi job chạy, **model thay đổi trực tiếp**: thùng máy đổi vật liệu, cuối cùng đổi sang **màu xanh** đúng với tùy chọn sơn đã chọn.
-- Sau đó Inventor mở **bản vẽ** tự động: khung nhìn, bóng đánh số (balloon), mặt cắt A-A tỉ lệ 1/50 và **bảng Parts List** (Tank, Cover, hex bolt ISO 4017 M16x70, HV bushing, LV bushing, radiator ONAF, conservator...).
-- Model gồm nhiều thành phần: thùng, nắp, sứ xuyên cao áp và hạ áp, cánh tản nhiệt, bình dầu phụ.
+### 1.2. The worker machine (left half of the screen)
+- This is a Windows machine (the text "Activate Windows" is visible) with Inventor open, viewed remotely through a browser.
+- When a job runs, **the model changes live**: the tank changes material and finally turns **green** matching the paint option chosen.
+- Then Inventor opens a **drawing** automatically: views, balloons, an A-A section at a scale of 1/50 and a **Parts List table** (Tank, Cover, hex bolt ISO 4017 M16x70, HV bushing, LV bushing, radiator ONAF, conservator...).
+- The model has many components: tank, cover, high- and low-voltage bushings, radiator fins, a conservator tank.
 
-### 1.3. Điều video cho thấy và chưa cho thấy
-| Cho thấy | Chưa cho thấy |
+### 1.3. What the video shows and does not show
+| Shows | Does not show |
 |----------|---------------|
-| Luồng đặt hàng → hàng đợi → worker → hồ sơ trả về | Có dùng AI hay agent hay không (không thấy khung chat hay prompt) |
-| Form sinh theo sản phẩm, có ràng buộc giữa các lựa chọn | Cách viết luật bên trong (DSL, SmartAssembly hay code) |
-| Dựng assembly, bản vẽ, BOM, giá, STEP, ảnh, ZIP, báo cáo | Cách xử lý lỗi, thử lại, nhiều worker cùng lúc |
+| The flow order → queue → worker → returned dossier | Whether AI or an agent is used (no chat box or prompt is seen) |
+| A form generated per product, with constraints between choices | How the rules are written inside (DSL, SmartAssembly or code) |
+| Building an assembly, drawing, BOM, price, STEP, picture, ZIP, report | How errors, retries, several workers at once are handled |
 
-Kết luận: đây là hệ thống **cấu hình theo đơn đặt hàng (configure-to-order)** chạy tất định. AI nếu có chỉ cần nằm ở phía trước để biến yêu cầu bằng lời thành các giá trị của form (xem mục 9).
-
----
-
-## 2. Mục tiêu
-
-1. Người dùng chọn sản phẩm, điền form, bấm gửi.
-2. Hệ thống dựng model Inventor đúng theo luật, không cần ai ngồi thao tác.
-3. Trả về **bộ hồ sơ**: ảnh, STEP, bản vẽ PDF và IDW, BOM, giá, báo cáo, gói ZIP.
-4. Xem được trạng thái job, lịch sử đơn, tải lại hồ sơ.
-5. Thêm sản phẩm mới chủ yếu bằng **định nghĩa sản phẩm** (DSL, catalog, mẫu bản vẽ), không sửa lõi.
-
-### Ngoài phạm vi ban đầu
-- Thanh toán, báo giá có phê duyệt, phân quyền phức tạp.
-- Chạy nhiều Inventor song song trên một máy.
-- Xem trước 3D ngay trên web.
+Conclusion: this is a **configure-to-order** system that runs deterministically. If there is AI, it only needs to sit at the front to turn a verbal request into the values of the form (see section 9).
 
 ---
 
-## 3. Kiến trúc tổng thể
+## 2. Goals
+
+1. The user picks a product, fills in the form, clicks submit.
+2. The system builds the Inventor model exactly by the rules, with no one sitting and operating it.
+3. It returns the **dossier**: picture, STEP, PDF and IDW drawings, BOM, price, report, ZIP package.
+4. The job status can be seen, the order history, and the dossier downloaded again.
+5. Adding a new product is mostly through the **product definition** (DSL, catalog, drawing template), without changing the core.
+
+### Out of initial scope
+- Payment, quotes with approval, complex permissions.
+- Running several Inventors in parallel on one machine.
+- A 3D preview right on the web.
+
+---
+
+## 3. Overall architecture
 
 ```
-Người dùng ──► Web (form, danh sách job, tải file)
+User ──► Web (form, job list, file download)
                  │
                  ▼
-            API Server ──► Cơ sở dữ liệu (sản phẩm, đơn, job, worker)
-                 │    └──► Kho file (hồ sơ kết quả)
+                        API Server ──► Database (products, orders, jobs, workers)
+                                  │    └──► File store (result dossiers)
                  ▼
-            Hàng đợi job
-                 ▲   (worker chủ động hỏi, chỉ cần kết nối đi ra)
+                        Job queue
+                                  ▲   (the worker asks actively, only an outbound connection is needed)
                  │
-        Worker (máy Windows có Inventor 2027)
-            ├─ Vòng lặp nhận job, báo trạng thái
-            ├─ Lõi DSL: đọc định nghĩa sản phẩm, kiểm tra luật, tạo kế hoạch dựng
-            ├─ Inventor Adapter: dựng assembly, bản vẽ
-            └─ Bộ xuất: STEP, PDF, IDW, ảnh, BOM, giá, báo cáo, ZIP
+                Worker (a Windows machine with Inventor 2027)
+                        ├─ A loop that takes jobs and reports status
+                        ├─ DSL core: reads the product definition, checks rules, creates the build plan
+                        ├─ Inventor Adapter: builds the assembly, drawings
+                        └─ Exporter: STEP, PDF, IDW, picture, BOM, price, report, ZIP
 ```
 
-### 3.1. Các thành phần
-| Thành phần | Vai trò | Gợi ý |
+### 3.1. The components
+| Component | Role | Suggestion |
 |------------|---------|-------|
-| **Web** | Form sinh theo định nghĩa sản phẩm, trang job, tải file | Dựng form từ schema của sản phẩm, không viết tay từng form |
-| **API Server** | Danh mục, nhận đơn, xác thực lại giá trị bằng lõi DSL, quản lý job, cấp file | ASP.NET Core, để dùng chung thư viện DSL với worker |
-| **CSDL** | Sản phẩm và phiên bản, đơn, job, artifact, worker | PostgreSQL |
-| **Hàng đợi** | Giữ job chờ | Bắt đầu bằng bảng job trong CSDL, worker nhận bằng khóa dòng (`FOR UPDATE SKIP LOCKED`); chưa cần SQS hay broker |
-| **Kho file** | Lưu hồ sơ | Thư mục trên server lúc đầu, về sau Cloudflare R2 (xem `r2-dashboard-gea-roundtrip-plan.md`, mục 3) |
-| **Worker** | Chạy Inventor và dựng hồ sơ | Ứng dụng .NET chạy trên máy Windows có Inventor |
-| **Thư viện thành phần** | Part, iPart, assembly mẫu (sứ, cánh tản nhiệt, bình dầu...) | Quản lý phiên bản, đặt trong thư mục cố định hoặc kho chung |
+| **Web** | A form generated from the product definition, the job page, file download | Build the form from the schema of the product, not by hand for each form |
+| **API Server** | Catalog, receives orders, re-validates values with the DSL core, manages jobs, serves files | ASP.NET Core, to share the DSL library with the worker |
+| **Database** | Products and versions, orders, jobs, artifacts, workers | PostgreSQL |
+| **Queue** | Holds waiting jobs | Start with a job table in the database, workers take with a row lock (`FOR UPDATE SKIP LOCKED`); no SQS or broker needed yet |
+| **File store** | Stores the dossier | A folder on the server at first, later Cloudflare R2 (see `r2-dashboard-gea-roundtrip-plan.md`, section 3) |
+| **Worker** | Runs Inventor and builds the dossier | A .NET application running on a Windows machine with Inventor |
+| **Component library** | Parts, iParts, sample assemblies (bushings, radiator fins, conservator...) | Version-managed, kept in a fixed folder or a shared store |
 
-### 3.2. Nguyên tắc
-- **Worker hỏi server, server không gọi worker.** Máy chạy Inventor chỉ cần kết nối đi ra, không mở cổng vào, dễ đặt sau tường lửa hoặc trong mạng riêng.
-- **Một định nghĩa sản phẩm duy nhất** dùng cho cả ba nơi: form web, kiểm tra luật phía server, dựng model ở worker. Không có luật nào bị viết hai lần.
-- **Lõi DSL không phụ thuộc Inventor** (đúng như kế hoạch DSL). Server và worker dùng chung thư viện này.
-- **Inventor Adapter không phụ thuộc add-in host**: nhận một đối tượng `Inventor.Application` rồi làm việc. Nhờ vậy cùng một Adapter chạy được trong add-in (dockable window) lẫn trong worker.
-- **Mỗi job bất biến và lặp lại được**: lưu cả giá trị đầu vào, phiên bản sản phẩm, phiên bản thư viện thành phần.
+### 3.2. Principles
+- **The worker asks the server, the server does not call the worker.** The machine running Inventor only needs an outbound connection, opens no inbound port, and is easy to put behind a firewall or in a private network.
+- **One single product definition** used in three places: the web form, the server-side rule check, the model build on the worker. No rule is written twice.
+- **The DSL core does not depend on Inventor** (exactly as in the DSL plan). The server and the worker share this library.
+- **The Inventor Adapter does not depend on the add-in host**: it takes an `Inventor.Application` object and works. This way the same Adapter runs both in the add-in (dockable window) and in the worker.
+- **Each job is immutable and repeatable**: it stores the input values, the product version, and the component library version.
 
 ---
 
-## 4. Định nghĩa sản phẩm
+## 4. Product definition
 
-Một sản phẩm là một **gói** gồm nhiều phần, đều là dữ liệu:
+A product is a **package** of several parts, all of them data:
 
-| Phần | Nội dung | Ví dụ (máy biến áp) |
+| Part | Content | Example (power transformer) |
 |------|----------|---------------------|
-| Thông số và tùy chọn | Tên, kiểu, đơn vị, mặc định, danh sách lựa chọn | Rating, cấp điện áp, làm mát, sơn, các hộp chọn |
-| Quan hệ giữa lựa chọn | Lựa chọn nào hợp lệ với lựa chọn nào | Công suất chỉ cho phép một số cấp điện áp |
-| Bảng catalog | Kích thước, mã chi tiết, giá theo công suất, vật liệu | Kích thước thùng theo công suất, mã sứ xuyên, giá |
-| Luật | Điều kiện và tính toán | Số cánh tản nhiệt theo làm mát, chiều cao bình dầu |
-| Kế hoạch dựng | Chi tiết nào đặt ở đâu, thông số nào gán | Đặt thùng, nắp, sứ, bình dầu; bật hoặc tắt lỗ người chui |
-| Mẫu bản vẽ | Mẫu IDW, danh sách khung nhìn, bảng, tỉ lệ | Trang A3, mặt cắt A-A, Parts List |
-| Công thức giá và báo cáo | Cách tính giá, mẫu báo cáo | Giá = chi tiết + gia công + phụ kiện |
+| Parameters and options | Name, type, unit, default, a list of choices | Rating, voltage class, cooling, paint, the choice boxes |
+| Relations between choices | Which choice is valid with which | A rating allows only some voltage classes |
+| Catalog tables | Dimensions, part codes, price by rating, material | Tank dimensions by rating, bushing code, price |
+| Rules | Conditions and calculations | The number of radiator fins by cooling, the height of the conservator |
+| Build plan | Which part is placed where, which parameter is assigned | Place the tank, cover, bushings, conservator; turn the manhole on or off |
+| Drawing template | The IDW template, the list of views, tables, scale | An A3 page, an A-A section, a Parts List |
+| Price formula and report | How to compute the price, the report template | Price = parts + machining + accessories |
 
-Gợi ý tổ chức:
-- Phần luật và kế hoạch dựng chính là **DSL** ở mục 5c của `inventor-addin-plan.md`.
-- **Catalog tách khỏi luật**, lưu dạng bảng (CSV hoặc JSON) để người không viết code cập nhật được.
-- Mỗi sản phẩm có **phiên bản**. Đơn đã đặt luôn gắn với phiên bản của lúc đặt.
+Suggested organization:
+- The rules and build plan part is the **DSL** in section 5c of `inventor-addin-plan.md`.
+- **The catalog is kept separate from the rules**, stored as tables (CSV or JSON) so people who do not write code can update it.
+- Each product has a **version**. An order that was placed stays tied to the version at the time it was placed.
 
 ---
 
-## 5. Vòng đời một job
+## 5. The lifecycle of a job
 
-| Trạng thái | Ý nghĩa | Hiển thị trên web |
+| Status | Meaning | Shown on the web |
 |------------|---------|-------------------|
-| Queued | Đã nhận đơn, chờ worker | Chờ máy Inventor nhận |
-| Running | Worker đang làm, có các bước nhỏ | Đang dựng assembly (kèm bước: kiểm tra, dựng, bản vẽ, xuất file, tải lên) |
-| Succeeded | Xong, có hồ sơ | Ảnh, tóm tắt (khối lượng, giá), nút tải |
-| Failed | Có lỗi | Thông báo lỗi dễ hiểu và nút gửi lại |
-| Cancelled | Người dùng hủy | |
+| Queued | The order is received, waiting for a worker | Waiting for an Inventor machine to pick it up |
+| Running | A worker is working, with small steps | Building the assembly (with the step: check, build, drawing, export, upload) |
+| Succeeded | Done, with a dossier | Picture, summary (mass, price), download buttons |
+| Failed | There was an error | A readable error message and a resubmit button |
+| Cancelled | The user cancelled | |
 
-### 5.1. Các bước của worker
-1. **Nhận job** (khóa job cho worker này, ghi giờ bắt đầu).
-2. **Kiểm tra lại đầu vào** bằng lõi DSL. Sai thì dừng, báo lỗi mà chưa mở Inventor.
-3. **Chuẩn bị**: mở hoặc kiểm tra Inventor, tạo thư mục làm việc riêng cho job, sao chép thư viện thành phần cần dùng.
-4. **Dựng assembly** theo kế hoạch dựng.
-5. **Tính chỉ số**: khối lượng từ Inventor, giá từ catalog và công thức.
-6. **Tạo bản vẽ** từ mẫu, đặt khung nhìn, balloon, bảng.
-7. **Xuất**: ảnh, STEP, PDF, IDW, BOM, bảng giá, báo cáo, gói ZIP.
-8. **Tải lên** server, ghi tóm tắt, đặt trạng thái Succeeded.
-9. **Dọn dẹp**: đóng tài liệu, xóa thư mục tạm, đưa Inventor về trạng thái sạch.
+### 5.1. The worker steps
+1. **Take the job** (lock the job for this worker, record the start time).
+2. **Re-check the input** with the DSL core. If wrong, stop and report the error before Inventor is even opened.
+3. **Prepare**: open or check Inventor, create a working folder just for the job, copy the component library needed.
+4. **Build the assembly** by the build plan.
+5. **Compute indicators**: mass from Inventor, price from the catalog and formula.
+6. **Create the drawing** from the template, place views, balloons, tables.
+7. **Export**: picture, STEP, PDF, IDW, BOM, price table, report, ZIP package.
+8. **Upload** to the server, write the summary, set the status Succeeded.
+9. **Clean up**: close documents, delete the temporary folder, return Inventor to a clean state.
 
-### 5.2. Độ bền
-- **Nhịp tim (heartbeat)**: worker báo định kỳ. Job quá hạn mà không có nhịp thì trả về Queued hoặc đánh dấu lỗi.
-- **Thời gian tối đa** cho mỗi bước và cho cả job.
-- **Thử lại** có giới hạn số lần. Lỗi do đầu vào sai thì không thử lại.
-- **Một job tại một thời điểm cho mỗi Inventor.** Muốn nhanh hơn thì thêm máy worker, không chạy song song trong một Inventor.
-- **Bộ nhớ đệm**: cùng sản phẩm, cùng phiên bản và cùng đầu vào thì dùng lại hồ sơ cũ (băm đầu vào để so khớp).
-- **Giám sát Inventor**: nếu treo hoặc hộp thoại chặn, kết thúc tiến trình và khởi động lại, job chuyển sang thử lại.
+### 5.2. Durability
+- **Heartbeat**: the worker reports periodically. A job past its deadline with no heartbeat is returned to Queued or marked as failed.
+- A **maximum time** for each step and for the whole job.
+- **Retry** with a limited count. An error caused by wrong input is not retried.
+- **One job at a time per Inventor.** To go faster add worker machines, do not run in parallel inside one Inventor.
+- **Cache**: the same product, the same version and the same input reuse the old dossier (hash the input to match).
+- **Inventor supervision**: if it hangs or a dialog blocks it, kill the process and restart it, and the job goes to a retry.
 
 ---
 
-## 6. Phần Inventor ở worker
+## 6. The Inventor part on the worker
 
-### 6.1. Cách chạy Inventor
-| Cách | Ưu | Nhược |
+### 6.1. How to run Inventor
+| Approach | Pros | Cons |
 |------|-----|-------|
-| **Worker là tiến trình riêng, điều khiển Inventor qua COM** | Dễ gỡ lỗi, tách khỏi Inventor, tái dùng Adapter | Cần Inventor chạy trong một phiên desktop đăng nhập |
-| **Add-in chạy trong Inventor, tự nhận job** | Gần API nhất | Phải chuyển lời gọi về luồng UI của Inventor, khó gỡ lỗi |
-| **APS Design Automation** (Inventor chạy trên cloud, không cần máy riêng) | Không phải quản lý máy, mở rộng dễ | Phải đóng gói plugin theo yêu cầu của dịch vụ; **cần kiểm tra có hỗ trợ Inventor 2027 và target .NET nào**; giới hạn về thư viện và bản vẽ |
+| **The worker is a separate process, driving Inventor through COM** | Easy to debug, separate from Inventor, reuses the Adapter | Needs Inventor to run in a logged-in desktop session |
+| **An add-in running inside Inventor, taking jobs itself** | Closest to the API | Calls must be moved back to the Inventor UI thread, hard to debug |
+| **APS Design Automation** (Inventor running in the cloud, no machine of our own) | No machines to manage, easy to scale | The plugin must be packaged to the service's requirements; **check whether Inventor 2027 is supported and which .NET target**; limits on libraries and drawings |
 
-Khuyến nghị: bắt đầu với **tiến trình worker riêng điều khiển Inventor qua COM** trên một máy Windows. Công ty bạn đã dùng APS nên phương án thứ ba đáng để dành, sau khi biết rõ hỗ trợ Inventor 2027.
+Recommendation: start with a **separate worker process driving Inventor through COM** on one Windows machine. Your company already uses APS, so the third option is worth keeping for later, once the Inventor 2027 support is clear.
 
-### 6.2. Lưu ý vận hành Inventor
-- Inventor cần **phiên desktop đăng nhập** (không chạy ổn như dịch vụ Windows nền). Cấu hình tự đăng nhập, tự mở worker khi khởi động máy.
-- Chạy ở chế độ **không hộp thoại** (`SilentOperation`) và xử lý hộp thoại bất ngờ (thiếu file, giấy phép, cập nhật).
-- Giấy phép: mỗi máy worker cần một giấy phép Inventor.
-- Dùng thư mục làm việc riêng cho từng job, đường dẫn cố định, tránh xung đột khi dựng assembly nhiều file.
+### 6.2. Notes on operating Inventor
+- Inventor needs a **logged-in desktop session** (it does not run reliably as a background Windows service). Configure auto-login and have the worker start automatically when the machine boots.
+- Run in a **no-dialog mode** (`SilentOperation`) and handle unexpected dialogs (a missing file, a license, an update).
+- License: each worker machine needs an Inventor license.
+- Use a separate working folder for each job, with fixed paths, to avoid conflicts when building a multi-file assembly.
 
-### 6.3. Dựng assembly
-- **Thư viện thành phần** là các part và iPart tham số hóa (thùng, nắp, sứ xuyên, cánh tản nhiệt, bình dầu...). Mỗi cái có Parameter được đặt tên theo quy ước như `BX_` ở add-in.
-- Kế hoạch dựng nói: chèn chi tiết nào, đặt ở đâu (constraint hoặc vị trí tính sẵn), gán thông số nào, bật hoặc **suppress** chi tiết nào theo tùy chọn (lỗ người chui, sứ trung tính...).
-- **Sơn** là gán Appearance cho chi tiết, đúng như video (thùng đổi sang xanh).
-- Nên **đặt vị trí bằng tọa độ tính sẵn** hoặc constraint đơn giản và cố định. Constraint phức tạp là nguồn lỗi nhiều nhất khi tự động hóa.
+### 6.3. Building the assembly
+- The **component library** is parametric parts and iParts (tank, cover, bushings, radiator fins, conservator...). Each has Parameters named by a convention such as `BX_` in the add-in.
+- The build plan says: which part to insert, where to place it (a constraint or a precomputed position), which parameters to assign, which parts to turn on or **suppress** by option (manhole, neutral bushing...).
+- **Paint** is assigning an Appearance to the part, exactly as in the video (the tank changes to green).
+- Prefer to **place by precomputed coordinates** or by simple, fixed constraints. Complex constraints are the biggest source of errors in automation.
 
-### 6.4. Bản vẽ tự động
-- Dùng **mẫu IDW** có sẵn khung tên, bảng Parts List, kiểu kích thước.
-- Khung nhìn được đặt theo bố cục khai báo trong định nghĩa sản phẩm (tỉ lệ, vị trí, mặt cắt).
-- Balloon và kích thước tự động có thể sai vị trí hoặc chồng chéo. Đây là phần **khó và dễ vỡ nhất**, nên làm sau cùng và chấp nhận đặt balloon theo luật đơn giản.
-- Xuất PDF từ IDW bằng translator của Inventor.
+### 6.4. Automatic drawings
+- Use an **IDW template** that already has the title block, the Parts List table, the dimension styles.
+- Views are placed by the layout declared in the product definition (scale, position, section).
+- Automatic balloons and dimensions can land in the wrong place or overlap. This is the **hardest and most fragile part**, so do it last and accept placing balloons by simple rules.
+- Export the PDF from the IDW with the Inventor translator.
 
-### 6.5. Các hồ sơ xuất ra
-| Hồ sơ | Nguồn |
+### 6.5. The files produced
+| File | Source |
 |-------|-------|
-| Ảnh (PNG) | Chụp từ khung nhìn Inventor ở góc cố định |
-| STEP | Translator của Inventor |
-| PDF và IDW bản vẽ | Từ bản vẽ tự động |
-| BOM | Đọc từ BOM của assembly hoặc từ kế hoạch dựng, xuất CSV hoặc XLSX |
-| Costing | Công thức giá từ catalog và khối lượng |
-| Report | Tổng hợp thông số, khối lượng, giá, danh sách file (PDF hoặc HTML) |
-| ZIP | Đóng gói các file trên |
+| Picture (PNG) | Captured from the Inventor view at a fixed angle |
+| STEP | The Inventor translator |
+| PDF and IDW drawings | From the automatic drawing |
+| BOM | Read from the assembly BOM or from the build plan, exported as CSV or XLSX |
+| Costing | The price formula from the catalog and the mass |
+| Report | A summary of parameters, mass, price, the file list (PDF or HTML) |
+| ZIP | Packages the files above |
 
 ---
 
-## 7. Mô hình dữ liệu (mức khái niệm)
+## 7. Data model (conceptual level)
 
-| Bảng | Nội dung chính |
+| Table | Main content |
 |------|----------------|
-| Product | Mã, tên, mô tả |
-| ProductVersion | Sản phẩm, số phiên bản, gói định nghĩa (DSL, catalog, mẫu bản vẽ), trạng thái xuất bản |
-| Order/Job | Mã job, sản phẩm và phiên bản, **đầu vào dạng JSON**, người yêu cầu, trạng thái, bước hiện tại, giờ tạo/bắt đầu/kết thúc, worker, tóm tắt (khối lượng, giá), lỗi, băm đầu vào |
-| Artifact | Job, loại (PDF, STEP, BOM...), đường dẫn, kích thước, băm |
-| Worker | Tên máy, trạng thái, nhịp tim cuối, phiên bản Inventor và phiên bản thư viện |
-| JobEvent | Nhật ký các bước và thông báo của từng job |
+| Product | Code, name, description |
+| ProductVersion | Product, version number, the definition package (DSL, catalog, drawing template), publication status |
+| Order/Job | Job id, product and version, **input as JSON**, requester, status, current step, created/started/finished times, worker, summary (mass, price), error, input hash |
+| Artifact | Job, kind (PDF, STEP, BOM...), path, size, hash |
+| Worker | Machine name, status, last heartbeat, Inventor version and library version |
+| JobEvent | The log of steps and messages of each job |
 
-Mã job theo dạng có ngày giờ và đoạn ngẫu nhiên (như `AJ-20261105-090449-933f` trong video) để dễ đọc và không trùng.
+The job id has a date-time form with a random segment (like `AJ-20261105-090449-933f` in the video) to be easy to read and not collide.
 
 ---
 
-## 8. API (mức tài nguyên, chưa chi tiết)
+## 8. API (resource level, not detailed yet)
 
-| Nhóm | Việc cần làm |
+| Group | What it must do |
 |------|--------------|
-| Danh mục | Liệt kê sản phẩm, lấy schema form của một sản phẩm |
-| Đơn | Gửi đơn (server kiểm tra lại bằng lõi DSL), liệt kê job, xem chi tiết job |
-| Hồ sơ | Tải từng file, tải gói ZIP |
-| Worker | Nhận job, báo tiến trình và nhịp tim, báo hoàn thành hoặc lỗi, tải file lên |
+| Catalog | List products, get the form schema of one product |
+| Orders | Submit an order (the server re-checks with the DSL core), list jobs, view a job's details |
+| Dossier | Download each file, download the ZIP package |
+| Worker | Take a job, report progress and heartbeat, report completion or an error, upload files |
 
-Cập nhật trạng thái trên web: bắt đầu bằng **polling** định kỳ; nâng lên SSE hoặc SignalR khi cần.
-
----
-
-## 9. Lớp AI tùy chọn (không bắt buộc)
-
-Nếu muốn có "agent":
-- AI chỉ làm một việc: **đọc yêu cầu bằng lời hoặc tài liệu của khách và điền vào form** (hoặc đề xuất giá trị cho người dùng duyệt).
-- Giá trị phải đi qua **kiểm tra luật của lõi DSL** như mọi đơn khác. AI không bao giờ tự dựng model hay bỏ qua luật.
-- Cách này giữ kết quả tất định, kiểm thử được, và AI chỉ là một cách khác để nhập đơn.
-- Làm sau cùng, khi pipeline đã ổn.
+Status updates on the web: start with periodic **polling**; upgrade to SSE or SignalR when needed.
 
 ---
 
-## 10. Bảo mật và vận hành
+## 9. An optional AI layer (not required)
 
-- Chạy trong **mạng nội bộ hoặc VPN**. Video dùng HTTP trần trên mạng riêng; khi mở rộng nên có HTTPS và đăng nhập.
-- Worker xác thực với server bằng khóa riêng cho từng máy.
-- Hồ sơ có thể chứa thông tin giá và thiết kế: phân quyền xem theo người dùng hoặc nhóm.
-- Giới hạn kích thước và loại file tải lên.
-- Nhật ký đầy đủ cho từng job (phục vụ tìm lỗi).
-- Sao lưu CSDL và kho file; thư viện thành phần có kiểm soát phiên bản.
-
----
-
-## 11. Các giai đoạn thực hiện
-
-### G0. Chọn sản phẩm thí điểm và khung dịch vụ giả lập
-- Chọn **hộp rỗng có nắp** (đã có bảng thông số) làm sản phẩm thí điểm, không bắt đầu bằng máy biến áp.
-- Dựng web, API, CSDL, hàng đợi, trang job, kho file.
-- **Worker giả**: nhận job, chờ vài giây, trả một file mẫu. Kiểm tra toàn bộ luồng và các trạng thái mà chưa cần Inventor.
-- **Hoàn thành khi**: đặt đơn trên web, thấy job chạy qua Queued → Running → Succeeded và tải được file.
-
-### G1. Worker thật dựng hộp
-- Worker mở Inventor, dùng lõi DSL và Adapter (từ `inventor-addin-plan.md`) dựng hộp.
-- Xuất ảnh và STEP.
-- Xử lý lỗi, thời gian tối đa, khởi động lại Inventor khi treo.
-- **Hoàn thành khi**: đơn hộp trên web cho ra ảnh và STEP đúng với thông số.
-
-### G2. Bản vẽ, BOM, PDF
-- Mẫu IDW cho hộp, khung nhìn, bảng, xuất PDF và IDW.
-- BOM và báo cáo.
-- **Hoàn thành khi**: gói hồ sơ đầy đủ cho hộp.
-
-### G3. Catalog, giá, luật giữa các lựa chọn
-- Bảng catalog, công thức giá, khối lượng từ Inventor.
-- Form web chỉ cho phép các lựa chọn hợp lệ (như rating và cấp điện áp trong video).
-- **Hoàn thành khi**: đổi lựa chọn thì giá và danh sách hợp lệ đổi theo.
-
-### G4. Sản phẩm nhiều thành phần (máy biến áp lực)
-- Sản phẩm mục tiêu là máy biến áp lực mô tả ở mục 5d của `inventor-addin-plan.md` (tham chiếu ảnh GE Vernova). Các cấp 1-2 của máy biến áp chính là hộp thí điểm ở G0-G2, nên không phải làm lại.
-- Thư viện thành phần có phiên bản, assembly nhiều chi tiết, tùy chọn bật tắt, sơn.
-- Thêm sản phẩm thứ hai gần với máy biến áp (ví dụ vỏ tủ có cánh tản nhiệt) để kiểm chứng DSL và Adapter.
-- **Hoàn thành khi**: thêm sản phẩm mới chủ yếu bằng định nghĩa.
-
-### G5. Vận hành và mở rộng
-- Nhiều worker, bộ nhớ đệm, thông báo, phân quyền, HTTPS.
-- Cân nhắc APS Design Automation.
-- Lớp AI nhập đơn nếu cần.
+If you want an "agent":
+- The AI does just one thing: **read a verbal request or the customer's documents and fill in the form** (or propose values for the user to approve).
+- The values must pass the **rule check of the DSL core** like any other order. The AI never builds the model itself or skips the rules.
+- This keeps the result deterministic and testable, and the AI is just another way to enter an order.
+- Do it last, once the pipeline is stable.
 
 ---
 
-## 12. Quan hệ với kế hoạch add-in
+## 10. Security and operations
 
-| Phần trong `inventor-addin-plan.md` | Vai trò trong hệ thống này |
+- Run in the **internal network or a VPN**. The video uses plain HTTP on a private network; when expanding, HTTPS and login are advisable.
+- The worker authenticates to the server with its own key for each machine.
+- The dossier may contain price and design information: permission viewing by user or group.
+- Limit the size and kind of uploaded files.
+- A full log for each job (to help find errors).
+- Back up the database and the file store; the component library has version control.
+
+---
+
+## 11. Implementation phases
+
+### G0. Choose a pilot product and a mock service skeleton
+- Choose the **hollow box with a cover** (it already has a parameter table) as the pilot product, not starting with the transformer.
+- Build the web, API, database, queue, job page, file store.
+- **A fake worker**: takes a job, waits a few seconds, returns a sample file. Tests the whole flow and statuses without Inventor.
+- **Done when**: placing an order on the web, seeing the job go through Queued → Running → Succeeded and being able to download the file.
+
+### G1. A real worker builds the box
+- The worker opens Inventor, uses the DSL core and the Adapter (from `inventor-addin-plan.md`) to build the box.
+- Export the picture and STEP.
+- Handle errors, the maximum time, restarting Inventor when it hangs.
+- **Done when**: a box order on the web produces a picture and STEP matching the parameters.
+
+### G2. Drawing, BOM, PDF
+- The IDW template for the box, views, tables, PDF and IDW export.
+- BOM and report.
+- **Done when**: a complete dossier for the box.
+
+### G3. Catalog, price, rules between choices
+- Catalog tables, price formula, mass from Inventor.
+- The web form allows only valid choices (like rating and voltage class in the video).
+- **Done when**: changing a choice changes the price and the list of valid options with it.
+
+### G4. A multi-component product (the power transformer)
+- The target product is the power transformer described in section 5d of `inventor-addin-plan.md` (referencing the GE Vernova image). Levels 1-2 of the transformer are exactly the pilot box of G0-G2, so nothing is redone.
+- A versioned component library, multi-part assemblies, on/off options, paint.
+- Add a second product close to the transformer (for example an enclosure with radiator fins) to verify the DSL and the Adapter.
+- **Done when**: adding a new product is mostly by definition.
+
+### G5. Operations and scaling
+- Several workers, cache, notifications, permissions, HTTPS.
+- Consider APS Design Automation.
+- An AI layer for entering orders if needed.
+
+---
+
+## 12. Relation to the add-in plan
+
+| Part in `inventor-addin-plan.md` | Role in this system |
 |--------------------------------------|----------------------------|
-| DSL (mục 5c) | Ngôn ngữ định nghĩa sản phẩm, dùng ở web, server và worker |
-| Inventor Adapter | Dùng nguyên ở worker, tách khỏi add-in host |
-| Add-in và dockable window | Công cụ thử nghiệm và chỉnh tay trên máy kỹ sư; vẫn dùng được để dựng và xem trước từng định nghĩa |
-| Canvas xem trước, preset | Có thể tái dùng cho form web (xem trước kích thước, preset đơn mẫu) |
-| Giai đoạn 2 (dựng hộp viết cứng) | Vẫn giữ làm **bản chuẩn** để so sánh với kết quả DSL |
+| DSL (section 5c) | The language that defines products, used on the web, server and worker |
+| Inventor Adapter | Used as it is on the worker, separated from the add-in host |
+| Add-in and dockable window | A trial and hand-editing tool on an engineer's machine; still usable to build and preview each definition |
+| Preview canvas, presets | Can be reused for the web form (a dimension preview, sample order presets) |
+| Phase 2 (the hard-coded box build) | Still kept as the **reference** to compare against the DSL result |
 
-Thứ tự gợi ý: làm **G0** (không cần Inventor) song song với **Giai đoạn 0-2** của add-in và nhánh DSL, rồi nối chúng lại ở **G1**.
+Suggested order: do **G0** (no Inventor needed) in parallel with **Phases 0-2** of the add-in and the DSL branch, then join them at **G1**.
 
 ---
 
-## 13. Rủi ro và cách giảm
+## 13. Risks and how to reduce them
 
-| Rủi ro | Cách giảm |
+| Risk | How to reduce it |
 |--------|-----------|
-| Inventor treo, hộp thoại chặn, giấy phép | Chế độ không hộp thoại, giám sát và khởi động lại, thời gian tối đa, thử lại có giới hạn |
-| Bản vẽ tự động sai vị trí, balloon chồng chéo | Làm sau cùng, bố cục cố định, kiểm tra bằng bộ ảnh mẫu, chấp nhận mức đơn giản trước |
-| Constraint assembly phức tạp dễ vỡ | Đặt vị trí tính sẵn hoặc constraint đơn giản, thử ở giá trị biên |
-| Phạm vi phình quá sớm (máy biến áp ngay từ đầu) | Thí điểm bằng hộp, chỉ thêm tính năng khi sản phẩm thật cần |
-| Thư viện thành phần đổi làm hỏng đơn cũ | Phiên bản hóa thư viện, ghi phiên bản vào job |
-| Luật nằm rải rác ở web, server và worker | Một định nghĩa duy nhất, dùng chung thư viện DSL |
-| Một máy worker là điểm nghẽn | Thiết kế worker kéo job từ ngay đầu để thêm máy sau này dễ |
-| APS Design Automation chưa hỗ trợ Inventor 2027 | Kiểm tra trước khi đầu tư; giữ phương án worker riêng làm chính |
-| Rò rỉ giá và thiết kế | Mạng riêng, HTTPS, phân quyền theo người dùng |
+| Inventor hangs, a dialog blocks it, licensing | A no-dialog mode, supervision and restart, a maximum time, limited retries |
+| An automatic drawing in the wrong place, overlapping balloons | Do it last, a fixed layout, check with a set of sample images, accept the simple level first |
+| Complex assembly constraints break easily | Precomputed positions or simple constraints, test at boundary values |
+| Scope growing too early (the transformer from the start) | Pilot with the box, add features only when a real product needs them |
+| A change in the component library breaks old orders | Version the library, write the version into the job |
+| Rules scattered across the web, server and worker | One single definition, sharing the DSL library |
+| One worker machine is a bottleneck | Design the worker to pull jobs from the start so adding machines later is easy |
+| APS Design Automation does not yet support Inventor 2027 | Check before investing; keep the separate worker as the main option |
+| A leak of price and design | A private network, HTTPS, permissions by user |
 
 ---
 
-## 14. Việc làm ngay tiếp theo
+## 14. Next things to do right away
 
-1. Chốt **sản phẩm thí điểm** (khuyến nghị: hộp rỗng có nắp) và các loại hồ sơ cần trả ở bản đầu (ảnh, STEP, bản vẽ PDF, BOM, giá).
-2. Chốt nơi đặt hệ thống (máy chủ web) và **máy Windows làm worker** (có giấy phép Inventor 2027, đăng nhập sẵn).
-3. Làm **G0**: web, API, hàng đợi và worker giả. Không phụ thuộc Inventor.
-4. Song song, tiếp tục D0 của DSL và Giai đoạn 0-2 của add-in.
-5. Chốt các câu hỏi mở:
-   - Ai là người dùng (kỹ sư trong công ty hay khách bên ngoài)?
-   - Cần mấy loại hồ sơ ở bản đầu?
-   - Có sẵn thư viện chi tiết (part, assembly) để dựng sản phẩm thật không?
+1. Settle the **pilot product** (recommended: the hollow box with a cover) and the kinds of dossier to return in the first version (picture, STEP, PDF drawing, BOM, price).
+2. Settle where the system (the web server) goes and the **Windows machine used as the worker** (with an Inventor 2027 license, already logged in).
+3. Do **G0**: the web, API, queue and a fake worker. No dependency on Inventor.
+4. In parallel, continue D0 of the DSL and Phases 0-2 of the add-in.
+5. Settle the open questions:
+      - Who are the users (engineers inside the company or outside customers)?
+      - How many kinds of dossier are needed in the first version?
+      - Is there a ready library of parts (part, assembly) to build a real product?
 
 ---
 
-## 15. Giao diện web theo kiểu SmartAssembly
+## 15. A SmartAssembly-style web interface
 
-### 15.1. Cách hiểu yêu cầu
-Bạn muốn luồng giống SmartAssembly (người dùng nhập yêu cầu, **luật chạy tự động**, CAD chạy phía sau, kết quả trả về) nhưng **mọi tương tác của người dùng diễn ra trên web**, không phải trong cửa sổ của Inventor. Theo thông tin công khai, Sigmaxim cũng có công cụ cấu hình trên web và khái niệm "mô hình chủ ảo" (virtual master model); mình không biết chi tiết bên trong nên chỉ lấy ý tưởng chung: **giao diện cấu hình tách khỏi CAD, luật chạy ở server, CAD là bộ thực thi phía sau**.
+### 15.1. How the requirement is understood
+You want a flow like SmartAssembly (the user enters requirements, **the rules run automatically**, CAD runs behind, the result comes back) but with **all user interaction on the web**, not in the Inventor window. From public information, Sigmaxim also has a web configuration tool and the concept of a "virtual master model"; I do not know the internal details so I only take the general idea: **the configuration interface is separate from CAD, the rules run on the server, CAD is the executor behind**.
 
-Hệ quả cho các quyết định trước:
-- **UI chính chuyển từ dockable window WPF sang web.** Canvas xem trước trở thành phần xem trước trên web. Add-in WPF chỉ còn là công cụ phát triển (hoặc bỏ). Điều này cũng loại bỏ rủi ro host WPF vào cửa sổ dock của Inventor ở Giai đoạn 1.
-- **Preset JSON** chuyển thành preset lưu trong CSDL theo từng sản phẩm.
-- Lõi DSL, Inventor Adapter và worker giữ nguyên vai trò.
+Consequences for the earlier decisions:
+- **The main UI moves from the WPF dockable window to the web.** The preview canvas becomes the preview on the web. The WPF add-in remains only a development tool (or is dropped). This also removes the risk of hosting WPF in the Inventor dock window in Phase 1.
+- **The JSON preset** becomes a preset stored in the database per product.
+- The DSL core, the Inventor Adapter and the worker keep their roles.
 
-### 15.2. Ba khu chức năng trên web
+### 15.2. Three functional areas on the web
 
-| Khu | Người dùng | Chức năng chính |
+| Area | User | Main functions |
 |-----|-----------|-----------------|
-| **Configurator** (đặt hàng) | Người đặt hàng | Chọn sản phẩm; form sinh từ định nghĩa; kiểm tra luật ngay khi chọn (lựa chọn nào bị khóa, giá trị nào hợp lệ); xem trước; giá sơ bộ; gửi đơn |
-| **Orders và Viewer** (theo dõi, kết quả) | Người đặt hàng | Danh sách job, trạng thái cập nhật trực tiếp, xem ảnh và model 3D thật, bản vẽ PDF, tải hồ sơ |
-| **Product Studio** (soạn sản phẩm) | Kỹ sư viết định nghĩa | Soạn DSL, bảng catalog, mẫu bản vẽ; báo lỗi theo dòng cột; chạy thử không cần Inventor; xuất bản phiên bản |
-| Admin | Quản trị | Worker, job, thư viện thành phần, người dùng |
+| **Configurator** (ordering) | The person ordering | Pick a product; a form generated from the definition; check rules as soon as a choice is made (which choices are locked, which values are valid); preview; a rough price; submit the order |
+| **Orders and Viewer** (tracking, results) | The person ordering | The job list, live status updates, viewing the real picture and 3D model, the PDF drawing, downloading the dossier |
+| **Product Studio** (authoring products) | The engineer writing definitions | Write the DSL, catalog tables, drawing templates; errors by line and column; dry runs without Inventor; publish versions |
+| Admin | Administrators | Workers, jobs, the component library, users |
 
-**Cập nhật giao diện (xem `r2-dashboard-gea-roundtrip-plan.md`, mục 5):** khu "Orders và Viewer" được tách thành 3 trang: **New order**, **Ordered** (chỉ job đang chạy, không mở được kết quả) và **Dashboard** (thống kê, lọc, xem lại job đã xong, tải PDF/DWG/STEP/`.gea`, nhân bản đơn).
+**UI update (see `r2-dashboard-gea-roundtrip-plan.md`, section 5):** the "Orders and Viewer" area was split into 3 pages: **New order**, **Ordered** (only running jobs, results cannot be opened) and **Dashboard** (statistics, filters, reviewing finished jobs, downloading PDF/DWG/STEP/`.gea`, duplicating an order).
 
-### 15.3. Luồng người dùng
+### 15.3. The user flow
 
-1. Mở danh mục, chọn sản phẩm (ví dụ máy biến áp lực).
-2. Form hiện ra, sinh từ **schema của sản phẩm**: ô nhập, hộp chọn, ô đánh dấu, đơn vị.
-3. Khi đổi một lựa chọn, web gọi **lõi DSL** (ở server, hoặc trong trình duyệt nếu chạy WebAssembly) để: khóa hoặc mở các lựa chọn phụ thuộc, báo giá trị vi phạm luật, cập nhật giá sơ bộ và khung xem trước.
-4. Bấm Gửi đơn. Server kiểm tra lại lần cuối rồi tạo job.
-5. Trang job hiện **Queued → Running (kèm bước) → Succeeded** theo thời gian thực.
-6. Khi xong: ảnh từ Inventor, **model 3D xoay được** trong trình duyệt, bản vẽ PDF, BOM, giá, báo cáo, STEP, IDW, ZIP.
-7. Người dùng có thể **nhân bản đơn** (lấy đầu vào cũ, sửa vài giá trị, gửi lại) hoặc lưu thành preset.
+1. Open the catalog, pick a product (for example the power transformer).
+2. The form appears, generated from the **schema of the product**: input fields, choice boxes, checkboxes, units.
+3. When a choice changes, the web calls the **DSL core** (on the server, or in the browser if running WebAssembly) to: lock or unlock the dependent choices, report values that violate rules, update the rough price and the preview frame.
+4. Click Submit order. The server checks one last time and then creates the job.
+5. The job page shows **Queued → Running (with the step) → Succeeded** in real time.
+6. When done: a picture from Inventor, a **rotatable 3D model** in the browser, the PDF drawing, BOM, price, report, STEP, IDW, ZIP.
+7. The user can **duplicate an order** (take the old input, change a few values, submit again) or save it as a preset.
 
-### 15.4. Xem trước theo ba tầng
+### 15.4. Preview in three tiers
 
-| Tầng | Khi nào | Nguồn | Độ chính xác |
+| Tier | When | Source | Accuracy |
 |------|---------|-------|--------------|
-| 1. Xem trước tức thì | Khi đang chỉnh form | Kế hoạch dựng chạy trong lõi DSL, vẽ ở trình duyệt (sơ đồ 2D như canvas đã thiết kế, sau đó khối 3D thô bằng WebGL, ví dụ three.js) | Minh họa, đúng tỉ lệ nhưng không phải Inventor |
-| 2. Ảnh thật | Sau khi worker dựng xong | Ảnh chụp từ Inventor | Chính xác |
-| 3. Model 3D thật | Sau khi xong | Chuyển model thành định dạng xem được trên web | Chính xác, xoay và phóng được |
+| 1. Instant preview | While editing the form | The build plan running in the DSL core, drawn in the browser (a 2D diagram like the canvas already designed, later a rough 3D block with WebGL, for example three.js) | Illustrative, true to proportion but not Inventor |
+| 2. A real picture | After the worker finishes building | A screenshot from Inventor | Exact |
+| 3. A real 3D model | After it is done | Convert the model to a format viewable on the web | Exact, can be rotated and zoomed |
 
-Cách có model 3D thật trên web:
+Ways to get a real 3D model on the web:
 
-| Cách | Ưu | Nhược |
+| Approach | Pros | Cons |
 |------|-----|-------|
-| **APS Viewer** (đưa file lên APS, Model Derivative dịch, xem bằng Viewer) | Công ty bạn đã dùng APS (Model Derivative, Viewer), xem được cấu trúc cây và đo | Cần tài khoản APS, tốn thời gian dịch và chi phí, dữ liệu rời khỏi mạng nội bộ |
-| **STEP sang glTF tự chuyển** (ví dụ dùng OpenCascade ở worker hoặc server) rồi xem bằng three.js | Chạy hoàn toàn nội bộ, không phụ thuộc cloud | Tự lo chất lượng lưới và màu sắc, phải bảo trì bộ chuyển |
-| **Chỉ ảnh nhiều góc** (chụp 4-6 góc từ Inventor) | Rất đơn giản, đủ cho bản đầu | Không xoay tự do |
+| **APS Viewer** (upload the file to APS, translate with the Model Derivative, view with the Viewer) | Your company already uses APS (Model Derivative, Viewer), can see the tree structure and measure | Needs an APS account, translation takes time and money, data leaves the internal network |
+| **STEP to glTF converted ourselves** (for example with OpenCascade on the worker or server) then viewed with three.js | Runs fully internally, no cloud dependency | We handle the mesh quality and colors ourselves, and must maintain the converter |
+| **Multi-angle images only** (take 4-6 angles from Inventor) | Very simple, enough for a first version | No free rotation |
 
-Khuyến nghị lộ trình: bản đầu chỉ ảnh nhiều góc, rồi thêm APS Viewer (vì đã quen), cân nhắc glTF nội bộ nếu có yêu cầu bảo mật dữ liệu.
+Recommended roadmap: the first version with multi-angle images only, then add the APS Viewer (since it is familiar), consider an internal glTF if there is a data security requirement.
 
-### 15.5. Product Studio: soạn sản phẩm trên web
-Phần này **tốn công nhất, nên làm sau**.
+### 15.5. Product Studio: authoring products on the web
+This part is the **most expensive, so do it later**.
 
-- Bản đầu: người viết định nghĩa **sửa file trong repo bằng trình soạn thảo thông thường** (kèm công cụ dòng lệnh kiểm tra lỗi và chạy thử), chưa cần web editor.
-- Bản sau (web editor):
-  - Soạn DSL với tô màu cú pháp tùy biến, báo lỗi dòng cột và gợi ý tên thông số (ví dụ dùng Monaco Editor).
-  - **Chạy thử (dry-run)** không cần Inventor: kiểm tra cú pháp, chạy luật với bộ giá trị mẫu, ra kế hoạch dựng, giá, BOM dự kiến và khung xem trước.
-  - **Bộ giá trị mẫu** lưu cùng sản phẩm, chạy lại tự động mỗi lần sửa như test hồi quy.
-  - **Nháp và xuất bản**: chỉ phiên bản đã xuất bản mới nhận đơn; đơn cũ giữ phiên bản cũ.
-  - Nút **chạy thử trên worker** tạo job thử (không tính là đơn thật).
-  - So sánh hai phiên bản.
-- Chỉnh bảng catalog trên web (dạng bảng) cho người không viết code.
+- First version: the person writing definitions **edits files in the repo with an ordinary editor** (with a command-line tool to check errors and dry run), no web editor needed yet.
+- Later version (web editor):
+    - Write the DSL with custom syntax highlighting, line and column errors and parameter name hints (for example using Monaco Editor).
+    - **Dry run** without Inventor: check the syntax, run the rules with a sample value set, giving the build plan, price, expected BOM and the preview frame.
+    - **A sample value set** stored with the product, rerun automatically on every edit like a regression test.
+    - **Draft and publish**: only a published version receives orders; old orders keep the old version.
+    - A **dry run on a worker** button creates a trial job (not counted as a real order).
+    - Compare two versions.
+- Edit the catalog tables on the web (as a table) for people who do not write code.
 
-### 15.6. Công nghệ gợi ý
+### 15.6. Suggested technology
 
-| Phần | Lựa chọn | Ghi chú |
+| Part | Choice | Note |
 |------|----------|---------|
-| Frontend | React hoặc Next.js | Bạn đã quen Next.js; form sinh từ schema JSON |
-| Frontend (phương án khác) | Blazor WebAssembly | Chạy cùng thư viện DSL .NET ngay trong trình duyệt, không phải viết lại logic; đổi lại bundle nặng hơn |
-| Chạy lõi DSL | Gọi API ở server cho bản đầu | Đơn giản; chuyển sang WebAssembly nếu cần phản hồi tức thì hoặc làm việc ngoại tuyến |
+| Frontend | React or Next.js | You already know Next.js; a form generated from a JSON schema |
+| Frontend (alternative) | Blazor WebAssembly | Runs the same .NET DSL library right in the browser, with no logic to rewrite; in return the bundle is heavier |
+| Running the DSL core | Call an API on the server for the first version | Simple; move to WebAssembly if instant feedback or offline work is needed |
 | Editor | Monaco Editor | Cho Product Studio |
-| Xem 3D | three.js (xem trước), APS Viewer (model thật) | Xem mục 15.4 |
-| API | ASP.NET Core | Dùng chung thư viện DSL với worker |
-| Cập nhật trạng thái | Polling, sau đó SSE hoặc SignalR | |
-| CSDL, kho file | PostgreSQL, thư mục máy chủ rồi Cloudflare R2 (xem `r2-dashboard-gea-roundtrip-plan.md`) | |
-| Đăng nhập | Tài khoản nội bộ hoặc SSO | Xem phần bảo mật ở mục 10 |
+| 3D viewing | three.js (preview), APS Viewer (the real model) | See section 15.4 |
+| API | ASP.NET Core | Shares the DSL library with the worker |
+| Status updates | Polling, then SSE or SignalR | |
+| Database, file store | PostgreSQL, a server folder then Cloudflare R2 (see `r2-dashboard-gea-roundtrip-plan.md`) | |
+| Login | An internal account or SSO | See the security part in section 10 |
 
-### 15.7. Lộ trình điều chỉnh (W0-W5)
+### 15.7. Adjusted roadmap (W0-W5)
 
-| Bước | Nội dung | Tương ứng giai đoạn cũ |
+| Step | Content | Matching old phase |
 |------|----------|------------------------|
-| **W0** | Web, API, hàng đợi, **worker giả**; Configurator đầu tiên với **schema JSON viết tay cho sản phẩm hộp** (chưa cần DSL); trang job; tải file mẫu | G0 |
-| **W1** | Lõi DSL (D0-D2) thay schema viết tay: form, luật và giá sinh từ định nghĩa; công cụ dòng lệnh kiểm tra và chạy thử | D1-D2, G3 một phần |
-| **W2** | Worker thật dựng hộp, trả ảnh nhiều góc và STEP | G1 |
-| **W3** | Bản vẽ, BOM, PDF, giá, báo cáo; Viewer 3D thật | G2, G3 |
-| **W4** | Xem trước tức thì trên web (2D rồi 3D thô) | Canvas ở mục 5b, chuyển sang web |
-| **W5** | Product Studio trên web (editor, dry-run, xuất bản phiên bản); sản phẩm máy biến áp theo từng cấp | G4, G5 |
+| **W0** | Web, API, queue, **a fake worker**; the first Configurator with a **hand-written JSON schema for the box product** (no DSL needed yet); the job page; sample file download | G0 |
+| **W1** | The DSL core (D0-D2) replaces the hand-written schema: the form, rules and price are generated from the definition; a command-line tool to check and dry run | D1-D2, part of G3 |
+| **W2** | A real worker builds the box, returns multi-angle pictures and STEP | G1 |
+| **W3** | Drawing, BOM, PDF, price, report; a real 3D Viewer | G2, G3 |
+| **W4** | Instant preview on the web (2D then rough 3D) | The canvas in section 5b, moved to the web |
+| **W5** | Product Studio on the web (editor, dry run, version publishing); the transformer product level by level | G4, G5 |
 
-### 15.8. Rủi ro riêng của hướng web
+### 15.8. Risks specific to the web direction
 
-| Rủi ro | Cách giảm |
+| Risk | How to reduce it |
 |--------|-----------|
-| Xem trước trên web lệch với model Inventor | Ghi rõ là minh họa, luôn có ảnh thật sau khi dựng, dùng chung kế hoạch dựng để hai bên không lệch logic |
-| Phải viết hai bộ sinh hình (Inventor và WebGL) | Giữ kế hoạch dựng ở mức trừu tượng (khối, trụ, quét theo đường), mỗi đích có bộ chuyển riêng; bản đầu chỉ cần sơ đồ 2D |
-| Web editor cho DSL tốn công như một dự án riêng | Làm sau cùng; bản đầu soạn file trong repo |
-| Dữ liệu thiết kế đi qua cloud (APS) | Cân nhắc glTF nội bộ nếu dữ liệu nhạy cảm; thỏa thuận rõ trước khi đưa file lên APS |
-| Phạm vi quá rộng (Configurator, Viewer, Studio, Admin) | Làm Configurator và Orders trước; Studio và Admin là bước sau |
-| Chạy luật ở hai nơi (trình duyệt và server) cho kết quả khác nhau | Server luôn kiểm tra lại là bản chuẩn; nếu chạy ở trình duyệt thì dùng cùng thư viện (WebAssembly) |
+| The preview on the web drifts from the Inventor model | State clearly that it is illustrative, always have the real picture after the build, share the build plan so the two sides do not drift in logic |
+| Two geometry generators must be written (Inventor and WebGL) | Keep the build plan abstract (blocks, cylinders, sweeps along a path), each target has its own converter; the first version only needs a 2D diagram |
+| A web editor for the DSL costs as much as a project of its own | Do it last; the first version edits files in the repo |
+| Design data passes through the cloud (APS) | Consider an internal glTF if the data is sensitive; agree clearly before uploading files to APS |
+| The scope is too wide (Configurator, Viewer, Studio, Admin) | Do the Configurator and Orders first; Studio and Admin are a later step |
+| Running rules in two places (browser and server) gives different results | The server always re-checks and is the standard; if run in the browser, use the same library (WebAssembly) |
 
-### 15.9. Việc làm ngay tiếp theo
-1. Chốt phạm vi "làm trên web" ở bản đầu: chỉ Configurator và theo dõi đơn, hay có cả Product Studio.
-2. Chọn frontend (React hoặc Next.js, hoặc Blazor WebAssembly).
-3. Làm **W0**: web, API, worker giả, form hộp từ schema JSON.
-4. Chốt cách xem model thật ở bản đầu (ảnh nhiều góc) và để APS Viewer sang bước sau.
+### 15.9. Next things to do right away
+1. Settle the scope of "do it on the web" in the first version: only the Configurator and order tracking, or Product Studio too.
+2. Choose the frontend (React or Next.js, or Blazor WebAssembly).
+3. Do **W0**: the web, API, a fake worker, the box form from a JSON schema.
+4. Settle how the real model is viewed in the first version (multi-angle images) and leave the APS Viewer for a later step.
