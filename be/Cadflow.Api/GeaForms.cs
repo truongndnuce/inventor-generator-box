@@ -88,5 +88,5 @@ public static class GeaForms
         _ => Round(f.DisplayNumber(v)),
     };
 
-    private static double Round(double v) => double.Parse(v.ToString("G12", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+    internal static double Round(double v) => double.Parse(v.ToString("G12", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
 }
