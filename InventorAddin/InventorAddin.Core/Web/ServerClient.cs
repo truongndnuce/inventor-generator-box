@@ -10,8 +10,9 @@ using System.Threading.Tasks;
 
 namespace InventorAddin.Web;
 
-/// <summary>A job the server hands down to the worker: only what is needed to build.</summary>
-public sealed record WorkItem(string Id, string ProductCode, int ProductVersion, Dictionary<string, double> Inputs, string? ScriptText = null, string? ScriptName = null, Dictionary<string, string>? TextInputs = null);
+/// <summary>A job the server hands down to the worker: only what is needed to build. Kind: "generate" (full), "preview" (one picture only) or "export" (full rebuild of an older job).</summary>
+public sealed record WorkItem(string Id, string ProductCode, int ProductVersion, Dictionary<string, double> Inputs, string? ScriptText = null, string? ScriptName = null, Dictionary<string, string>? TextInputs = null,
+    string Kind = "generate");
 
 /// <summary>Calls the worker API of the web server (see be/Cadflow.Api). The worker only connects outward, it opens no port.</summary>
 public sealed class ServerClient : IDisposable
@@ -21,12 +22,14 @@ public sealed class ServerClient : IDisposable
     private readonly HttpClient _r2Http = new() { Timeout = TimeSpan.FromMinutes(10) };
     private readonly string _worker;
     private readonly string[]? _products;
+    private readonly string[] _queues;
 
     /// <param name="products">Product codes this worker accepts; null = accepts every product.</param>
     public ServerClient(WorkerSettings settings, string[]? products = null)
     {
         _worker = settings.WorkerName;
         _products = products;
+        _queues = settings.Queues ?? Array.Empty<string>();
         _http = new HttpClient { BaseAddress = new Uri(settings.ServerUrl.TrimEnd('/') + "/"), Timeout = TimeSpan.FromMinutes(5) };
         _http.DefaultRequestHeaders.Add("X-Worker-Key", settings.WorkerKey);
     }
@@ -41,7 +44,7 @@ public sealed class ServerClient : IDisposable
     /// <summary>Takes the next job, null if the queue is empty.</summary>
     public async Task<WorkItem?> ClaimAsync(CancellationToken ct)
     {
-        using var res = await _http.PostAsJsonAsync("api/worker/claim", new { worker = _worker, products = _products }, ct);
+        using var res = await _http.PostAsJsonAsync("api/worker/claim", new { worker = _worker, products = _products, queues = _queues }, ct);
         if (res.StatusCode == HttpStatusCode.NoContent) return null;
         res.EnsureSuccessStatusCode();
         return await res.Content.ReadFromJsonAsync<WorkItem>(cancellationToken: ct);

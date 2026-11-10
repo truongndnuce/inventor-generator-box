@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Card, Heading, Link, Table, Text } from '@radix-ui/themes';
 import { api, fmtDate, productLabel, usePolling } from '../lib.js';
-import { StatusBadge } from '../components.jsx';
+import { KindBadge, QueueSummary, StatusBadge } from '../components.jsx';
 
 export const JOB_COLUMNS = ['Job', 'Product', 'Status', 'Created', 'Requested by', 'Worker'];
 
@@ -9,7 +9,7 @@ export const JOB_COLUMNS = ['Job', 'Product', 'Status', 'Created', 'Requested by
 export function JobCells({ j }) {
   return (
     <>
-      <Table.RowHeaderCell><Link href={`#/jobs/${j.id}`}>{j.id}</Link></Table.RowHeaderCell>
+      <Table.RowHeaderCell><Link href={`#/jobs/${j.id}`}>{j.id}</Link><KindBadge kind={j.kind} /></Table.RowHeaderCell>
       <Table.Cell>{productLabel(j)}</Table.Cell>
       <Table.Cell><StatusBadge status={j.status} />{j.step && j.status === 'running' ? ` ${j.step}` : ''}</Table.Cell>
       <Table.Cell>{fmtDate(j.createdAt)}</Table.Cell>
@@ -30,6 +30,7 @@ export default function Orders() {
       <Text as="p" size="2" color="gray" mt="1" mb="4">
         Jobs that are waiting or being built. Finished jobs and their drawings are in the <Link href="#/dashboard">Dashboard</Link>.
       </Text>
+      <QueueSummary />
       <div className="table-scroll">
         <Table.Root variant="ghost">
           <Table.Header>

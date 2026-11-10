@@ -116,16 +116,17 @@ public sealed class CadTools(JobStore store, ConfigStore configs, JobService job
         [Description("Optional active configuration id")] string? configId = null,
         [Description("Script id from import_gea (instead of productCode)")] string? scriptId = null,
         [Description("Text/radio fields of an imported script")] Dictionary<string, string>? textInputs = null,
-        [Description("Who is ordering")] string? requestedBy = null)
+        [Description("Who is ordering")] string? requestedBy = null,
+        [Description("'generate' (default, full files) or 'preview' (fast, one picture only)")] string? kind = null)
     {
-        var r = CreateNow(productCode, values, configId, scriptId, textInputs, requestedBy ?? "mcp");
+        var r = CreateNow(productCode, values, configId, scriptId, textInputs, requestedBy ?? "mcp", kind);
         return r.Ok ? Ser(JobView(r.Job!)) : Ser(r.Error!);
     }
 
     /// <summary>Creates the job right away (the server still re-checks everything). Used by MCP and by chat in auto-create mode.</summary>
     public CreateJobResult CreateNow(string? code, Dictionary<string, double>? values, string? configId, string? scriptId,
-        Dictionary<string, string>? textInputs, string? requestedBy) =>
-        jobs.Create(new CreateJobRequest(code, values, requestedBy, scriptId, textInputs, configId));
+        Dictionary<string, string>? textInputs, string? requestedBy, string? kind = null) =>
+        jobs.Create(new CreateJobRequest(code, values, requestedBy, scriptId, textInputs, configId, kind));
 
     [McpServerTool(Name = "import_gea"), Description("Import the text of a .gea script; returns scriptId and the form (parameters) so a job can be created from it.")]
     public string ImportGea([Description("Full .gea file text")] string text) => Ser(jobs.Import(text).Body);
@@ -156,7 +157,7 @@ public sealed class CadTools(JobStore store, ConfigStore configs, JobService job
 
     public static object JobView(Job j, bool full = false) => new
     {
-        id = j.Id, product = j.ProductCode, status = j.Status.ToString().ToLowerInvariant(), step = j.Step,
+        id = j.Id, product = j.ProductCode, kind = j.Kind, queue = j.Queue, priority = j.Priority, status = j.Status.ToString().ToLowerInvariant(), step = j.Step,
         requestedBy = j.RequestedBy, createdAt = j.CreatedAt, error = j.Error,
         inputs = full ? j.Inputs : null, summary = full ? j.Summary : null,
         artifacts = full ? j.Artifacts.Select(a => a.Name) : null,

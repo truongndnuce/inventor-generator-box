@@ -144,6 +144,17 @@ internal sealed class InventorJobExecutor
                 Log.Warn("Mass properties unavailable: " + ex.Message);
             }
 
+            // A preview is only a quick picture for the screen: no .ipt, no STEP, one view, no drawing.
+            if (string.Equals(job.Kind, "preview", StringComparison.OrdinalIgnoreCase))
+            {
+                progress("Exporting", "Capturing the preview picture.");
+                var previewPath = Path.Combine(workDir, job.Id + PictureViews[0].Suffix + ".png");
+                if (!TryCapturePicture(previewPath, PictureViews[0].Orientation))
+                    return JobResult.Fail("Could not capture the preview picture (see the add-in log).", retryable: true);
+                files.Add(new OutputFile(previewPath, "image"));
+                return new JobResult(true, null, false, summary, files);
+            }
+
             progress("Saving", "Saving Inventor part.");
             var iptPath = Path.Combine(workDir, job.Id + ".ipt");
             doc.SaveAs(iptPath, false);

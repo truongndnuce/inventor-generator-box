@@ -1,7 +1,7 @@
 ﻿import { useEffect, useRef, useState } from 'react';
 import { Box, Button, Card, Flex, Heading, Select, Separator, Text, TextField } from '@radix-ui/themes';
 import { api, go, postJson } from '../lib.js';
-import { Hero, ImportGeaButton, Notice, ParamField } from '../components.jsx';
+import { Hero, ImportGeaButton, Notice, ParamField, QuickPreview } from '../components.jsx';
 
 export default function NewOrder({ code, configId }) {
   const [products, setProducts] = useState(null);
@@ -128,6 +128,8 @@ export default function NewOrder({ code, configId }) {
           <TextField.Root placeholder="Requested by" value={who} onChange={(e) => setWho(e.target.value)} style={{ minWidth: 240 }} />
           <Button size="2" disabled={!valid || busy} onClick={submit}>Submit order</Button>
         </Flex>
+        <QuickPreview disabled={!valid || busy}
+          createJob={() => postJson('/api/jobs', { productCode: schema.code, inputs: values, requestedBy: who, configId: cfgId || undefined, kind: 'preview' })} />
       </Flex>
     </Card>
     </>

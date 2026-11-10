@@ -33,6 +33,7 @@ builder.Services.AddSingleton(new JobStore(dataDir, dbConn));
 builder.Services.AddSingleton(new Cadflow.Api.Chat.ChatStore(dbConn));
 builder.Services.AddSingleton(new ScriptStore(dataDir));
 builder.Services.AddSingleton(new ConfigStore(dataDir));
+builder.Services.AddSingleton(new QueuePolicy(builder.Configuration));
 builder.Services.AddSingleton<JobService>();
 builder.Services.AddSingleton<DraftStore>();
 builder.Services.AddSingleton<ComponentCatalog>();
@@ -152,15 +153,19 @@ app.MapPost("/api/gea/{id}/form", (string id, GeaFormRequest req, JobService job
 
 // ================================================================= orders / jobs
 
+/// <summary>"generate,export" -> a set of lowercase names; null when the parameter is missing (no filter).</summary>
+static HashSet<string>? ParseList(string? s) => string.IsNullOrWhiteSpace(s) ? null
+    : s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(x => x.ToLowerInvariant()).ToHashSet();
+
 app.MapPost("/api/jobs", (CreateJobRequest req, JobService jobs) =>
 {
     var r = jobs.Create(req);
     return r.Ok ? Results.Created($"/api/jobs/{r.Job!.Id}", r.Job) : Results.Json(r.Error, statusCode: r.Status);
 });
 
-// Filtered list: ?status=queued,running &product=box &requestedBy=name &from=2026-11-01 &to=2026-11-08 &limit=100
+// Filtered list: ?status=queued,running &kind=generate,export &queue=filter &product=box &requestedBy=name &from=2026-11-01 &to=2026-11-08 &limit=100
 // Without parameters it returns everything (compatible with the old version). Newest first.
-app.MapGet("/api/jobs", (string? status, string? product, string? requestedBy, DateTimeOffset? from, DateTimeOffset? to, int? limit) =>
+app.MapGet("/api/jobs", (string? status, string? product, string? requestedBy, DateTimeOffset? from, DateTimeOffset? to, int? limit, string? kind, string? queue) =>
 {
     IEnumerable<Job> jobs = store.List();
 
@@ -177,6 +182,10 @@ app.MapGet("/api/jobs", (string? status, string? product, string? requestedBy, D
     }
     if (!string.IsNullOrWhiteSpace(product))
         jobs = jobs.Where(j => string.Equals(j.ProductCode, product.Trim(), StringComparison.OrdinalIgnoreCase));
+    if (ParseList(kind) is { } kinds)
+        jobs = jobs.Where(j => kinds.Contains(j.Kind));
+    if (!string.IsNullOrWhiteSpace(queue))
+        jobs = jobs.Where(j => string.Equals(j.Queue, queue.Trim(), StringComparison.OrdinalIgnoreCase));
     if (!string.IsNullOrWhiteSpace(requestedBy))
         jobs = jobs.Where(j => string.Equals(j.RequestedBy, requestedBy.Trim(), StringComparison.OrdinalIgnoreCase));
     if (from is { } f) jobs = jobs.Where(j => j.CreatedAt >= f);
@@ -188,13 +197,15 @@ app.MapGet("/api/jobs", (string? status, string? product, string? requestedBy, D
 
 // Statistics for the Dashboard: counts by status, success rate, build time, and per day (server time).
 // ?days=14 (1-90) &product= &requestedBy=. Statistics are computed over jobs created within the last `days` days.
-app.MapGet("/api/stats", (int? days, string? product, string? requestedBy) =>
+app.MapGet("/api/stats", (int? days, string? product, string? requestedBy, string? kind) =>
 {
     int span = Math.Clamp(days ?? 14, 1, 90);
     var today = DateTimeOffset.Now.Date;
     var firstDay = today.AddDays(-(span - 1));
 
     IEnumerable<Job> jobs = store.List().Where(j => j.CreatedAt.ToLocalTime().Date >= firstDay);
+    if (ParseList(kind) is { } kinds)
+        jobs = jobs.Where(j => kinds.Contains(j.Kind));
     if (!string.IsNullOrWhiteSpace(product))
         jobs = jobs.Where(j => string.Equals(j.ProductCode, product.Trim(), StringComparison.OrdinalIgnoreCase));
     if (!string.IsNullOrWhiteSpace(requestedBy))
@@ -235,7 +246,22 @@ app.MapGet("/api/stats", (int? days, string? product, string? requestedBy) =>
     });
 });
 
-app.MapGet("/api/jobs/{id}",(string id) => store.Get(id) is { } j ? Results.Ok(j) : Results.NotFound());
+app.MapGet("/api/jobs/{id}", (string id) =>
+{
+    if (store.Get(id) is not { } j) return Results.NotFound();
+    if (j.Status == JobStatus.Queued) j.QueuePosition = store.QueuePosition(id);
+    return Results.Ok(j);
+});
+
+// Rebuild an older job (same script and values) as an `export` job, for example to get back files removed by the retention policy.
+app.MapPost("/api/jobs/{id}/rebuild", (string id, RebuildRequest? req, JobService jobs) =>
+{
+    var r = jobs.Rebuild(id, req?.RequestedBy);
+    return r.Ok ? Results.Created($"/api/jobs/{r.Job!.Id}", r.Job) : Results.Json(r.Error, statusCode: r.Status);
+});
+
+// Depth of the build and filter queues, the oldest wait and the online workers that take from each.
+app.MapGet("/api/queues", () => store.QueueStats());
 
 app.MapPost("/api/jobs/{id}/cancel", (string id) =>
     store.Cancel(id) ? Results.NoContent() : Results.Conflict(new { error = "The job is not found or already finished." }));
@@ -306,7 +332,7 @@ worker.MapPost("/heartbeat", (WorkerHello hello) =>
 worker.MapPost("/claim", (ClaimRequest req) =>
 {
     if (string.IsNullOrWhiteSpace(req.Worker)) return Results.BadRequest(new { error = "worker is required." });
-    if (store.Claim(req.Worker!, req.Products) is not { } item) return Results.NoContent();
+    if (store.Claim(req.Worker!, req.Products, req.Queues) is not { } item) return Results.NoContent();
     // Includes exactly the script recorded for the job (the one that ships with the product or the one the user imported).
     var scriptJob = store.Get(item.Id);
     return Results.Ok(scriptJob?.ScriptSha256 != null && scripts.Get(scriptJob.ScriptSha256) is { } text

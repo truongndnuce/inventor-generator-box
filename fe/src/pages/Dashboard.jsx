@@ -7,6 +7,9 @@ import { JOB_COLUMNS, JobCells } from './Orders.jsx';
 const STATUSES = ['queued', 'running', 'succeeded', 'failed', 'cancelled'];
 const DAYS = [[7, 'Last 7 days'], [14, 'Last 14 days'], [30, 'Last 30 days'], [90, 'Last 90 days']];
 const ALL = 'all'; // Radix Select does not accept an empty value
+// Previews are quick pictures for the screen: they are kept out of the default list and out of the build-time statistics.
+const KINDS = [['full', 'Full builds'], ['preview', 'Previews'], [ALL, 'All kinds']];
+const KIND_QUERY = { full: 'generate,export', preview: 'preview' };
 
 /** Bar chart of one series: points = [{ label, value, tip }]. Bars have rounded tops, hover shows a tooltip. */
 function BarChart({ title, points, integer = false, unit = '' }) {
@@ -77,6 +80,7 @@ export default function Dashboard() {
   const [days, setDays] = useState('14');
   const [status, setStatus] = useState(ALL);
   const [product, setProduct] = useState(ALL);
+  const [kind, setKind] = useState('full');
   const [mine, setMine] = useState(false);
   const [products, setProducts] = useState([]);
   const [stats, setStats] = useState(null);
@@ -91,9 +95,10 @@ export default function Dashboard() {
     if (product !== ALL) { sq.set('product', product); jq.set('product', product); }
     if (mine && user) { sq.set('requestedBy', user); jq.set('requestedBy', user); }
     if (status !== ALL) jq.set('status', status);
+    if (KIND_QUERY[kind]) { sq.set('kind', KIND_QUERY[kind]); jq.set('kind', KIND_QUERY[kind]); }
     const [s, j] = await Promise.all([api(`/api/stats?${sq}`), api('/api/jobs' + (jq.toString() ? `?${jq}` : ''))]);
     setStats(s); setJobs(j);
-  }, 5000, [days, status, product, mine]);
+  }, 5000, [days, status, product, mine, kind]);
 
   const shortDate = (d) => d.slice(5);
   const COLUMNS = [...JOB_COLUMNS, ''];
@@ -114,6 +119,10 @@ export default function Dashboard() {
               <Select.Item value="imported">Imported scripts</Select.Item>
               {products.map((p) => <Select.Item key={p.code} value={p.code}>{p.name}</Select.Item>)}
             </Select.Content>
+          </Select.Root>
+          <Select.Root value={kind} onValueChange={setKind}>
+            <Select.Trigger aria-label="Kind" />
+            <Select.Content>{KINDS.map(([v, t]) => <Select.Item key={v} value={v}>{t}</Select.Item>)}</Select.Content>
           </Select.Root>
           <Select.Root value={status} onValueChange={setStatus}>
             <Select.Trigger aria-label="Status" />

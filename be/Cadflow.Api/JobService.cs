@@ -13,14 +13,22 @@ public sealed record CreateJobResult(Job? Job, int Status, object? Error)
 /// Job-ordering logic shared by REST (POST /api/jobs), the MCP tools and chat: the server always checks once more at the end
 /// and never trusts data from the browser or from the LLM.
 /// </summary>
-public sealed class JobService(JobStore store, ScriptStore scripts, ConfigStore configs, ILogger<JobService> log)
+public sealed class JobService(JobStore store, ScriptStore scripts, ConfigStore configs, ILogger<JobService> log, QueuePolicy? queuePolicy = null)
 {
+    private readonly QueuePolicy _policy = queuePolicy ?? new QueuePolicy();
+
     public const string ImportedProduct = "imported"; // product code of a job ordered from a .gea script imported by the user
 
     public CreateJobResult Create(CreateJobRequest req)
     {
         var requestedByName = string.IsNullOrWhiteSpace(req.RequestedBy) ? "anonymous" : req.RequestedBy.Trim();
         if (requestedByName.Length > 80) requestedByName = requestedByName[..80];
+
+        // A user orders a full build or a fast preview. `export` is only created by Rebuild.
+        var kind = string.IsNullOrWhiteSpace(req.Kind) ? JobKinds.Generate : req.Kind.Trim().ToLowerInvariant();
+        if (kind != JobKinds.Generate && kind != JobKinds.Preview)
+            return new(null, 400, new { error = $"Unknown job kind '{req.Kind}'. Use '{JobKinds.Generate}' or '{JobKinds.Preview}'." });
+        var (queue, priority) = _policy.Resolve(kind);
 
         // Ordering from an imported .gea script: the server recompiles it and computes the FORM one last time.
         if (!string.IsNullOrWhiteSpace(req.ScriptId))
@@ -36,7 +44,7 @@ public sealed class JobService(JobStore store, ScriptStore scripts, ConfigStore 
 
             var name = string.IsNullOrWhiteSpace(script.Program.ProductName) ? "imported.gea" : script.Program.ProductName;
             var (numbers, texts) = GeaForms.Complete(form);
-            return new(store.Create(ImportedProduct, numbers, requestedByName, name, req.ScriptId, "imported", texts), 201, null);
+            return new(store.Create(ImportedProduct, numbers, requestedByName, name, req.ScriptId, "imported", texts, kind, queue, priority), 201, null);
         }
 
         var product = Products.Find(string.IsNullOrWhiteSpace(req.ProductCode) ? "box" : req.ProductCode);
@@ -63,7 +71,46 @@ public sealed class JobService(JobStore store, ScriptStore scripts, ConfigStore 
         }
 
         var job = store.Create(product.Code, values, requestedByName,
-            scriptSha == null ? null : product.ScriptFile, scriptSha, scriptSha == null ? null : "bundled");
+            scriptSha == null ? null : product.ScriptFile, scriptSha, scriptSha == null ? null : "bundled", kind: kind, queue: queue, priority: priority);
+        return new(job, 201, null);
+    }
+
+    /// <summary>
+    /// Queues an `export` job that rebuilds <paramref name="sourceId"/> with exactly the same script (by SHA-256) and values.
+    /// The rules are checked again, because the product definition may have changed since the first run.
+    /// </summary>
+    public CreateJobResult Rebuild(string sourceId, string? requestedBy)
+    {
+        if (store.Get(sourceId) is not { } src) return new(null, 404, new { error = "Unknown job." });
+        if (src.Status is JobStatus.Queued or JobStatus.Running)
+            return new(null, 409, new { error = "The job is still waiting or running; rebuild it once it has finished." });
+
+        string? scriptText = null;
+        if (src.ScriptSha256 != null && (scriptText = scripts.Get(src.ScriptSha256)) == null)
+            return new(null, 410, new { error = "The script of this job is no longer stored, so it cannot be rebuilt exactly." });
+
+        if (src.ProductCode == ImportedProduct)
+        {
+            if (scriptText == null) return new(null, 410, new { error = "The imported script of this job is missing." });
+            var script = GeaScript.Compile(scriptText, GeaLibraries.Resolve);
+            if (GeaForms.Reject(script) is { } why) return new(null, 400, new { error = why });
+            var form = GeaForms.Evaluate(script, src.Inputs, src.TextInputs);
+            if (!form.Ok)
+                return new(null, 400, new { error = "The values no longer satisfy the script's rules.", issues = form.Errors.Select(e => new { message = e.Message, @params = e.Params }) });
+        }
+        else
+        {
+            var product = Products.Find(src.ProductCode);
+            if (product == null) return new(null, 404, new { error = $"Unknown product '{src.ProductCode}'." });
+            var issues = product.Validate(src.Inputs);
+            if (issues.Count > 0) return new(null, 400, new { error = "The values no longer satisfy the product rules.", issues });
+        }
+
+        var by = string.IsNullOrWhiteSpace(requestedBy) ? src.RequestedBy : requestedBy.Trim();
+        if (by.Length > 80) by = by[..80];
+        var (queue, priority) = _policy.Resolve(JobKinds.Export);
+        var job = store.Create(src.ProductCode, new(src.Inputs), by, src.ScriptName, src.ScriptSha256, src.ScriptSource,
+            new(src.TextInputs), JobKinds.Export, queue, priority, src.Id);
         return new(job, 201, null);
     }
 

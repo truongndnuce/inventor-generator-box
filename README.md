@@ -56,14 +56,30 @@ Builders available for `CREATE_FEATURE builder:<Name>`: `Tank`, `Cover`, `Block`
 
 ## Configuration
 
-- **Add-in**: `%AppData%\InventorBoxAddin\worker.json` (created the first time): `enabled`, `serverUrl`, `workerKey`, `workerName`, `pollSeconds`. The worker name on the server is `<workerName>-<add-in>` (for example `PC01-generator`). Logs are in `%AppData%\InventorBoxAddin\logs`.
+- **Add-in**: `%AppData%\InventorBoxAddin\worker.json` (created the first time): `enabled`, `serverUrl`, `workerKey`, `workerName`, `pollSeconds`, `queues`. The worker name on the server is `<workerName>-<add-in>` (for example `PC01-generator`). Logs are in `%AppData%\InventorBoxAddin\logs`.
 - **R2 (optional)**: `dotnet user-secrets set "R2:AccountId" ... --project be/Cadflow.Api` for `R2:AccountId`, `R2:Bucket`, `R2:AccessKeyId`, `R2:SecretAccessKey` (or the environment variables `R2__AccountId`...; add `R2:Endpoint` if you use the EU jurisdiction). When all are set, the worker uploads results straight to the (private) R2 bucket and the web downloads through presigned URLs; otherwise results are kept in `data/artifacts` as before. The startup log says which mode is in use.
 - **File retention**: `Retention:Days` (default 0 = keep forever) deletes the result files of finished jobs older than that many days; the job information stays.
 - **Server**: `be/Cadflow.Api/appsettings.json`: `Urls`, `Worker:Key`, `ConnectionStrings:Cadflow`. **Change the default `Worker:Key` `dev-worker-key` before exposing the server beyond localhost.**
 - To run Inventor on another machine: set `Urls` to `http://0.0.0.0:18080` and point the add-in `serverUrl` at the server (preferably behind a VPN/private network, see section 10 of the plan).
 
+## Queues, job kinds and priority
+
+Like SDS (Main Build / Main Filter, priority 0 to 100 with 0 the most urgent), jobs wait in one of two queues and the server decides the queue and priority from the **kind** of the job (a web user does not pick a priority, there is no login yet):
+
+| Kind | Queue | Priority | What the worker builds |
+|---|---|---|---|
+| `generate` (default) | `build` | 20 | Full build: `.ipt .stp .png .pdf .dwg` |
+| `preview` | `filter` | 0 | A fast job: one isometric picture only, no `.ipt`, STEP or drawing. The web has a **Quick preview** button on New order |
+| `export` | `build` | 20 | A rebuild of an older job with the same script (by SHA-256) and values, for example to get back files deleted by the retention policy (`POST /api/jobs/{id}/rebuild`, the **Rebuild files** button on the job page) |
+
+- Inside a queue the lowest priority number goes first, then the oldest job. A retried job keeps its kind, queue and priority.
+- Each machine says which queues it takes and in which order: `queues` in `worker.json` (default `["build","filter"]`: a full build first, a preview only when no build waits; `["filter","build"]` does the opposite; `[]` takes any queue by priority). This is the same idea as the node settings of SDS.
+- Change the queue or priority of a kind in `appsettings.json`: `"Queue": { "Kinds": { "preview": { "Queue": "filter", "Priority": 0 } } }`.
+- `GET /api/queues` shows the depth of each queue, the oldest wait and the online workers that take from it; `GET /api/jobs/{id}` of a queued job has `queuePosition`; `GET /api/jobs` and `GET /api/stats` accept `kind=generate,export`. The Dashboard keeps previews out of its default list and its build-time statistics.
+- A worker that does not know about queues (an old add-in) takes any queue by priority and builds a preview as a full job; an old server ignores `queues`.
+
 ## Worker API (called by the add-in, header `X-Worker-Key`)
 
-`POST /api/worker/heartbeat` · `POST /api/worker/claim` · `POST /api/worker/jobs/{id}/progress|artifacts|complete|fail?worker=...`
+`POST /api/worker/heartbeat` · `POST /api/worker/claim` (body `worker`, `products`, `queues`; the job it returns has `kind`) · `POST /api/worker/jobs/{id}/progress|artifacts|complete|fail?worker=...`
 
 A job with no heartbeat for 90 seconds is returned to the queue by itself; at most 3 attempts.

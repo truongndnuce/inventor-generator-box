@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Box, Button, Card, Checkbox, Flex, Heading, Select, Separator, Tabs, Text, TextField } from '@radix-ui/themes';
 import { go, postJson } from '../lib.js';
-import { Notice } from '../components.jsx';
+import { Notice, QuickPreview } from '../components.jsx';
 
 const isText = (f) => f.kind === 'radio' || f.kind === 'text';
 
@@ -146,6 +146,8 @@ export default function ScriptOrder({ scriptId }) {
           <TextField.Root placeholder="Requested by" value={who} onChange={(e) => setWho(e.target.value)} style={{ minWidth: 240 }} />
           <Button size="2" disabled={!result.form.ok || busy || pending} onClick={submit}>Submit order</Button>
         </Flex>
+        <QuickPreview disabled={!result.form.ok || busy || pending}
+          createJob={() => postJson('/api/jobs', { scriptId, inputs: values, textInputs: texts, requestedBy: who, kind: 'preview' })} />
       </Flex>
     </Card>
   );

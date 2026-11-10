@@ -45,7 +45,12 @@ public sealed class JobStore
             script_source text,
             artifacts_purged_at timestamptz
         );
-        CREATE INDEX IF NOT EXISTS ix_jobs_status_created ON jobs (status, created_at);
+        ALTER TABLE jobs ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'generate';
+        ALTER TABLE jobs ADD COLUMN IF NOT EXISTS queue text NOT NULL DEFAULT 'build';
+        ALTER TABLE jobs ADD COLUMN IF NOT EXISTS priority int NOT NULL DEFAULT 20;
+        ALTER TABLE jobs ADD COLUMN IF NOT EXISTS source_job_id text;
+        DROP INDEX IF EXISTS ix_jobs_status_created;
+        CREATE INDEX IF NOT EXISTS ix_jobs_queue ON jobs (status, queue, priority, created_at);
         CREATE INDEX IF NOT EXISTS ix_jobs_requested_by ON jobs (requested_by);
         CREATE INDEX IF NOT EXISTS ix_jobs_product ON jobs (product_code);
         CREATE TABLE IF NOT EXISTS job_artifacts (
@@ -66,7 +71,8 @@ public sealed class JobStore
         """;
 
     private const string JobCols = "id, product_code, product_version, status, step, error, requested_by, created_at, started_at, finished_at, " +
-                                   "last_heartbeat, worker, attempts, inputs, text_inputs, summary, script_name, script_sha256, script_source, artifacts_purged_at";
+                                   "last_heartbeat, worker, attempts, inputs, text_inputs, summary, script_name, script_sha256, script_source, artifacts_purged_at, " +
+                                   "kind, queue, priority, source_job_id";
 
     private readonly NpgsqlDataSource _db;
     private readonly object _wgate = new();
@@ -100,6 +106,44 @@ public sealed class JobStore
         return LoadJobs(conn, "WHERE id = @id", [("id", id)], "").FirstOrDefault();
     }
 
+    public sealed record QueueStat(string Queue, int Queued, int Running, double? OldestWaitSeconds, int OnlineWorkers);
+
+    /// <summary>Depth of every queue (both queues are always listed) and how many online workers will take from it.</summary>
+    public IReadOnlyList<QueueStat> QueueStats()
+    {
+        var found = new Dictionary<string, (int Queued, int Running, DateTimeOffset? Oldest)>();
+        using (var conn = _db.OpenConnection())
+        using (var cmd = Command(conn, null, """
+            SELECT queue, count(*) FILTER (WHERE status = 'queued'), count(*) FILTER (WHERE status = 'running'),
+                   min(created_at) FILTER (WHERE status = 'queued')
+            FROM jobs WHERE status IN ('queued', 'running') GROUP BY queue
+            """))
+        using (var r = cmd.ExecuteReader())
+            while (r.Read())
+                found[r.GetString(0)] = ((int)r.GetInt64(1), (int)r.GetInt64(2), r.IsDBNull(3) ? null : r.GetFieldValue<DateTimeOffset>(3));
+
+        var online = Workers().Where(w => w.Online).ToList();
+        var now = DateTimeOffset.UtcNow;
+        return JobQueues.All.Select(q =>
+        {
+            var (queued, running, oldest) = found.TryGetValue(q, out var v) ? v : (0, 0, null);
+            return new QueueStat(q, queued, running, oldest is { } o ? Math.Round((now - o).TotalSeconds, 1) : null,
+                online.Count(w => w.Queues == null || w.Queues.Contains(q)));
+        }).ToList();
+    }
+
+    /// <summary>How many queued jobs of the same queue are handed out before this one (null if the job is not queued).</summary>
+    public int? QueuePosition(string id)
+    {
+        using var conn = _db.OpenConnection();
+        using var cmd = Command(conn, null, """
+            SELECT (SELECT count(*) FROM jobs o WHERE o.status = 'queued' AND o.queue = j.queue
+                    AND (o.priority < j.priority OR (o.priority = j.priority AND o.created_at < j.created_at)))
+            FROM jobs j WHERE j.id = @id AND j.status = 'queued'
+            """, ("id", id));
+        return cmd.ExecuteScalar() is long n ? (int)n : null;
+    }
+
     public IReadOnlyList<WorkerInfo> Workers()
     {
         lock (_wgate)
@@ -108,7 +152,7 @@ public sealed class JobStore
             return _workers.Values
                 .Select(w => new WorkerInfo
                 {
-                    Name = w.Name, InventorVersion = w.InventorVersion, AddinVersion = w.AddinVersion,
+                    Name = w.Name, Queues = w.Queues, InventorVersion = w.InventorVersion, AddinVersion = w.AddinVersion,
                     Busy = w.Busy, LastSeen = w.LastSeen, Online = now - w.LastSeen < WorkerOnlineWindow,
                 })
                 .OrderBy(w => w.Name).ToList();
@@ -122,12 +166,17 @@ public sealed class JobStore
 
     // ---------------------------------------------------------------- requesters
 
-    public Job Create(string productCode, Dictionary<string, double> inputs, string requestedBy, string? scriptName = null, string? scriptSha256 = null, string? scriptSource = null, Dictionary<string, string>? textInputs = null)
+    public Job Create(string productCode, Dictionary<string, double> inputs, string requestedBy, string? scriptName = null, string? scriptSha256 = null, string? scriptSource = null, Dictionary<string, string>? textInputs = null,
+        string kind = JobKinds.Generate, string queue = JobQueues.Build, int priority = QueuePolicy.DefaultPriority, string? sourceJobId = null)
     {
         var now = DateTimeOffset.UtcNow;
         var job = new Job
         {
             Id = $"AJ-{now:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N")[..4]}",
+            Kind = kind,
+            Queue = queue,
+            Priority = priority,
+            SourceJobId = sourceJobId,
             ProductCode = productCode,
             Inputs = inputs,
             TextInputs = textInputs ?? new(),
@@ -170,35 +219,49 @@ public sealed class JobStore
             ("w", hello.Worker!), ("now", DateTimeOffset.UtcNow));
     }
 
-    /// <summary>Hands the oldest Queued job to a worker. FOR UPDATE SKIP LOCKED: each job goes to exactly one worker, even when several backends run in parallel.</summary>
-    public WorkItem? Claim(string worker, string[]? products = null)
+    /// <summary>
+    /// Hands the next Queued job to a worker. <paramref name="queues"/> is the worker's own order of preference (SDS: node 1-2 take Build first,
+    /// node 3-5 take Filter first): the first queue that has a matching job wins, and inside a queue the lowest <c>priority</c> number goes first,
+    /// then the oldest. Null or empty = every queue, sorted by priority (an old worker that does not send queues).
+    /// FOR UPDATE SKIP LOCKED: each job goes to exactly one worker, even when several backends run in parallel.
+    /// </summary>
+    public WorkItem? Claim(string worker, string[]? products = null, string[]? queues = null)
     {
-        lock (_wgate) TouchWorker(worker);
-        var all = products == null || products.Length == 0;
+        var order = queues?.Where(q => !string.IsNullOrWhiteSpace(q)).Select(q => q.Trim().ToLowerInvariant()).Distinct().ToArray();
+        lock (_wgate) TouchWorker(worker).Queues = order is { Length: > 0 } ? order : null;
         var item = Tx((c, t) =>
         {
-            using var cmd = Command(c, t, """
-                UPDATE jobs SET status = 'running', worker = @w, started_at = COALESCE(started_at, @now), last_heartbeat = @now,
-                                attempts = attempts + 1, step = 'Starting'
-                WHERE id = (SELECT id FROM jobs
-                            WHERE status = 'queued' AND (@all OR lower(product_code) = ANY(@p))
-                            ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1)
-                RETURNING id, product_code, product_version, inputs, text_inputs, attempts
-                """, ("w", worker), ("now", DateTimeOffset.UtcNow), ("all", all));
-            cmd.Parameters.Add(new NpgsqlParameter("p", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = (products ?? []).Select(p => p.ToLowerInvariant()).ToArray() });
-            using var r = cmd.ExecuteReader();
-            if (!r.Read()) return null;
-            var id = r.GetString(0);
-            var inputs = JsonSerializer.Deserialize<Dictionary<string, double>>(r.GetString(3), Json) ?? new();
-            var texts = JsonSerializer.Deserialize<Dictionary<string, string>>(r.GetString(4), Json) ?? new();
-            var attempt = r.GetInt32(5);
-            var w = new WorkItem(id, r.GetString(1), r.GetInt32(2), inputs, TextInputs: texts.Count == 0 ? null : texts);
-            r.Close();
-            AddEvent(c, t, id, $"Picked up by worker '{worker}' (attempt {attempt}).");
-            return w;
+            if (order == null || order.Length == 0) return ClaimFrom(c, t, worker, products, null);
+            foreach (var q in order)
+                if (ClaimFrom(c, t, worker, products, q) is { } w) return w;
+            return null;
         });
         if (item != null) SetBusy(worker, true);
         return item;
+    }
+
+    private static WorkItem? ClaimFrom(NpgsqlConnection c, NpgsqlTransaction t, string worker, string[]? products, string? queue)
+    {
+        var all = products == null || products.Length == 0;
+        using var cmd = Command(c, t, """
+            UPDATE jobs SET status = 'running', worker = @w, started_at = COALESCE(started_at, @now), last_heartbeat = @now,
+                            attempts = attempts + 1, step = 'Starting'
+            WHERE id = (SELECT id FROM jobs
+                        WHERE status = 'queued' AND (@anyq OR queue = @q) AND (@all OR lower(product_code) = ANY(@p))
+                        ORDER BY priority, created_at FOR UPDATE SKIP LOCKED LIMIT 1)
+            RETURNING id, product_code, product_version, inputs, text_inputs, attempts, kind
+            """, ("w", worker), ("now", DateTimeOffset.UtcNow), ("all", all), ("anyq", queue == null), ("q", queue ?? ""));
+        cmd.Parameters.Add(new NpgsqlParameter("p", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = (products ?? []).Select(p => p.ToLowerInvariant()).ToArray() });
+        using var r = cmd.ExecuteReader();
+        if (!r.Read()) return null;
+        var id = r.GetString(0);
+        var inputs = JsonSerializer.Deserialize<Dictionary<string, double>>(r.GetString(3), Json) ?? new();
+        var texts = JsonSerializer.Deserialize<Dictionary<string, string>>(r.GetString(4), Json) ?? new();
+        var attempt = r.GetInt32(5);
+        var w = new WorkItem(id, r.GetString(1), r.GetInt32(2), inputs, TextInputs: texts.Count == 0 ? null : texts, Kind: r.GetString(6));
+        r.Close();
+        AddEvent(c, t, id, $"Picked up by worker '{worker}' (attempt {attempt}).");
+        return w;
     }
 
     public bool Progress(string id, string worker, string? step, string? message) => Tx((c, t) =>
@@ -381,9 +444,10 @@ public sealed class JobStore
         using (var cmd = Command(c, t, $"""
             INSERT INTO jobs ({JobCols}) VALUES
             (@id, @product, @version, @status, @step, @error, @by, @created, @started, @finished, @hb, @worker, @attempts,
-             @inputs, @texts, @summary, @sname, @ssha, @ssrc, @purged)
+             @inputs, @texts, @summary, @sname, @ssha, @ssrc, @purged, @kind, @queue, @prio, @src)
             ON CONFLICT (id) DO NOTHING
             """,
+            ("kind", j.Kind), ("queue", j.Queue), ("prio", j.Priority), ("src", j.SourceJobId),
             ("id", j.Id), ("product", j.ProductCode), ("version", j.ProductVersion), ("status", j.Status.ToString().ToLowerInvariant()),
             ("step", j.Step), ("error", j.Error), ("by", j.RequestedBy ?? ""), ("created", j.CreatedAt), ("started", j.StartedAt),
             ("finished", j.FinishedAt), ("hb", j.LastHeartbeat), ("worker", j.Worker), ("attempts", j.Attempts),
@@ -454,6 +518,10 @@ public sealed class JobStore
             ScriptSha256 = S(r, 17),
             ScriptSource = S(r, 18),
             ArtifactsPurgedAt = D(r, 19),
+            Kind = r.GetString(20),
+            Queue = r.GetString(21),
+            Priority = r.GetInt32(22),
+            SourceJobId = S(r, 23),
         };
     }
 

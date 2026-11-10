@@ -144,6 +144,10 @@ Suggested organization:
 - **Cache**: the same product, the same version and the same input reuse the old dossier (hash the input to match).
 - **Inventor supervision**: if it hangs or a dialog blocks it, kill the process and restart it, and the job goes to a retry.
 
+### 5.3. Queues, job kinds and priority (implemented)
+
+The first version had one queue, handed out oldest first. It now follows the SDS model: two queues (`build`, `filter`), three job kinds (`generate`, `preview`, `export`) and a priority from 0 (most urgent) to 100. The server maps the kind to the queue and priority, each machine lists the queues it takes in its own order (`queues` in `worker.json`), and inside a queue the claim orders by `priority, created_at` with `FOR UPDATE SKIP LOCKED`. A preview is a one-picture build for the screen, so it does not wait behind full builds. Details and the endpoints are in `README.md` (section "Queues, job kinds and priority") and `database.md`. Not done: the "master model 150%" Filter strategy of SDS, and protection against a filter-first machine starving the build queue.
+
 ---
 
 ## 6. The Inventor part on the worker

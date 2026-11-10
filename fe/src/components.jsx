@@ -1,6 +1,6 @@
-﻿import { useRef } from 'react';
+﻿import { useRef, useState } from 'react';
 import { Badge, Button, Callout, Flex, Slider, Text, TextField } from '@radix-ui/themes';
-import { API, STATUS_COLOR, importScriptText, reorder } from './lib.js';
+import { API, STATUS_COLOR, api, fmtDuration, importScriptText, postJson, reorder, usePolling } from './lib.js';
 
 /** Page title strip: a black background with the product image (public/hero.jpg) fading toward the left. */
 const HERO_IMAGES = { 'gas-turbine': '/hero-turbine.jpg', generator: '/hero-generator.png', transformer: '/hero-transformer.png' };
@@ -101,3 +101,85 @@ export function ImportGeaButton({ onError }) {
 }
 
 
+
+
+const KIND_COLOR = { preview: 'violet', export: 'orange' };
+
+/** The kind of a job (preview or export). A normal full build (generate) shows nothing, so most rows stay quiet. */
+export function KindBadge({ kind }) {
+  if (!kind || kind === 'generate') return null;
+  return <Badge color={KIND_COLOR[kind] || 'gray'} variant="outline" radius="full" ml="2" title={kind === 'preview' ? 'Fast preview: one picture, no drawing' : 'Rebuild of an older job'}>{kind}</Badge>;
+}
+
+/** Text for a queued job: which queue it waits in and how many jobs are ahead of it. */
+export function queueNote(job) {
+  const n = job.queuePosition;
+  const ahead = n == null ? '' : n === 0 ? ' (next in line)' : ` (${n} job${n === 1 ? '' : 's'} ahead)`;
+  return `Waiting for an Inventor worker in the ${job.queue || 'build'} queue${ahead}...`;
+}
+
+/**
+ * Quick preview: orders a `preview` job (fast, one picture) with createJob() and shows the picture right here when it is done.
+ * Preview jobs wait in the filter queue, so they are not stuck behind full builds.
+ */
+export function QuickPreview({ createJob, disabled }) {
+  const [job, setJob] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const jobId = job?.id;
+  const done = !job || ['succeeded', 'failed', 'cancelled'].includes(job.status);
+
+  usePolling(async () => {
+    if (!jobId || done) return;
+    const j = await api(`/api/jobs/${encodeURIComponent(jobId)}`);
+    setJob((cur) => (cur && cur.id === j.id ? j : cur)); // ignore a late answer for an older preview
+  }, 1000, [jobId, done]);
+
+  const start = async () => {
+    setBusy(true); setError(null);
+    try { setJob(await createJob()); }
+    catch (e) { setError(e.body?.issues?.[0]?.message || e.message); }
+    finally { setBusy(false); }
+  };
+
+  const image = job?.status === 'succeeded' ? job.artifacts.find((a) => a.kind === 'image') : null;
+  const status = !job ? null : {
+    queued: queueNote(job),
+    running: `Building preview: ${job.step || '...'}`,
+    succeeded: image ? null : 'Preview finished, but no picture was returned.',
+    failed: 'Preview failed: ' + (job.error || 'unknown error'),
+    cancelled: 'Preview was cancelled.',
+  }[job.status];
+
+  return (
+    <Flex direction="column" gap="3">
+      <Flex align="center" gap="3" wrap="wrap">
+        <Button variant="soft" disabled={disabled || busy || (!done)} onClick={start}
+          title="Build a fast picture of this configuration without waiting for the full build">Quick preview</Button>
+        {status && <Text size="2" color={job.status === 'failed' ? 'red' : 'gray'}>{status}</Text>}
+        {job && done && <Text size="2" color="gray"><a href={`#/jobs/${job.id}`}>{job.id}</a>{job.startedAt && job.finishedAt ? ` · ${fmtDuration((new Date(job.finishedAt) - new Date(job.startedAt)) / 1000)}` : ''}</Text>}
+      </Flex>
+      {error && <Notice color="amber">{error}</Notice>}
+      {image && <img className="picture" src={`${API}/api/jobs/${encodeURIComponent(job.id)}/artifacts/${encodeURIComponent(image.name)}`} alt="Preview" />}
+    </Flex>
+  );
+}
+
+/** Depth of the build and filter queues (waiting, running, oldest wait, workers that take from it). */
+export function QueueSummary() {
+  const [queues, setQueues] = useState(null);
+  usePolling(async () => setQueues(await api('/api/queues')), 3000);
+  if (!queues) return null;
+  return (
+    <Flex gap="4" wrap="wrap" mb="4">
+      {queues.map((q) => (
+        <Text key={q.queue} size="2" color={q.queued > 0 && q.onlineWorkers === 0 ? 'red' : 'gray'}>
+          <strong style={{ textTransform: 'capitalize' }}>{q.queue}</strong>
+          {`: ${q.queued} waiting, ${q.running} running`}
+          {q.oldestWaitSeconds != null ? `, oldest ${fmtDuration(q.oldestWaitSeconds)}` : ''}
+          {`, ${q.onlineWorkers} worker${q.onlineWorkers === 1 ? '' : 's'}`}
+        </Text>
+      ))}
+    </Flex>
+  );
+}

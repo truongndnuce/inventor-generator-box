@@ -16,7 +16,7 @@ Jobs, result files (the list) and the event log live in PostgreSQL. `JobStore` (
 
 The tables are created with `CREATE TABLE IF NOT EXISTS` when the backend starts (with a `pg_advisory_lock`, so two backends starting at the same time do not race).
 
-- **`jobs`**: `id` (PK, `AJ-yyyyMMdd-HHmmss-xxxx`), `product_code`, `product_version`, `status` (`queued|running|succeeded|failed|cancelled`), `step`, `error`, `requested_by`, `created_at`, `started_at`, `finished_at`, `last_heartbeat`, `worker`, `attempts`, `inputs`/`text_inputs`/`summary` (jsonb), `script_name`, `script_sha256`, `script_source`, `artifacts_purged_at`. Indexes: `(status, created_at)` for the queue, `requested_by`, `product_code`.
+- **`jobs`**: `id` (PK, `AJ-yyyyMMdd-HHmmss-xxxx`), `product_code`, `product_version`, `status` (`queued|running|succeeded|failed|cancelled`), `step`, `error`, `requested_by`, `created_at`, `started_at`, `finished_at`, `last_heartbeat`, `worker`, `attempts`, `inputs`/`text_inputs`/`summary` (jsonb), `script_name`, `script_sha256`, `script_source`, `artifacts_purged_at`, and the queue columns `kind` (`generate|preview|export`), `queue` (`build|filter`), `priority` (0 = most urgent, 100 = least) and `source_job_id` (the job an `export` rebuilds). Indexes: `(status, queue, priority, created_at)` for the queue, `requested_by`, `product_code`. The queue columns are added with `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` and a default, so an existing database keeps working: old jobs become `generate` / `build` / `20`.
 - **`job_artifacts`**: PK `(job_id, name)`, `kind`, `size`, `r2_key` (null = the file is on the server disk). Deleted together with the job (`ON DELETE CASCADE`).
 - **`job_events`**: `id` (bigserial), `job_id`, `time`, `message`. Append-only. Index `(job_id, time)`.
 
@@ -24,7 +24,7 @@ Times are `timestamptz` (UTC). `inputs`, `text_inputs` and `summary` are always 
 
 ## The queue
 
-`Claim` is one `UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING ...` statement, so several workers or several backends sharing the DB never take the same job. The worker operations (`progress`, `complete`, `fail`, artifact) lock the job row and accept only the worker that holds the job. `ReapStale` (every 10 seconds) returns Running jobs with no heartbeat for 90 seconds to the queue, or marks them `failed` when `MaxAttempts` (3) is used up.
+`Claim` runs one `UPDATE ... WHERE id = (SELECT ... ORDER BY priority, created_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING ...` statement per queue, in the order of queues the worker sent (`queues`, for example `["build","filter"]`); the first queue with a matching job wins. A worker that sends no `queues` takes any queue, most urgent first. Several workers or several backends sharing the DB never take the same job. The worker operations (`progress`, `complete`, `fail`, artifact) lock the job row and accept only the worker that holds the job. `ReapStale` (every 10 seconds) returns Running jobs with no heartbeat for 90 seconds to the queue, or marks them `failed` when `MaxAttempts` (3) is used up.
 
 ## Configuration
 

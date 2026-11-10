@@ -201,7 +201,7 @@ public static class ChatEndpoint
                     var (json, draft) = t.ProposeJob(S("code"), Nums("values"), S("configId"), S("scriptId"), Strs("textInputs"), requestedBy);
                     return (json, false, draft, null);
                 case "create_job" when autoCreate:
-                    var r = t.CreateNow(S("code"), Nums("values"), S("configId"), S("scriptId"), Strs("textInputs"), requestedBy);
+                    var r = t.CreateNow(S("code"), Nums("values"), S("configId"), S("scriptId"), Strs("textInputs"), requestedBy, S("kind"));
                     return r.Ok ? (JsonSerializer.Serialize(CadTools.JobView(r.Job!)), false, null, r.Job)
                                 : (JsonSerializer.Serialize(r.Error), true, null, null);
                 case "import_gea": return (t.ImportGea(S("text") ?? ""), false, null, null);
@@ -224,8 +224,9 @@ public static class ChatEndpoint
         new Tool { Name = name, Description = desc, InputSchema = new() { Properties = props ?? new(), Required = required ?? [] } };
 
     private static readonly ToolUnion CreateJobTool = T("create_job",
-        "Create (enqueue) the job right away. Call only after validate_job passes. Use code for a built-in product or scriptId for an imported .gea script.",
+        "Create (enqueue) the job right away. Call only after validate_job passes. Use code for a built-in product or scriptId for an imported .gea script. kind 'preview' builds fast with one picture only; the default 'generate' builds every file.",
         new() { ["code"] = P(Str), ["values"] = P(NumMap), ["configId"] = P(Str), ["scriptId"] = P(Str),
+                ["kind"] = P(new { type = "string", @enum = new[] { "generate", "preview" } }),
                 ["textInputs"] = P(new { type = "object", additionalProperties = new { type = "string" } }) });
 
     private static readonly List<ToolUnion> Tools =

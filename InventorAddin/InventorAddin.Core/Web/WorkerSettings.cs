@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using InventorAddin.Host;
 
@@ -19,6 +20,12 @@ public sealed class WorkerSettings
     public string WorkerName { get; set; } = Environment.MachineName;
     public int PollSeconds { get; set; } = 3;
     public int HeartbeatSeconds { get; set; } = 10;
+    /// <summary>
+    /// The queues this machine takes jobs from, in order of preference (like the node settings of SDS): "build" = full builds and exports,
+    /// "filter" = fast previews. ["build", "filter"] takes a full build first and a preview only when no build waits;
+    /// ["filter", "build"] does the opposite. An empty list takes any queue, most urgent job first.
+    /// </summary>
+    public string[] Queues { get; set; } = { "build", "filter" };
     /// <summary>A separate working folder for each job (the .ipt, .stp, .png files before they are uploaded).</summary>
     public string WorkDir { get; set; } = Path.Combine(Log.DataDirectory, "jobs");
 
@@ -26,7 +33,7 @@ public sealed class WorkerSettings
     public WorkerSettings ForAddin(string addinId) => new()
     {
         Enabled = Enabled, ServerUrl = ServerUrl, WorkerKey = WorkerKey, WorkerName = WorkerName + "-" + addinId,
-        PollSeconds = PollSeconds, HeartbeatSeconds = HeartbeatSeconds, WorkDir = WorkDir,
+        PollSeconds = PollSeconds, HeartbeatSeconds = HeartbeatSeconds, WorkDir = WorkDir, Queues = Queues,
     };
 
     public static string FilePath => Path.Combine(Log.DataDirectory, "worker.json");
@@ -40,6 +47,8 @@ public sealed class WorkerSettings
                 var s = JsonSerializer.Deserialize<WorkerSettings>(File.ReadAllText(FilePath), Json) ?? new WorkerSettings();
                 s.PollSeconds = Math.Clamp(s.PollSeconds, 1, 60);
                 s.HeartbeatSeconds = Math.Clamp(s.HeartbeatSeconds, 2, 60);
+                s.Queues = (s.Queues ?? new[] { "build", "filter" })
+                    .Where(q => !string.IsNullOrWhiteSpace(q)).Select(q => q.Trim().ToLowerInvariant()).Distinct().ToArray();
                 if (string.IsNullOrWhiteSpace(s.WorkerName)) s.WorkerName = Environment.MachineName;
                 return s;
             }
