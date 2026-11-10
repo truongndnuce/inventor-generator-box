@@ -600,3 +600,25 @@ BEGIN_BUILD ... END_BUILD                            INCLUDE lib:tank-base-cover
 Thêm thư viện mới: đặt `Scripts/lib/<tên>.gea` (cùng header như script thường, khối FORM/BUILD tùy chọn). Thư viện đi kèm server và add-in nhờ cấu hình ở `Cadflow.Api.csproj` và `InventorAddin.Core.csproj`.
 
 Mã nguồn: `InventorAddin.Core/Gea/GeaIncludes.cs`, `GeaLibraryResolver.cs`; `GeaScript.Compile(text, resolveLib, fileName)`.
+
+### 20.2. Quy ước chú thích cho thư viện
+
+File thư viện được người dùng tải về để đọc, nên phải tự giải thích:
+
+- Đoạn đầu của chú thích đầu file (đến dòng `!` trống) là mô tả ngắn, hiện trên thẻ ở trang Components.
+- Mỗi **đoạn lệnh** (các dòng liên tiếp, không có dòng trống xen giữa) trong khối `BEGIN_FORM` và `BEGIN_BUILD` có ít nhất một dòng chú thích nói bước đó làm gì (ý nghĩa, công thức, vì sao).
+- Chú thích bằng tiếng Việt như các script hiện có.
+
+Test `ComponentCommentsTests` áp quy ước này cho mọi file trong `Scripts/lib`, nên thư viện thêm sau cũng phải giải thích.
+
+### 20.3. Danh mục component trên web
+
+Tab **Components** (`#/components`) liệt kê các thư viện trong `Scripts/lib` (thiết kế ở `docs/superpowers/specs/2026-11-10-component-catalog-design.md`). Mỗi thẻ có mô tả, biến dùng chung, bảng tham số và ba nút:
+
+| Nút | Làm gì |
+|-----|--------|
+| Order this component | Lấy script khởi tạo, gửi qua `POST /api/gea/import` và mở form đặt hàng để dựng riêng component thành một Part |
+| Download starter script (.gea) | Tải khung script có hai dòng `INCLUDE`, chú thích từng bước, chỗ thêm tham số và bước dựng riêng; sửa rồi Import lại |
+| Download library (.gea) | Tải đúng file thư viện, có giải thích từng bước |
+
+API (chỉ đọc): `GET /api/components`; `GET /api/components/{name}/gea`; `GET /api/components/{name}/starter?productName=&prefix=` (mặc định `New product` và `MY_`; tên không hợp lệ hoặc tiền tố sai trả 400, thư viện không có trả 404). Mã nguồn: `be/Cadflow.Api/Components.cs` (`ComponentCatalog`, `ComponentStarter`), `fe/src/pages/Components.jsx`.

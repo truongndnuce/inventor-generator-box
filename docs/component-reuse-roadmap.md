@@ -10,7 +10,9 @@ Trạng thái ngày 2026-11-10. `INCLUDE lib:` đã xong (xem `superpowers/specs
 - `ADD_COMPONENT`, `BEGIN_ASSEMBLE`/`END_ASSEMBLE`, `MATE`, `INSERT`, `EXPORT_STEP` là lệnh **đã dành riêng (P2) nhưng chưa làm**. `TARGET ASSEMBLY` chỉ chạy thử, Inventor Host chưa hỗ trợ (`GEA2020` cảnh báo). Server chỉ nhận `TARGET PART`.
 - Máy phát triển hiện tại **không có Inventor**: phần add-in chỉ viết được, chưa chạy được. Mọi hạng mục dưới đây có phần add-in phải được kiểm trên máy Windows có Inventor 2027.
 
-## Hướng A: danh mục component trên web (tải file `.gea`)
+## Hướng A: danh mục component trên web (tải file `.gea`) — ĐÃ XONG (2026-11-10)
+
+> Đã làm theo `superpowers/specs/2026-11-10-component-catalog-design.md`: tab Components, ba nút (đặt hàng chính component, tải script khởi tạo, tải thư viện), thư viện được chú thích từng bước kèm test ép quy ước. Khác với phác thảo dưới đây: không có zip cho thư viện lồng nhau, và mô tả lấy từ chú thích đầu file. Phần còn lại của mục là phác thảo ban đầu.
 
 **Mục tiêu**: xem các component đang có và tải file `.gea` của từng cái, để dùng trong script của mình.
 
