@@ -1,14 +1,14 @@
 ! ============================================================================
-! Máy biến áp lực (đơn giản hóa): đế, thùng, nắp, cánh tản nhiệt, bình dầu phụ, sứ xuyên.
+! Power transformer (simplified): base, tank, cover, radiators, conservator, bushings.
 !
-! Mỗi bộ phận là một solid body có tên trong cùng một Part. Hệ tọa độ của builder:
-!   X  = dọc thùng (tâm thùng ở X = 0)
-!   D  = chiều sâu (tâm thùng ở D = 0), cánh tản nhiệt ở phía D dương
-!   Elevation = cao độ (đế nằm trên 0), bình dầu ở đầu X âm.
+! Each part is a named solid body in the same Part. Coordinate system of the builders:
+!   X  = along the tank (tank center at X = 0)
+!   D  = depth (tank center at D = 0), radiators on the positive D side
+!   Elevation = height (the base sits on 0), conservator at the negative X end.
 !
-! Sửa file này rồi bấm Apply (hoặc bật "Tự áp dụng khi lưu") trong add-in: model được dựng lại
-! theo script mới trong một Transaction (Ctrl+Z hoàn tác một lần).
-! Luật kiểm tra ở FORM khớp với TransformerParams.Validate (server dùng bản C# đó).
+! Edit this file, then press Apply (or turn on "Auto-apply on save") in the add-in: the model is rebuilt
+! from the new script in one Transaction (Ctrl+Z undoes it in one step).
+! The validation rules in FORM match TransformerParams.Validate (the server uses that C# copy).
 ! ============================================================================
 GEA_VERSION 1
 PRODUCT_NAME "Power transformer (simplified)"
@@ -21,7 +21,7 @@ BEGIN_FORM
 
   BEGIN_GROUP "Radiators"
     USER_INPUT_PARAM TR_RadiatorCount INTEGER 3 MIN 0 MAX 6 LABEL "Radiator count"
-    ! Khi không có cánh tản nhiệt thì ẩn các ô kích thước (ô ẩn giữ giá trị mặc định)
+    ! When there are no radiators, hide the size fields (hidden fields keep their default value)
     IF TR_RadiatorCount > 0
       USER_INPUT_PARAM TR_RadiatorWidth  LENGTH 400 mm  MIN 150 MAX 800  LABEL "Radiator width"
       USER_INPUT_PARAM TR_RadiatorDepth  LENGTH 220 mm  MIN 80  MAX 500  LABEL "Radiator depth"
@@ -44,7 +44,7 @@ BEGIN_FORM
     USER_INPUT_PARAM TR_ConservatorLift     LENGTH 300 mm  MIN 150 MAX 1000 LABEL "Conservator lift above cover"
   END_GROUP
 
-  ! --- Luật kiểm tra ---
+  ! --- Validation rules ---
   DECLARE_VARIABLE LENGTH turretR
   DECLARE_VARIABLE LENGTH availX
   DECLARE_VARIABLE INTEGER rows
@@ -105,7 +105,7 @@ BEGIN_BUILD
 
   INCLUDE lib:tank-base-cover
 
-  ! --- Cánh tản nhiệt (phía D dương, cách thành thùng 30 mm, cao hơn đáy thùng 150 mm) ---
+  ! --- Radiators (on the positive D side, 30 mm from the tank wall, 150 mm above the tank bottom) ---
   PROCESSING_BOX_SET_STATE "Radiators" 30
   span = TR_RadiatorCount * TR_RadiatorWidth + (TR_RadiatorCount - 1) * TR_RadiatorGap
   x0 = -span / 2 + TR_RadiatorWidth / 2
@@ -124,7 +124,7 @@ BEGIN_BUILD
     SET_APPEARANCE body "Grey"
   END_FOR
 
-  ! --- Bình dầu phụ: trụ nằm ngang theo D ở đầu X âm, trên hai chân đỡ ---
+  ! --- Conservator: a cylinder lying along D at the negative X end, on two supports ---
   PROCESSING_BOX_SET_STATE "Conservator" 50
   consX = -TR_TankLength / 2 + TR_ConservatorDiameter / 2
   CREATE_FEATURE builder:Cylinder
@@ -153,7 +153,7 @@ BEGIN_BUILD
     SET_APPEARANCE body "Grey"
   END_FOR
 
-  ! --- Sứ xuyên: hai hàng trên nắp khi có từ 2 sứ ---
+  ! --- Bushings: two rows on the cover when there are 2 or more bushings ---
   PROCESSING_BOX_SET_STATE "Bushings" 70
   turretR = 0.6 * TR_BushingDiameter
   rows = 1

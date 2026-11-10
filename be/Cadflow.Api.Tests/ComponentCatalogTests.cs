@@ -7,10 +7,10 @@ public class ComponentCatalogTests
 
     private const string Good = """
         ! ==========================================
-        ! Thư viện thử: hộp đơn giản.
-        ! Dòng thứ hai của đoạn đầu.
+        ! Test library: a simple box.
+        ! Second line of the first paragraph.
         !
-        ! Đoạn hai: chi tiết thêm.
+        ! Paragraph two: more detail.
         ! ==========================================
         GEA_VERSION 1
         PRODUCT_NAME "Simple box"
@@ -60,8 +60,8 @@ public class ComponentCatalogTests
     {
         var c = Fake(("box", Good)).Get("box")!;
 
-        Assert.Equal("Thư viện thử: hộp đơn giản.\nDòng thứ hai của đoạn đầu.\n\nĐoạn hai: chi tiết thêm.", c.Description);
-        Assert.Equal("Thư viện thử: hộp đơn giản. Dòng thứ hai của đoạn đầu.", c.Summary);
+        Assert.Equal("Test library: a simple box.\nSecond line of the first paragraph.\n\nParagraph two: more detail.", c.Description);
+        Assert.Equal("Test library: a simple box. Second line of the first paragraph.", c.Summary);
     }
 
     [Fact]
@@ -105,7 +105,7 @@ public class ComponentCatalogTests
         var read = false;
         var c = new ComponentCatalog(() => ["box"], n => { read = true; return Good; });
         Assert.Null(c.Get(name));
-        Assert.False(read);   // tên sai hoặc không có trong danh sách thì không đọc gì
+        Assert.False(read);   // a wrong name or one not in the list reads nothing
     }
 
     [Fact]

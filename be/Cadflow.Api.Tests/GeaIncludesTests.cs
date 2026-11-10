@@ -47,7 +47,7 @@ public class GeaIncludesTests
             ["GEA_VERSION 1", "PARAM_PREFIX GT_ TR_", "BEGIN_FORM", "USER_INPUT_PARAM TR_Len LENGTH 100 mm", "USER_INPUT_PARAM GT_A LENGTH 1 mm",
              "END_FORM", "BEGIN_BUILD", "x = 1", "y = 2", "z = 3", "END_BUILD"], lines);
         Assert.DoesNotContain("INCLUDE", r.Text);
-        Assert.DoesNotContain("PRODUCT_NAME", r.Text); // header của thư viện không được chèn
+        Assert.DoesNotContain("PRODUCT_NAME", r.Text); // the header of the library must not be inserted
     }
 
     [Fact]
@@ -62,7 +62,7 @@ public class GeaIncludesTests
     {
         var r = GeaIncludes.Expand("GEA_VERSION 1\nPARAM_PREFIX GT_ ! host\nBEGIN_BUILD\n INCLUDE lib:tank\nEND_BUILD\n", Libs(("tank", Lib)));
         Assert.Contains("PARAM_PREFIX GT_ TR_ ! host", r.Text);
-        // idempotente: mở rộng lại bản đã mở rộng không thêm trùng
+        // idempotent: expanding an already expanded copy again adds nothing twice
         Assert.Equal(r.Text, GeaIncludes.Expand(r.Text, null).Text);
     }
 
@@ -84,9 +84,9 @@ public class GeaIncludesTests
         Assert.Equal(lines.Length, r.Lines.Count);
 
         var i = Array.FindIndex(lines, l => l.Contains("TR_Len"));
-        Assert.Equal(new GeaSourceLine("tank.gea", 6), r.Lines[i]);          // dòng 6 của thư viện
+        Assert.Equal(new GeaSourceLine("tank.gea", 6), r.Lines[i]);          // line 6 of the library
         i = Array.FindIndex(lines, l => l.Contains("GT_A"));
-        Assert.Equal(new GeaSourceLine("host.gea", 5), r.Lines[i]);          // dòng 5 của script cha, dù dòng INCLUDE phía trên đã được thay
+        Assert.Equal(new GeaSourceLine("host.gea", 5), r.Lines[i]);          // line 5 of the parent script, even though the INCLUDE line above was replaced
         i = Array.FindIndex(lines, l => l.Contains("z = 3"));
         Assert.Equal(new GeaSourceLine("host.gea", 9), r.Lines[i]);
     }
@@ -128,7 +128,7 @@ public class GeaIncludesTests
         Assert.Empty(r.Diagnostics);
     }
 
-    // ---------------------------------------------------------------- lỗi
+    // ---------------------------------------------------------------- errors
 
     private static GeaDiagnostic Single(GeaExpansion r)
     {

@@ -1,8 +1,8 @@
 namespace Cadflow.Api.Tests;
 
 /// <summary>
-/// Quy ước cho thư viện component (Scripts/lib/*.gea): file tải về phải giải thích từng bước.
-/// Đoạn đầu của chú thích đầu file là mô tả ngắn; mỗi đoạn lệnh (các dòng liên tiếp, không có dòng trống) trong khối FORM/BUILD có chú thích.
+/// Convention for component libraries (Scripts/lib/*.gea): the downloaded file must explain every step.
+/// The first paragraph of the leading comment is a short description; every statement paragraph (consecutive lines, no blank line) in a FORM/BUILD block has a comment.
 /// </summary>
 public class ComponentCommentsTests
 {
@@ -27,10 +27,10 @@ public class ComponentCommentsTests
     {
         var header = Lines(file).TakeWhile(l => l.Trim().Length == 0 || IsComment(l)).ToArray();
         var text = header.Select(l => l.Trim().TrimStart('!').Trim()).Where(t => t.Length > 0 && !t.All(c => c == '=')).ToArray();
-        Assert.True(text.Length > 0, $"{file}: thiếu chú thích mô tả ở đầu file.");
+        Assert.True(text.Length > 0, $"{file}: missing description comment at the top of the file.");
     }
 
-    /// <summary>Các đoạn lệnh trong khối FORM/BUILD chưa có chú thích (rỗng nếu đạt quy ước).</summary>
+    /// <summary>Statement paragraphs in FORM/BUILD blocks that have no comment (empty when the convention is met).</summary>
     public static List<string> UncommentedParagraphs(string file, string[] lines)
     {
         var problems = new List<string>();
@@ -40,7 +40,7 @@ public class ComponentCommentsTests
         void Flush()
         {
             if (block != null && para.Count > 0 && !para.Any(p => IsComment(p.Text)))
-                problems.Add($"{file}:{para[0].No} ({block}): đoạn lệnh bắt đầu bằng '{para[0].Text.Trim()}' chưa có chú thích giải thích.");
+                problems.Add($"{file}:{para[0].No} ({block}): the statement paragraph starting with '{para[0].Text.Trim()}' has no explanatory comment.");
             para.Clear();
         }
 

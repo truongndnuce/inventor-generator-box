@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Cadflow.Api.Tests;
 
-/// <summary>Server mở rộng INCLUDE lib: khi import script và khi tạo job, và lưu/gửi cho worker bản đã mở rộng.</summary>
+/// <summary>The server expands INCLUDE lib: when a script is imported and when a job is created, and stores/sends the expanded copy to the worker.</summary>
 public sealed class ServerIncludeTests : IDisposable
 {
     private readonly TestDb _db = new();
@@ -34,7 +34,7 @@ public sealed class ServerIncludeTests : IDisposable
         END_BUILD
         """;
 
-    // Chú thích của thư viện có thể nhắc từ INCLUDE; điều cần đảm bảo là không còn dòng lệnh INCLUDE lib:.
+    // A library comment may mention the word INCLUDE; what must hold is that no INCLUDE lib: statement line remains.
     private static void AssertNoIncludeDirective(string text) =>
         Assert.DoesNotMatch(new System.Text.RegularExpressions.Regex(@"^\s*INCLUDE\s+lib:", System.Text.RegularExpressions.RegexOptions.Multiline), text);
 
@@ -48,8 +48,8 @@ public sealed class ServerIncludeTests : IDisposable
         Assert.Equal(200, r.Status);
         var body = Json(r.Body);
         var form = body.GetProperty("form").ToString();
-        Assert.Contains("TR_TankLength", form);     // tham số từ thư viện
-        Assert.Contains("GT_Pipes", form);          // tham số của script cha
+        Assert.Contains("TR_TankLength", form);     // parameter from the library
+        Assert.Contains("GT_Pipes", form);          // parameter of the parent script
 
         var stored = _scripts.Get(body.GetProperty("scriptId").GetString())!;
         AssertNoIncludeDirective(stored);
@@ -78,7 +78,7 @@ public sealed class ServerIncludeTests : IDisposable
         var text = _scripts.Get(_store.Get(created.Job!.Id)!.ScriptSha256)!;
         AssertNoIncludeDirective(text);
         Assert.Contains("USER_INPUT_PARAM TR_TankLength", text);
-        Assert.Contains("CREATE_FEATURE builder:Bushing", text);   // phần của script cha vẫn còn
+        Assert.Contains("CREATE_FEATURE builder:Bushing", text);   // the parent script part is still there
     }
 
     [Fact]

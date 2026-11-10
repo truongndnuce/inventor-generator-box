@@ -5,7 +5,7 @@ using ModelContextProtocol.Server;
 
 namespace Cadflow.Api.Mcp;
 
-/// <summary>Bản nháp job chờ user xác nhận (chưa vào hàng đợi). Hết hạn sau 30 phút.</summary>
+/// <summary>A job draft waiting for the user to confirm (not in the queue yet). Expires after 30 minutes.</summary>
 public sealed record Draft(string Id, CreateJobRequest Request, string Product, Dictionary<string, double> Values, DateTimeOffset Expires);
 
 public sealed class DraftStore
@@ -20,14 +20,14 @@ public sealed class DraftStore
         return d;
     }
 
-    /// <summary>Lấy và xóa (mỗi bản nháp chỉ xác nhận được một lần).</summary>
+    /// <summary>Takes and removes the draft (each draft can be confirmed only once).</summary>
     public Draft? Take(string id) =>
         _drafts.TryRemove(id, out var d) && d.Expires >= DateTimeOffset.UtcNow ? d : null;
 }
 
 /// <summary>
-/// Bộ công cụ duy nhất cho cả MCP server (/mcp) và chat (/api/chat). Mọi công cụ trả chuỗi JSON.
-/// Công cụ chỉ bọc logic có sẵn (Products, ConfigStore, JobService, JobStore), không có luật nghiệp vụ mới.
+/// The single set of tools for both the MCP server (/mcp) and chat (/api/chat). Every tool returns a JSON string.
+/// The tools only wrap existing logic (Products, ConfigStore, JobService, JobStore); they add no new business rules.
 /// </summary>
 [McpServerToolType]
 public sealed class CadTools(JobStore store, ConfigStore configs, JobService jobs, DraftStore drafts)
@@ -74,7 +74,7 @@ public sealed class CadTools(JobStore store, ConfigStore configs, JobService job
         return Ser(new { valid = issues.Count == 0, values = full, issues, unknownParameters = unknown });
     }
 
-    /// <summary>Chỉ dùng trong chat: kiểm tra rồi lưu bản nháp; job chỉ được tạo khi user bấm xác nhận trên UI.</summary>
+    /// <summary>Chat only: validates, then stores a draft; the job is created only when the user presses confirm in the UI.</summary>
     public (string Json, Draft? Draft) ProposeJob(string? code, Dictionary<string, double>? values, string? configId,
         string? scriptId, Dictionary<string, string>? textInputs, string? requestedBy)
     {
@@ -101,7 +101,7 @@ public sealed class CadTools(JobStore store, ConfigStore configs, JobService job
         return (Ser(new { drafted = true, draftId = draft.Id, product = p.Code, values = full, note = "Shown to the user for confirmation. The job is NOT created yet." }), draft);
     }
 
-    /// <summary>Xác nhận bản nháp (gọi từ UI chat, không phải từ LLM).</summary>
+    /// <summary>Confirms a draft (called from the chat UI, not from the LLM).</summary>
     public CreateJobResult Confirm(string draftId, string? requestedBy)
     {
         if (drafts.Take(draftId) is not { } d) return new(null, 404, new { error = "The draft expired or was already used." });
@@ -122,7 +122,7 @@ public sealed class CadTools(JobStore store, ConfigStore configs, JobService job
         return r.Ok ? Ser(JobView(r.Job!)) : Ser(r.Error!);
     }
 
-    /// <summary>Tạo job ngay (server vẫn kiểm tra lại toàn bộ). Dùng cho MCP và chat ở chế độ tự tạo.</summary>
+    /// <summary>Creates the job right away (the server still re-checks everything). Used by MCP and by chat in auto-create mode.</summary>
     public CreateJobResult CreateNow(string? code, Dictionary<string, double>? values, string? configId, string? scriptId,
         Dictionary<string, string>? textInputs, string? requestedBy) =>
         jobs.Create(new CreateJobRequest(code, values, requestedBy, scriptId, textInputs, configId));

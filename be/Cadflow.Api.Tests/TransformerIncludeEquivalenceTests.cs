@@ -3,8 +3,8 @@ using InventorAddin.Gea;
 namespace Cadflow.Api.Tests;
 
 /// <summary>
-/// transformer.gea dùng INCLUDE lib:tank-base-cover phải cho đúng cùng kết quả với bản gốc (fixture, chưa tách thư viện):
-/// cùng thông số/form/luật và cùng chuỗi lệnh khi chạy BUILD trên Host mô phỏng.
+/// transformer.gea using INCLUDE lib:tank-base-cover must give exactly the same result as the original (fixture, library not extracted yet):
+/// the same parameters/form/rules and the same command sequence when BUILD runs on the simulated Host.
 /// </summary>
 public class TransformerIncludeEquivalenceTests
 {
@@ -22,8 +22,8 @@ public class TransformerIncludeEquivalenceTests
         [new Dictionary<string, double> { ["TR_TankLength"] = 3000, ["TR_TankWidth"] = 1400, ["TR_TankHeight"] = 2000 }],
         [new Dictionary<string, double> { ["TR_BaseThickness"] = 120, ["TR_BaseOverhang"] = 200, ["TR_CoverThickness"] = 90, ["TR_CoverOverhang"] = 10 }],
         [new Dictionary<string, double> { ["TR_RadiatorCount"] = 0 }],
-        [new Dictionary<string, double> { ["TR_TankLength"] = 500 }],      // vi phạm MIN
-        [new Dictionary<string, double> { ["TR_TankLength"] = 1000, ["TR_RadiatorCount"] = 6 }], // vi phạm luật chéo
+        [new Dictionary<string, double> { ["TR_TankLength"] = 500 }],      // violates MIN
+        [new Dictionary<string, double> { ["TR_TankLength"] = 1000, ["TR_RadiatorCount"] = 6 }], // violates a cross rule
     ];
 
     [Fact]
@@ -66,7 +66,7 @@ public class TransformerIncludeEquivalenceTests
 
         Assert.True(ro.Ok, ro.Error?.Message);
         Assert.True(rc.Ok, rc.Error?.Message);
-        Assert.Contains("SET_REF_NAME TR_Tank", Trace(hc));   // không so hai chuỗi rỗng
+        Assert.Contains("SET_REF_NAME TR_Tank", Trace(hc));   // do not compare two empty strings
         Assert.Equal(Trace(ho), Trace(hc));
         Assert.Equal(Objects(ho), Objects(hc));
     }
@@ -79,7 +79,7 @@ public class TransformerIncludeEquivalenceTests
     private static string[] Messages(GeaFormResult f) =>
         f.Errors.Concat(f.Warnings).Select(m => $"{m.Code}|{m.Message}|{string.Join(",", m.Params)}").ToArray();
 
-    // PRINT ghi số dòng của script nên bỏ ra khi so sánh.
+    // PRINT records the script line number, so leave it out when comparing.
     private static string[] Trace(GeaSimulationHost h) => h.Trace.Where(t => !t.StartsWith("PRINT")).ToArray();
 
     private static string[] Objects(GeaSimulationHost h) => h.Objects.Select(o =>

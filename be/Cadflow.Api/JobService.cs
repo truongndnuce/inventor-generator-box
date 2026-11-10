@@ -3,26 +3,26 @@ using InventorAddin.Models;
 
 namespace Cadflow.Api;
 
-/// <summary>Kết quả tạo job: hoặc một Job (201), hoặc mã lỗi HTTP kèm nội dung lỗi.</summary>
+/// <summary>Result of creating a job: either a Job (201), or an HTTP error code with the error body.</summary>
 public sealed record CreateJobResult(Job? Job, int Status, object? Error)
 {
     public bool Ok => Job != null;
 }
 
 /// <summary>
-/// Logic đặt job dùng chung cho REST (POST /api/jobs), công cụ MCP và chat: server luôn kiểm tra lại lần cuối,
-/// không tin dữ liệu từ trình duyệt hay từ LLM.
+/// Job-ordering logic shared by REST (POST /api/jobs), the MCP tools and chat: the server always checks once more at the end
+/// and never trusts data from the browser or from the LLM.
 /// </summary>
 public sealed class JobService(JobStore store, ScriptStore scripts, ConfigStore configs, ILogger<JobService> log)
 {
-    public const string ImportedProduct = "imported"; // mã sản phẩm của job đặt từ script .gea do người dùng import
+    public const string ImportedProduct = "imported"; // product code of a job ordered from a .gea script imported by the user
 
     public CreateJobResult Create(CreateJobRequest req)
     {
         var requestedByName = string.IsNullOrWhiteSpace(req.RequestedBy) ? "anonymous" : req.RequestedBy.Trim();
         if (requestedByName.Length > 80) requestedByName = requestedByName[..80];
 
-        // Đặt hàng từ script .gea đã import: server biên dịch lại và tính FORM lần cuối.
+        // Ordering from an imported .gea script: the server recompiles it and computes the FORM one last time.
         if (!string.IsNullOrWhiteSpace(req.ScriptId))
         {
             if (scripts.Get(req.ScriptId) is not { } scriptSource)
@@ -58,7 +58,7 @@ public sealed class JobService(JobStore store, ScriptStore scripts, ConfigStore 
         if (product.ScriptFile != null)
         {
             if (ScriptStore.ReadBundled(product.ScriptFile) is { } scriptText)
-                scriptSha = scripts.Save(GeaScript.Compile(scriptText, GeaLibraries.Resolve).ExpandedText); // worker nhận bản đã mở rộng INCLUDE
+                scriptSha = scripts.Save(GeaScript.Compile(scriptText, GeaLibraries.Resolve).ExpandedText); // the worker receives the INCLUDE-expanded script
             else log.LogWarning("Bundled script {File} for product {Product} was not found; the job will have no .gea export.", product.ScriptFile, product.Code);
         }
 
@@ -69,7 +69,7 @@ public sealed class JobService(JobStore store, ScriptStore scripts, ConfigStore 
 
     public sealed record Reply(int Status, object Body);
 
-    /// <summary>Import nội dung .gea (có thể kèm khối giá trị !@), biên dịch, lưu theo mã băm và trả form.</summary>
+    /// <summary>Imports .gea content (it may carry a !@ value block), compiles it, stores it by hash and returns the form.</summary>
     public Reply Import(string? input)
     {
         var text = input ?? "";
@@ -94,7 +94,7 @@ public sealed class JobService(JobStore store, ScriptStore scripts, ConfigStore 
         if (ignored.Length > 0)
             warnings.Add($"{ignored.Length} value(s) in the file do not match any parameter of the script and were ignored: {string.Join(", ", ignored.Take(5))}{(ignored.Length > 5 ? ", ..." : "")}.");
 
-        var id = scripts.Save(script.ExpandedText); // lưu bản đã mở rộng INCLUDE: tự chạy được, worker không cần thư viện
+        var id = scripts.Save(script.ExpandedText); // store the INCLUDE-expanded script: it runs on its own, the worker needs no library
         return new(200, new
         {
             scriptId = id,
@@ -109,7 +109,7 @@ public sealed class JobService(JobStore store, ScriptStore scripts, ConfigStore 
         });
     }
 
-    /// <summary>Form của script đã import, tính theo giá trị hiện tại (form có thể ẩn/hiện ô theo giá trị).</summary>
+    /// <summary>Form of an imported script, computed for the current values (the form can show/hide fields depending on the values).</summary>
     public Reply ScriptForm(string id, IReadOnlyDictionary<string, double>? values, IReadOnlyDictionary<string, string>? texts)
     {
         if (scripts.Get(id) is not { } text) return new(404, new { error = "Unknown script. Import the .gea file again." });

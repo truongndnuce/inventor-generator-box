@@ -13,7 +13,7 @@ public class JobStoreTests
         using var db = new TestDb();
         var id = NewJob(db.NewStore()).Id;
 
-        var job = db.NewStore().Get(id)!; // một store mới = như backend khởi động lại
+        var job = db.NewStore().Get(id)!; // a new store = like a backend restart
         Assert.Equal(JobStatus.Queued, job.Status);
         Assert.Equal("tester", job.RequestedBy);
         Assert.Equal(60, job.Inputs["BX_Width"]);
@@ -43,8 +43,8 @@ public class JobStoreTests
 
         var item = s.Claim("w1", ["box"])!;
         Assert.Equal(box.Id, item.Id);
-        Assert.Null(s.Claim("w2", ["box"]));                 // không còn job box
-        Assert.Equal(turbine.Id, s.Claim("w2")!.Id);         // không lọc: nhận job còn lại
+        Assert.Null(s.Claim("w2", ["box"]));                 // no box job left
+        Assert.Equal(turbine.Id, s.Claim("w2")!.Id);         // no filter: takes the remaining job
 
         var claimed = s.Get(box.Id)!;
         Assert.Equal(JobStatus.Running, claimed.Status);
@@ -79,9 +79,9 @@ public class JobStoreTests
         Assert.False(s.Complete(id, "w2", null));
         Assert.False(s.Fail(id, "w2", "x", false));
 
-        Assert.True(s.Progress(id, "W1", "Building", "half"));   // tên worker không phân biệt hoa thường
+        Assert.True(s.Progress(id, "W1", "Building", "half"));   // worker name is case-insensitive
         Assert.True(s.Complete(id, "w1", new() { ["volume"] = 12.5 }));
-        Assert.False(s.Progress(id, "w1", "late", null));          // đã xong thì không cập nhật được nữa
+        Assert.False(s.Progress(id, "w1", "late", null));          // a finished job can no longer be updated
 
         var job = s.Get(id)!;
         Assert.Equal(JobStatus.Succeeded, job.Status);
@@ -133,9 +133,9 @@ public class JobStoreTests
         var queued = NewJob(s).Id;
         Assert.True(s.Cancel(queued));
         Assert.Equal(JobStatus.Cancelled, s.Get(queued)!.Status);
-        Assert.False(s.Cancel(queued));            // đã hủy rồi
+        Assert.False(s.Cancel(queued));            // already cancelled
         Assert.False(s.Cancel("nope"));
-        Assert.Null(s.Claim("w1"));                // job đã hủy không bị giao
+        Assert.Null(s.Claim("w1"));                // a cancelled job is not handed out
 
         var done = NewJob(s).Id;
         s.Claim("w1");
@@ -151,7 +151,7 @@ public class JobStoreTests
         var id = NewJob(s).Id;
 
         s.Claim("w1");
-        Assert.Equal(0, s.ReapStale());            // còn heartbeat mới
+        Assert.Equal(0, s.ReapStale());            // the heartbeat is still fresh
         db.Sql($"UPDATE jobs SET last_heartbeat = now() - interval '10 minutes' WHERE id = '{id}'");
         Assert.Equal(1, s.ReapStale());
         Assert.Equal(JobStatus.Queued, s.Get(id)!.Status);
@@ -201,7 +201,7 @@ public class JobStoreTests
         Assert.Equal(99, art.Size);
         Assert.Equal("jobs/x/a.ipt", art.Key);
 
-        Assert.Empty(s.ExpiredWithArtifacts(DateTimeOffset.UtcNow.AddDays(-1)));   // chưa quá hạn
+        Assert.Empty(s.ExpiredWithArtifacts(DateTimeOffset.UtcNow.AddDays(-1)));   // not past the deadline yet
         var expired = Assert.Single(s.ExpiredWithArtifacts(DateTimeOffset.UtcNow.AddDays(1)));
         Assert.Equal(id, expired.Id);
 
@@ -237,6 +237,6 @@ public class JobStoreTests
         Assert.False(File.Exists(Path.Combine(db.DataDir, "jobs.json")));
         Assert.True(File.Exists(Path.Combine(db.DataDir, "jobs.json.migrated")));
 
-        Assert.Single(db.NewStore().List());       // khởi động lại không nhập trùng
+        Assert.Single(db.NewStore().List());       // a restart does not import twice
     }
 }

@@ -3,12 +3,12 @@ using System.Text.Json;
 
 namespace Cadflow.Api;
 
-/// <summary>Một ô nhập của nhóm Operation / CAD design condition (giao diện dựng form và ma trận từ danh sách này).</summary>
+/// <summary>One input field of the Operation / CAD design condition groups (the UI builds the form and matrix from this list).</summary>
 public sealed record ConfigField(string Name, string Label, string Type, string[]? Options = null, string Default = "", string Unit = "");
 
 public sealed record ConfigGroup(string Key, string Label, ConfigField[] Fields);
 
-/// <summary>Các nhóm thông tin của một Configuration ngoài giá trị thông số (component): Operation và CAD design condition.</summary>
+/// <summary>The groups of information of a Configuration besides the parameter (component) values: Operation and CAD design condition.</summary>
 public static class ConfigSchema
 {
     public static readonly string[] Statuses = { "draft", "active", "deprecated" };
@@ -37,7 +37,7 @@ public static class ConfigSchema
         }),
     };
 
-    /// <summary>Chuẩn hóa giá trị người dùng gửi: bỏ khóa lạ, điền mặc định, kiểm tra lựa chọn và số. Trả lỗi nếu sai.</summary>
+    /// <summary>Normalizes the values sent by the user: drops unknown keys, fills defaults, checks choices and numbers. Returns an error if invalid.</summary>
     public static Dictionary<string, string> Normalize(ConfigGroup group, Dictionary<string, string>? input, out string? error)
     {
         error = null;
@@ -70,8 +70,8 @@ public static class ConfigSchema
 }
 
 /// <summary>
-/// Một Configuration của sản phẩm: tên, trạng thái, điều kiện vận hành, điều kiện thiết kế CAD và giá trị cho mọi thông số
-/// (component). Đơn đặt hàng chọn một Configuration; thông số đơn không nêu thì lấy từ đây.
+/// One Configuration of a product: name, status, operating condition, CAD design condition and the value of every parameter
+/// (component). An order picks one Configuration; parameters the order does not give come from here.
 /// </summary>
 public sealed class ProductConfig
 {
@@ -80,7 +80,7 @@ public sealed class ProductConfig
     public string Description { get; set; } = "";
     public string Status { get; set; } = "draft"; // draft | active | deprecated
     public int Revision { get; set; } = 1;
-    public bool IsDefault { get; set; }           // Configuration dùng khi đơn không chọn cái nào
+    public bool IsDefault { get; set; }           // the Configuration used when an order picks none
     public Dictionary<string, string> Operation { get; set; } = new();
     public Dictionary<string, string> Cad { get; set; } = new();
     public Dictionary<string, double> Values { get; set; } = new();
@@ -92,7 +92,7 @@ public sealed class ProductConfig
 public sealed record ConfigRequest(string? Name, string? Description, string? Status, bool? IsDefault,
     Dictionary<string, string>? Operation, Dictionary<string, string>? Cad, Dictionary<string, double>? Values, string? UpdatedBy);
 
-/// <summary>Lưu các Configuration ở data\config\&lt;mã sản phẩm&gt;.configs.json (một file mỗi sản phẩm, ghi nguyên tử).</summary>
+/// <summary>Stores the Configurations in data\config\&lt;product code&gt;.configs.json (one file per product, written atomically).</summary>
 public sealed class ConfigStore
 {
     private readonly string _dir;
@@ -114,8 +114,8 @@ public sealed class ConfigStore
         {
             if (File.Exists(path) && JsonSerializer.Deserialize<List<ProductConfig>>(File.ReadAllText(path), Opts) is { } list) return list;
         }
-        catch (Exception ex) when (ex is IOException or JsonException) { /* file hỏng: tạo lại bản mẫu */ }
-        // Lần đầu: một Configuration mẫu (mặc định gốc) để danh sách không trống và đơn luôn có chỗ lấy giá trị.
+        catch (Exception ex) when (ex is IOException or JsonException) { /* broken file: recreate the sample */ }
+        // First run: one sample Configuration (the factory defaults) so the list is not empty and orders always have a place to take values from.
         var now = DateTimeOffset.UtcNow;
         var seed = new List<ProductConfig>
         {
@@ -143,10 +143,10 @@ public sealed class ConfigStore
 
     public ProductConfig? Get(Product product, string id) { lock (_lock) return Load(product).FirstOrDefault(c => c.Id == id); }
 
-    /// <summary>Configuration mặc định của sản phẩm (null nếu đã bỏ cờ mặc định hết).</summary>
+    /// <summary>The default Configuration of the product (null if every default flag was removed).</summary>
     public ProductConfig? Default(Product product) { lock (_lock) return Load(product).FirstOrDefault(c => c.IsDefault); }
 
-    /// <summary>Tạo (id null) hoặc sửa. Trả (config, lỗi). Mọi kiểm tra nằm ở đây để API và test dùng chung.</summary>
+    /// <summary>Creates (id null) or edits. Returns (config, error). All checks live here so the API and the tests share them.</summary>
     public (ProductConfig? Config, string? Error, bool NotFound) Save(Product product, string? id, ConfigRequest req)
     {
         lock (_lock)
@@ -183,7 +183,7 @@ public sealed class ConfigStore
             cfg.Status = status; cfg.Operation = op; cfg.Cad = cad; cfg.Values = values;
             cfg.IsDefault = isDefault; cfg.UpdatedAt = now; cfg.UpdatedBy = by.Length > 80 ? by[..80] : by;
             if (isDefault) foreach (var o in list.Where(c => c != cfg)) o.IsDefault = false;
-            // Khi một Configuration mặc định bị chuyển sang trạng thái khác active thì mất cờ mặc định.
+            // When a default Configuration is switched to a status other than active, it loses the default flag.
             if (status != "active") cfg.IsDefault = false;
             Write(product, list);
             return (cfg, null, false);
@@ -201,7 +201,7 @@ public sealed class ConfigStore
         }
     }
 
-    /// <summary>Giá trị của Configuration (chỉ định hoặc mặc định), rồi giá trị trong đơn đè lên; thiếu thì <c>Complete</c> điền mặc định gốc.</summary>
+    /// <summary>Value of the Configuration (the chosen one or the default), then the values in the order override it; anything missing is filled by <c>Complete</c> with the factory default.</summary>
     public Dictionary<string, double> Effective(Product product, IReadOnlyDictionary<string, double>? partial, ProductConfig? config)
     {
         var merged = new Dictionary<string, double>(config?.Values ?? Default(product)?.Values ?? new(), StringComparer.Ordinal);

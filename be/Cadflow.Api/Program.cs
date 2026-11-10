@@ -11,7 +11,7 @@ using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// .env cạnh server (bị git bỏ qua): KEY__SUB=value -> cấu hình KEY:SUB. Biến môi trường thật vẫn thắng.
+// .env next to the server (ignored by git): KEY__SUB=value -> configuration KEY:SUB. Real environment variables still win.
 var envFile = Path.Combine(builder.Environment.ContentRootPath, ".env");
 if (File.Exists(envFile))
 {
@@ -25,7 +25,7 @@ if (File.Exists(envFile))
 
 var dataDir = Path.GetFullPath(builder.Configuration["DataDir"] ?? Path.Combine(builder.Environment.ContentRootPath, "data"));
 var workerKey = builder.Configuration["Worker:Key"] ?? "dev-worker-key";
-var frontendDir = Path.GetFullPath(builder.Configuration["Frontend:Path"] ?? Path.Combine(builder.Environment.ContentRootPath, "..", "..", "fe", "dist")); // front-end React: chạy `npm run build` trong fe/
+var frontendDir = Path.GetFullPath(builder.Configuration["Frontend:Path"] ?? Path.Combine(builder.Environment.ContentRootPath, "..", "..", "fe", "dist")); // React front-end: run `npm run build` in fe/
 
 var dbConn = builder.Configuration.GetConnectionString("Cadflow")
     ?? throw new InvalidOperationException("Missing ConnectionStrings:Cadflow (PostgreSQL). Set it in appsettings.json or .env (ConnectionStrings__Cadflow).");
@@ -37,9 +37,9 @@ builder.Services.AddSingleton<JobService>();
 builder.Services.AddSingleton<DraftStore>();
 builder.Services.AddSingleton<ComponentCatalog>();
 builder.Services.AddSingleton<CadTools>();
-// MCP server (/mcp): cùng bộ công cụ CadTools với chat.
+// MCP server (/mcp): the same CadTools tool set as chat.
 builder.Services.AddMcpServer().WithHttpTransport().WithTools<CadTools>();
-// Giới hạn tần suất cho chat (tốn tiền LLM): theo IP.
+// Rate limit for chat (it costs LLM money): per IP.
 builder.Services.AddRateLimiter(o =>
 {
     o.RejectionStatusCode = 429;
@@ -51,14 +51,14 @@ builder.Services.AddSingleton(new R2Store(builder.Configuration.GetSection("R2")
 builder.Services.AddHostedService<StaleJobReaper>();
 builder.Services.AddHostedService<RetentionService>();
 builder.Services.Configure<JsonOptions>(o => o.SerializerOptions.PropertyNameCaseInsensitive = true);
-// Cho phép front-end chạy riêng (dev server) gọi API; bản chạy chung một origin thì không cần.
+// Lets the front-end run separately (dev server) and call the API; the single-origin deployment does not need it.
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
 
 var app = builder.Build();
 app.UseCors();
 app.UseRateLimiter();
 
-// /mcp: khóa trong header X-Api-Key (Mcp:Key). Chưa cấu hình khóa thì chỉ cho phép gọi từ máy chủ (loopback).
+// /mcp: key in the X-Api-Key header (Mcp:Key). If no key is configured, only calls from the server machine itself (loopback) are allowed.
 var mcpKey = app.Configuration["Mcp:Key"];
 app.Use(async (ctx, next) =>
 {
@@ -90,11 +90,11 @@ var r2 = app.Services.GetRequiredService<R2Store>();
 app.Logger.LogInformation("Artifact storage: {Mode}", r2.IsConfigured ? "Cloudflare R2" : "local disk (R2 not configured)");
 var safeName = new Regex(@"^[A-Za-z0-9][A-Za-z0-9._\- ]{0,119}$", RegexOptions.Compiled);
 
-// ================================================================= sản phẩm
+// ================================================================= products
 
 app.MapGet("/api/products", () => Products.All.Select(p => new { code = p.Code, name = p.Name, description = p.Description, version = p.Version }));
 
-// `defaults` = giá trị của Configuration mặc định (hoặc ?config=<id>); `factory` = mặc định gốc trong code.
+// `defaults` = values of the default Configuration (or ?config=<id>); `factory` = the factory defaults in code.
 app.MapGet("/api/products/{code}", (string code, string? config) =>
 {
     if (Products.Find(code) is not { } p) return Results.NotFound(new { error = $"Unknown product '{code}'." });
@@ -111,9 +111,9 @@ app.MapPost("/api/products/{code}/validate", (string code, ValidateRequest req) 
     return Results.Ok(new { valid = issues.Count == 0, values, issues });
 });
 
-// ================================================================= Configuration theo sản phẩm (tab Config)
-// Mỗi sản phẩm có nhiều Configuration (tên, trạng thái, Operation, CAD design condition, giá trị component).
-// Đơn đặt hàng chọn một Configuration (configId) hoặc dùng cái mặc định.
+// ================================================================= Configuration per product (Config tab)
+// Each product has several Configurations (name, status, Operation, CAD design condition, component values).
+// An order picks one Configuration (configId) or uses the default one.
 
 app.MapGet("/api/config-schema", () => new { statuses = ConfigSchema.Statuses, groups = ConfigSchema.Groups });
 
@@ -135,8 +135,8 @@ app.MapDelete("/api/products/{code}/configs/{id}", (string code, string id) =>
     Products.Find(code) is not { } p ? Results.NotFound(new { error = $"Unknown product '{code}'." })
     : configs.Delete(p, id) ? Results.NoContent() : Results.NotFound(new { error = "Unknown configuration." }));
 // ================================================================= script .gea (import)
-// Import: nhận nội dung file .gea (có thể kèm khối giá trị !@ do CADFlow export), biên dịch, lưu theo mã băm và trả form.
-// Form của script có thể ẩn/hiện ô theo giá trị, nên giao diện gọi lại /form mỗi khi giá trị đổi.
+// Import: takes the content of a .gea file (it may carry a !@ value block exported by CADFlow), compiles it, stores it by hash and returns the form.
+// The form of a script can show/hide fields depending on the values, so the UI calls /form again whenever a value changes.
 
 app.MapPost("/api/gea/import", (GeaTextRequest req, JobService jobs) =>
 {
@@ -150,7 +150,7 @@ app.MapPost("/api/gea/{id}/form", (string id, GeaFormRequest req, JobService job
     return Results.Json(r.Body, statusCode: r.Status);
 });
 
-// ================================================================= đơn hàng / job
+// ================================================================= orders / jobs
 
 app.MapPost("/api/jobs", (CreateJobRequest req, JobService jobs) =>
 {
@@ -158,8 +158,8 @@ app.MapPost("/api/jobs", (CreateJobRequest req, JobService jobs) =>
     return r.Ok ? Results.Created($"/api/jobs/{r.Job!.Id}", r.Job) : Results.Json(r.Error, statusCode: r.Status);
 });
 
-// Danh sách có lọc: ?status=queued,running &product=box &requestedBy=ten &from=2026-11-01 &to=2026-11-08 &limit=100
-// Không có tham số thì trả toàn bộ (tương thích bản cũ). Mới nhất trước.
+// Filtered list: ?status=queued,running &product=box &requestedBy=name &from=2026-11-01 &to=2026-11-08 &limit=100
+// Without parameters it returns everything (compatible with the old version). Newest first.
 app.MapGet("/api/jobs", (string? status, string? product, string? requestedBy, DateTimeOffset? from, DateTimeOffset? to, int? limit) =>
 {
     IEnumerable<Job> jobs = store.List();
@@ -186,8 +186,8 @@ app.MapGet("/api/jobs", (string? status, string? product, string? requestedBy, D
     return Results.Ok(jobs.ToList());
 });
 
-// Thống kê cho Dashboard: đếm theo trạng thái, tỉ lệ thành công, thời gian build, và theo ngày (giờ máy chủ).
-// ?days=14 (1-90) &product= &requestedBy=. Thống kê tính trên job tạo trong khoảng `days` ngày gần nhất.
+// Statistics for the Dashboard: counts by status, success rate, build time, and per day (server time).
+// ?days=14 (1-90) &product= &requestedBy=. Statistics are computed over jobs created within the last `days` days.
 app.MapGet("/api/stats", (int? days, string? product, string? requestedBy) =>
 {
     int span = Math.Clamp(days ?? 14, 1, 90);
@@ -201,7 +201,7 @@ app.MapGet("/api/stats", (int? days, string? product, string? requestedBy) =>
         jobs = jobs.Where(j => string.Equals(j.RequestedBy, requestedBy.Trim(), StringComparison.OrdinalIgnoreCase));
     var list = jobs.ToList();
 
-    // Thời gian build = từ lúc worker nhận đến lúc xong, chỉ tính job thành công.
+    // Build time = from when the worker took the job until it finished, counting successful jobs only.
     static double? BuildSeconds(Job j) =>
         j.Status == JobStatus.Succeeded && j.StartedAt is { } s && j.FinishedAt is { } f && f >= s ? (f - s).TotalSeconds : null;
     static double? Avg(IEnumerable<double?> xs) { var v = xs.Where(x => x.HasValue).Select(x => x!.Value).ToList(); return v.Count == 0 ? null : Math.Round(v.Average(), 1); }
@@ -244,20 +244,20 @@ app.MapGet("/api/jobs/{id}/artifacts/{name}", (string id, string name, bool? dow
 {
     var job = store.Get(id);
     if (job == null || !job.Artifacts.Any(a => a.Name == name) || !safeName.IsMatch(name)) return Results.NotFound();
-    // Job chưa xong thì chưa cho xem/tải kết quả (artifact được đăng ký dần trong lúc job còn 'running').
+    // A job that is not finished cannot show/download its results yet (artifacts are registered gradually while the job is still 'running').
     if (job.Status != JobStatus.Succeeded)
         return Results.Conflict(new { error = "Results are available only after the job has succeeded." });
-    // File ở R2: chuyển hướng sang URL ký sẵn, hạn ngắn (bucket private, khóa R2 không rời server).
+    // File on R2: redirect to a short-lived presigned URL (private bucket, the R2 key never leaves the server).
     if (job.Artifacts.First(a => a.Name == name).Key is { } key && r2.IsConfigured)
         return Results.Redirect(r2.PresignGet(key, name, ContentTypeFor(name), download == true, DateTime.UtcNow));
     var path = Path.Combine(store.ArtifactDir(id), name);
     if (!File.Exists(path)) return Results.NotFound();
-    // Trả inline để trình duyệt hiển thị ảnh/PDF trong trang; nút tải ở front-end dùng thuộc tính download.
+    // Returned inline so the browser shows images/PDFs in the page; the download button in the front-end uses the download attribute.
     return Results.File(path, ContentTypeFor(name));
 });
 
-// Export .gea: script đã dùng cho job + giá trị đầu vào (khối chú thích !@, xem GeaExport). Là đơn hàng chứ không phải kết quả,
-// nên xuất được ở mọi trạng thái.
+// Export .gea: the script used for the job + the input values (the !@ comment block, see GeaExport). It is an order, not a result,
+// so it can be exported in every status.
 app.MapGet("/api/jobs/{id}/export.gea", (string id) =>
 {
     var job = store.Get(id);
@@ -268,7 +268,7 @@ app.MapGet("/api/jobs/{id}/export.gea", (string id) =>
     return Results.File(bytes, "text/plain; charset=utf-8", fileDownloadName: job.Id + ".gea");
 });
 
-// Danh mục component (thư viện INCLUDE lib:): xem, tải file gốc, tải script khởi tạo. Chỉ đọc, xem docs/superpowers/specs/2026-11-10-component-catalog-design.md.
+// Component catalog (INCLUDE lib: libraries): view, download the original file, download a starter script. Read-only, see docs/superpowers/specs/2026-11-10-component-catalog-design.md.
 app.MapGet("/api/components", (ComponentCatalog catalog) => catalog.List());
 
 app.MapGet("/api/components/{name}/gea", (string name, ComponentCatalog catalog) =>
@@ -287,7 +287,7 @@ app.MapGet("/api/components/{name}/starter", (string name, string? productName, 
 app.MapGet("/api/workers", () => store.Workers());
 
 // ================================================================= worker (Inventor)
-// Worker chủ động hỏi server; server không gọi worker. Xác thực bằng khóa dùng chung (mỗi máy một khóa khi triển khai thật).
+// The worker asks the server; the server never calls the worker. Authenticated with a shared key (one key per machine in a real deployment).
 
 var worker = app.MapGroup("/api/worker").AddEndpointFilter(async (ctx, next) =>
 {
@@ -307,7 +307,7 @@ worker.MapPost("/claim", (ClaimRequest req) =>
 {
     if (string.IsNullOrWhiteSpace(req.Worker)) return Results.BadRequest(new { error = "worker is required." });
     if (store.Claim(req.Worker!, req.Products) is not { } item) return Results.NoContent();
-    // Kèm đúng bản script đã ghi cho job (bản đi kèm sản phẩm hoặc bản người dùng import).
+    // Includes exactly the script recorded for the job (the one that ships with the product or the one the user imported).
     var scriptJob = store.Get(item.Id);
     return Results.Ok(scriptJob?.ScriptSha256 != null && scripts.Get(scriptJob.ScriptSha256) is { } text
         ? item with { ScriptText = text, ScriptName = scriptJob.ScriptName }
@@ -317,7 +317,7 @@ worker.MapPost("/claim", (ClaimRequest req) =>
 worker.MapPost("/jobs/{id}/progress", (string id, string worker, ProgressRequest req) =>
     store.Progress(id, worker, req.Step, req.Message) ? Results.NoContent() : Results.Conflict(new { error = "The job is not running on this worker." }));
 
-// Bước 1 của upload qua R2: worker xin URL PUT. Chưa cấu hình R2 thì mode = "direct" (worker dùng upload thân file như cũ).
+// Step 1 of the upload through R2: the worker asks for a PUT URL. If R2 is not configured, mode = "direct" (the worker uploads the file body as before).
 worker.MapPost("/jobs/{id}/artifacts/presign", (string id, string worker, string name) =>
 {
     if (!safeName.IsMatch(name)) return Results.BadRequest(new { error = "Invalid file name." });
@@ -329,7 +329,7 @@ worker.MapPost("/jobs/{id}/artifacts/presign", (string id, string worker, string
     return Results.Ok(new { mode = "r2", url = r2.PresignPut(key, DateTime.UtcNow), key });
 });
 
-// Bước 2: worker báo đã PUT xong; server kiểm tra object có thật trên R2 rồi mới ghi vào job.
+// Step 2: the worker reports the PUT is done; the server checks the object really exists on R2 before recording it on the job.
 worker.MapPost("/jobs/{id}/artifacts/commit", async (string id, string worker, string name, string? kind) =>
 {
     if (!safeName.IsMatch(name)) return Results.BadRequest(new { error = "Invalid file name." });
@@ -376,7 +376,7 @@ app.MapChat(app.Configuration["Anthropic:ApiKey"] ?? Environment.GetEnvironmentV
 
 app.Run();
 
-// ================================================================= tiện ích
+// ================================================================= utilities
 
 static string ContentTypeFor(string name) => Path.GetExtension(name).ToLowerInvariant() switch
 {

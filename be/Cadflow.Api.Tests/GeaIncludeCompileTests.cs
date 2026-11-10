@@ -50,7 +50,7 @@ public class GeaIncludeCompileTests
     public void Expanded_text_compiles_on_its_own_without_a_resolver()
     {
         var expanded = GeaScript.Compile(Host, Libs(("tank", TankLib))).ExpandedText;
-        var again = GeaScript.Compile(expanded);   // đây là bản job lưu và worker nhận
+        var again = GeaScript.Compile(expanded);   // this is the copy the job stores and the worker receives
 
         Assert.False(again.HasErrors, string.Join("\n", again.Diagnostics));
         Assert.Contains(again.Parameters, p => p.Name == "TR_Len");
@@ -96,14 +96,14 @@ public class GeaIncludeCompileTests
         var script = GeaScript.Compile(Host, Libs(("tank", bad)));
 
         var d = Assert.Single(script.Diagnostics, d => d.Code == "GEA2003");
-        Assert.Equal(5, d.Line);                        // dòng trong thư viện
+        Assert.Equal(5, d.Line);                        // line inside the library
         Assert.StartsWith("tank.gea:", d.Message);
     }
 
     [Fact]
     public void Error_in_the_host_after_an_include_keeps_the_original_line_number()
     {
-        // Thư viện chèn thêm dòng ở phía trên, nhưng lỗi của cha phải báo dòng của file cha (dòng 7).
+        // The library inserts lines above, but an error of the parent must report the line of the parent file (line 7).
         const string host = "GEA_VERSION 1\nPARAM_PREFIX GT_\nTARGET PART\nBEGIN_FORM\n  INCLUDE lib:tank\n  USER_INPUT_PARAM GT_A INTEGER 1\n  USER_INPUT_PARAM GT_A INTEGER 2\nEND_FORM\n";
         var script = GeaScript.Compile(host, Libs(("tank", TankLib)));
 

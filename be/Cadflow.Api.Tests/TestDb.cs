@@ -3,8 +3,8 @@ using Npgsql;
 namespace Cadflow.Api.Tests;
 
 /// <summary>
-/// Một database PostgreSQL riêng cho mỗi test (cadflow_test_xxxx), xóa khi xong, nên các test không dẫm lên nhau.
-/// Máy chủ lấy từ biến môi trường CADFLOW_TEST_PG (mặc định "Host=localhost;Username=admin").
+/// A separate PostgreSQL database for each test (cadflow_test_xxxx), dropped when done, so tests never step on each other.
+/// The server comes from the environment variable CADFLOW_TEST_PG (default "Host=localhost;Username=admin").
 /// </summary>
 public sealed class TestDb : IDisposable
 {
@@ -26,7 +26,7 @@ public sealed class TestDb : IDisposable
 
     public JobStore NewStore() => new(DataDir, ConnectionString);
 
-    /// <summary>Chạy SQL thẳng vào DB test (để dựng tình huống như heartbeat quá hạn).</summary>
+    /// <summary>Runs SQL straight on the test DB (to set up situations such as an expired heartbeat).</summary>
     public void Sql(string sql)
     {
         using var conn = new NpgsqlConnection(ConnectionString);
@@ -38,8 +38,8 @@ public sealed class TestDb : IDisposable
     public void Dispose()
     {
         NpgsqlConnection.ClearAllPools();
-        try { Admin($"DROP DATABASE IF EXISTS {_name} WITH (FORCE)"); } catch { /* bỏ qua */ }
-        try { Directory.Delete(DataDir, true); } catch { /* bỏ qua */ }
+        try { Admin($"DROP DATABASE IF EXISTS {_name} WITH (FORCE)"); } catch { /* ignore */ }
+        try { Directory.Delete(DataDir, true); } catch { /* ignore */ }
     }
 
     private static void Admin(string sql)

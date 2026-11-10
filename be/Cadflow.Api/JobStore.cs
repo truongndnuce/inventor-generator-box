@@ -6,9 +6,9 @@ using NpgsqlTypes;
 namespace Cadflow.Api;
 
 /// <summary>
-/// Kho job + hàng đợi trên PostgreSQL (bảng jobs, job_artifacts, job_events). Mỗi thao tác là một transaction ngắn;
-/// worker nhận job bằng FOR UPDATE SKIP LOCKED nên nhiều instance backend dùng chung một DB vẫn không giao trùng job.
-/// Trạng thái worker (heartbeat, Busy) chỉ nằm trong bộ nhớ vì tự làm mới theo nhịp tim.
+/// Job store + queue on PostgreSQL (tables jobs, job_artifacts, job_events). Every operation is one short transaction;
+/// workers take jobs with FOR UPDATE SKIP LOCKED, so several backend instances sharing one DB never hand out the same job twice.
+/// Worker state (heartbeat, Busy) lives in memory only because it refreshes itself with every heartbeat.
 /// </summary>
 public sealed class JobStore
 {
@@ -86,7 +86,7 @@ public sealed class JobStore
 
     public string ArtifactDir(string jobId) => Path.Combine(ArtifactsRoot, jobId);
 
-    // ---------------------------------------------------------------- truy vấn
+    // ---------------------------------------------------------------- queries
 
     public IReadOnlyList<Job> List()
     {
@@ -120,7 +120,7 @@ public sealed class JobStore
         lock (_wgate) return _workers.Values.Any(w => DateTimeOffset.UtcNow - w.LastSeen < WorkerOnlineWindow);
     }
 
-    // ---------------------------------------------------------------- người đặt hàng
+    // ---------------------------------------------------------------- requesters
 
     public Job Create(string productCode, Dictionary<string, double> inputs, string requestedBy, string? scriptName = null, string? scriptSha256 = null, string? scriptSource = null, Dictionary<string, string>? textInputs = null)
     {
@@ -164,13 +164,13 @@ public sealed class JobStore
             w.AddinVersion = hello.AddinVersion ?? w.AddinVersion;
             w.Busy = hello.Busy;
         }
-        // Nhịp tim của worker cũng gia hạn các job nó đang chạy.
+        // A worker heartbeat also extends the jobs it is running.
         using var conn = _db.OpenConnection();
         Exec(conn, null, "UPDATE jobs SET last_heartbeat = @now WHERE status = 'running' AND worker = @w",
             ("w", hello.Worker!), ("now", DateTimeOffset.UtcNow));
     }
 
-    /// <summary>Giao job Queued cũ nhất cho worker. FOR UPDATE SKIP LOCKED: mỗi job chỉ một worker nhận, kể cả khi nhiều backend chạy song song.</summary>
+    /// <summary>Hands the oldest Queued job to a worker. FOR UPDATE SKIP LOCKED: each job goes to exactly one worker, even when several backends run in parallel.</summary>
     public WorkItem? Claim(string worker, string[]? products = null)
     {
         lock (_wgate) TouchWorker(worker);
@@ -259,7 +259,7 @@ public sealed class JobStore
         return ok;
     }
 
-    /// <summary>Job Running mà quá hạn không có nhịp tim: trả về hàng đợi hoặc đánh dấu lỗi.</summary>
+    /// <summary>Running jobs that passed their deadline without a heartbeat: returns them to the queue or marks them failed.</summary>
     public int ReapStale()
     {
         var freed = new List<string>();
@@ -296,7 +296,7 @@ public sealed class JobStore
         return count;
     }
 
-    /// <summary>Job đã kết thúc trước <paramref name="cutoff"/> mà vẫn còn file kết quả.</summary>
+    /// <summary>Jobs finished before <paramref name="cutoff"/> that still have result files.</summary>
     public IReadOnlyList<Job> ExpiredWithArtifacts(DateTimeOffset cutoff)
     {
         using var conn = _db.OpenConnection();
@@ -306,7 +306,7 @@ public sealed class JobStore
             """, [("cutoff", cutoff.ToUniversalTime())], "");
     }
 
-    /// <summary>Bỏ danh sách file của job sau khi file thật đã bị xóa.</summary>
+    /// <summary>Drops the file list of a job after the real files were deleted.</summary>
     public void MarkArtifactsPurged(string id, int days) => Tx((c, t) =>
     {
         if (Exec(c, t, "UPDATE jobs SET artifacts_purged_at = @now WHERE id = @id", ("id", id), ("now", DateTimeOffset.UtcNow)) == 0) return false;
@@ -315,7 +315,7 @@ public sealed class JobStore
         return true;
     });
 
-    // ---------------------------------------------------------------- nội bộ: worker trong bộ nhớ
+    // ---------------------------------------------------------------- internal: in-memory workers
 
     private WorkerInfo TouchWorker(string name)
     {
@@ -330,9 +330,9 @@ public sealed class JobStore
             if (_workers.TryGetValue(name, out var w)) w.Busy = busy;
     }
 
-    // ---------------------------------------------------------------- nội bộ: SQL
+    // ---------------------------------------------------------------- internal: SQL
 
-    /// <summary>Khóa dòng job nếu nó đang Running và thuộc worker này.</summary>
+    /// <summary>Locks the job row if it is Running and belongs to this worker.</summary>
     private static bool LockOwned(NpgsqlConnection c, NpgsqlTransaction t, string id, string worker, out int attempts)
     {
         using var cmd = Command(c, t, "SELECT attempts FROM jobs WHERE id = @id AND status = 'running' AND lower(worker) = lower(@w) FOR UPDATE", ("id", id), ("w", worker));
@@ -392,7 +392,7 @@ public sealed class JobStore
             cmd.Parameters.Add(Jsonb("inputs", j.Inputs));
             cmd.Parameters.Add(Jsonb("texts", j.TextInputs));
             cmd.Parameters.Add(Jsonb("summary", j.Summary));
-            if (cmd.ExecuteNonQuery() == 0) return; // đã có (import lại)
+            if (cmd.ExecuteNonQuery() == 0) return; // already there (re-import)
         }
         foreach (var a in j.Artifacts)
             Exec(c, t, "INSERT INTO job_artifacts (job_id, name, kind, size, r2_key) VALUES (@id, @name, @kind, @size, @key) ON CONFLICT DO NOTHING",
@@ -460,13 +460,13 @@ public sealed class JobStore
     private void Migrate()
     {
         using var conn = _db.OpenConnection();
-        // Khóa tư vấn: hai backend khởi động cùng lúc không tạo bảng đua nhau.
+        // Advisory lock: two backends starting at the same time do not race to create the tables.
         Exec(conn, null, "SELECT pg_advisory_lock(727001)");
         try { Exec(conn, null, Schema); }
         finally { Exec(conn, null, "SELECT pg_advisory_unlock(727001)"); }
     }
 
-    /// <summary>Lần đầu chạy với Postgres: nhập job từ jobs.json cũ (nếu có) rồi đổi tên file để không nhập lại.</summary>
+    /// <summary>First run with Postgres: imports jobs from the old jobs.json (if present), then renames the file so it is not imported again.</summary>
     private void ImportLegacySnapshot()
     {
         var path = Path.Combine(_dataDir, "jobs.json");
@@ -486,8 +486,8 @@ public sealed class JobStore
 }
 
 /// <summary>
-/// Xóa file kết quả (R2 và đĩa) của job đã kết thúc quá <c>Retention:Days</c> ngày. Mặc định 0 = giữ mãi.
-/// Chỉ xóa file: bản ghi job, thông số và script vẫn còn nên Dashboard và "Nhân bản đơn" không mất.
+/// Deletes the result files (R2 and disk) of jobs finished more than <c>Retention:Days</c> days ago. Default 0 = keep forever.
+/// Only files are deleted: the job record, parameters and script remain, so the Dashboard and "Duplicate order" keep working.
 /// </summary>
 public sealed class RetentionService(JobStore store, R2Store r2, IConfiguration config, ILogger<RetentionService> log) : BackgroundService
 {

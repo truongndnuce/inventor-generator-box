@@ -3,8 +3,8 @@ using InventorAddin.Models;
 namespace Cadflow.Api;
 
 /// <summary>
-/// Một sản phẩm đặt hàng được: mô tả, danh sách thông số và luật kiểm tra. Server và add-in dùng chung các định nghĩa
-/// này (file nguồn được link từ add-in), nên form web, kiểm tra ở server và kiểm tra lại ở worker không bao giờ lệch nhau.
+/// An orderable product: description, list of parameters and validation rules. The server and the add-in share these definitions
+/// (the source file is linked from the add-in), so the web form, the server check and the re-check at the worker never drift apart.
 /// </summary>
 public sealed record Product(
     string Code,
@@ -14,9 +14,9 @@ public sealed record Product(
     IReadOnlyList<ParameterDef> Parameters,
     Func<IReadOnlyDictionary<string, double>?, Dictionary<string, double>> Complete,
     Func<IReadOnlyDictionary<string, double>, IReadOnlyList<ValidationIssue>> Validate,
-    string? ScriptFile = null) // file .gea đi kèm (trong thư mục Scripts cạnh server); null = sản phẩm dựng không qua .gea
+    string? ScriptFile = null) // the .gea file that ships with it (in the Scripts folder next to the server); null = product not built through .gea
 {
-    /// <param name="defaults">Mặc định đang áp dụng (đã gồm cấu hình của tab Config); null = mặc định gốc.</param>
+    /// <param name="defaults">Defaults currently applied (including the Config tab); null = factory defaults.</param>
     public object Schema(IReadOnlyDictionary<string, double>? defaults = null) => new
     {
         code = Code,

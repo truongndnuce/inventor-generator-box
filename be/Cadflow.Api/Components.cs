@@ -7,19 +7,19 @@ public sealed record ComponentParam(string Name, string Label, string? Group, st
 
 public sealed record ComponentVar(string Name, string Type);
 
-/// <param name="Description">Các dòng chú thích đầu file (bỏ dấu ! và dòng gạch), giữ dòng trống giữa các đoạn.</param>
-/// <param name="Summary">Đoạn đầu của <paramref name="Description"/> trên một dòng.</param>
-/// <param name="SharedVariables">Biến khai báo trong khối BUILD của thư viện: script cha dùng chung được sau INCLUDE.</param>
-/// <param name="Errors">Lỗi biên dịch thư viện (rỗng nếu tốt); thư viện lỗi vẫn được liệt kê.</param>
+/// <param name="Description">The leading comment lines of the file (without the ! marks and rule lines), keeping the blank lines between paragraphs.</param>
+/// <param name="Summary">The first paragraph of <paramref name="Description"/> on one line.</param>
+/// <param name="SharedVariables">Variables declared in the BUILD block of the library; the including script can use them after INCLUDE.</param>
+/// <param name="Errors">Library compile errors (empty when fine); a broken library is still listed.</param>
 public sealed record ComponentInfo(string Name, string Title, string Summary, string Description, IReadOnlyList<string> Prefixes,
     IReadOnlyList<ComponentVar> SharedVariables, IReadOnlyList<ComponentParam> Parameters, IReadOnlyList<string> Errors);
 
-/// <summary>Kết quả sinh script khởi tạo: <see cref="Text"/> khi thành công, ngược lại <see cref="Status"/> (400/404) và <see cref="Error"/>.</summary>
+/// <summary>Result of generating a starter script: <see cref="Text"/> on success, otherwise <see cref="Status"/> (400/404) and <see cref="Error"/>.</summary>
 public sealed record StarterResult(string? Text, int Status, string? Error);
 
 /// <summary>
-/// Danh mục component (thư viện <c>Scripts/lib/*.gea</c>) cho trang Components: mô tả, tham số, biến dùng chung và file gốc.
-/// Chỉ đọc. Tên phải hợp lệ và có trong danh sách trước khi đọc file, nên không thể đọc ra ngoài thư mục thư viện.
+/// Catalog of components (libraries <c>Scripts/lib/*.gea</c>) for the Components page: description, parameters, shared variables and the original file.
+/// Read-only. The name must be valid and in the list before the file is read, so nothing outside the library folder can be read.
 /// </summary>
 public sealed partial class ComponentCatalog
 {
@@ -46,14 +46,14 @@ public sealed partial class ComponentCatalog
     public IReadOnlyList<ComponentInfo> List() =>
         _names().Distinct().OrderBy(n => n, StringComparer.Ordinal).Select(Get).Where(c => c != null).Select(c => c!).ToList();
 
-    /// <summary>Mô tả một component; null nếu tên không hợp lệ hoặc không có.</summary>
+    /// <summary>Describes one component; null if the name is invalid or unknown.</summary>
     public ComponentInfo? Get(string name) => Raw(name) is { } text ? Describe(name, text) : null;
 
-    /// <summary>Nội dung file thư viện gốc; null nếu tên không hợp lệ hoặc không có.</summary>
+    /// <summary>Content of the original library file; null if the name is invalid or unknown.</summary>
     public string? Raw(string name) =>
         ValidName().IsMatch(name) && _names().Contains(name) ? _read(name) : null;
 
-    /// <summary>Script khởi tạo (có chú thích từng bước) dùng component này; xem <see cref="ComponentStarter"/>.</summary>
+    /// <summary>Annotated starter script (every step explained) that uses this component; see <see cref="ComponentStarter"/>.</summary>
     public StarterResult Starter(string name, string? productName, string? prefix)
     {
         productName = string.IsNullOrWhiteSpace(productName) ? ComponentStarter.DefaultProductName : productName.Trim();
@@ -97,7 +97,7 @@ public sealed partial class ComponentCatalog
             summary, description, prefixes, SharedVariables(text), parameters, errors);
     }
 
-    /// <summary>Chú thích đầu file: bỏ dấu `!`, bỏ dòng toàn dấu `=`; đoạn đầu (đến dòng trống) làm tóm tắt.</summary>
+    /// <summary>Leading comment of the file: drops the `!` marker and lines made only of `=`; the first paragraph (up to a blank line) is the summary.</summary>
     private static (string Description, string Summary) LeadingComment(string text)
     {
         var lines = new List<string>();
@@ -133,8 +133,8 @@ public sealed partial class ComponentCatalog
 }
 
 /// <summary>
-/// Sinh script khởi tạo cho một component: khung có hai dòng INCLUDE (FORM và BUILD), chỗ thêm thông số và bước dựng riêng,
-/// và chú thích tiếng Việt giải thích từng bước. Khung biên dịch không lỗi và Import được mà chưa sửa gì.
+/// Generates a starter script for a component: a skeleton with two INCLUDE lines (FORM and BUILD), places to add your own parameters and build steps,
+/// and English comments explaining every step. The skeleton compiles without errors and can be imported without any edit.
 /// </summary>
 public static partial class ComponentStarter
 {
@@ -144,7 +144,7 @@ public static partial class ComponentStarter
     [GeneratedRegex(@"^[A-Za-z][A-Za-z0-9]{0,15}_$")]
     private static partial Regex ValidPrefix();
 
-    /// <summary>Thông báo lỗi nếu tên sản phẩm hoặc tiền tố không dùng được (đi thẳng vào chuỗi và tên thông số của script).</summary>
+    /// <summary>Error message if the product name or prefix cannot be used (they go straight into a string and into parameter names of the script), otherwise null.</summary>
     public static string? Validate(string productName, string prefix)
     {
         if (productName.Length is 0 or > 80) return "productName must be 1-80 characters.";
@@ -159,56 +159,56 @@ public static partial class ComponentStarter
         void L(string line = "") => sb.Append(line).Append('\n');
 
         var parameters = Wrap(string.Join(", ", c.Parameters.Select(p => $"{p.Name} ({p.Label})")), 100);
-        var lengthVar = c.SharedVariables.LastOrDefault(v => v.Type == "LENGTH"); // thường là cao độ trên cùng (hTop)
-        var vars = c.SharedVariables.Count == 0 ? "(component này không có biến dùng chung)" : string.Join(", ", c.SharedVariables.Select(v => v.Name));
+        var lengthVar = c.SharedVariables.LastOrDefault(v => v.Type == "LENGTH"); // usually the top elevation (hTop)
+        var vars = c.SharedVariables.Count == 0 ? "(this component has no shared variables)" : string.Join(", ", c.SharedVariables.Select(v => v.Name));
         var example = prefix + "Example";
 
         L("! ============================================================================");
-        L($"! Script khởi tạo: dùng component \"{c.Title}\" (thư viện {c.Name}).");
-        L("! Tạo bởi trang Components của CAD Automation. Sửa file này, rồi Import lại để đặt hàng.");
+        L($"! Starter script: uses the component \"{c.Title}\" (library {c.Name}).");
+        L("! Generated by the Components page of CAD Automation. Edit this file, then Import it again to place an order.");
         L("!");
-        L("! Cách đọc file:");
-        L("!   - Phần đầu (GEA_VERSION ... TARGET) khai báo sản phẩm.");
-        L("!   - BEGIN_FORM ... END_FORM là các ô nhập trên form đặt hàng.");
-        L("!   - BEGIN_BUILD ... END_BUILD là các bước dựng model trong Inventor.");
-        L("!   - Dòng bắt đầu bằng ! là chú thích, được bỏ qua khi chạy.");
+        L("! How to read this file:");
+        L("!   - The header (GEA_VERSION ... TARGET) declares the product.");
+        L("!   - BEGIN_FORM ... END_FORM are the input fields of the order form.");
+        L("!   - BEGIN_BUILD ... END_BUILD are the steps that build the model in Inventor.");
+        L("!   - A line starting with ! is a comment and is ignored when the script runs.");
         L("! ============================================================================");
         L();
-        L("! Bước 1: phiên bản ngôn ngữ .gea (hiện là 1). Bắt buộc, phải là lệnh đầu tiên của file.");
+        L("! Step 1: version of the .gea language (currently 1). Required, and it must be the first statement of the file.");
         L("GEA_VERSION 1");
-        L("! Bước 2: tên sản phẩm, hiện trên web và trong danh sách đơn.");
+        L("! Step 2: product name, shown on the web and in the order list.");
         L($"PRODUCT_NAME \"{productName}\"");
-        L($"! Bước 3: tiền tố của thông số do bạn thêm (ví dụ {example}). Thông số của component giữ tiền tố của nó");
-        L($"! ({string.Join(", ", c.Prefixes)}); cả hai loại tiền tố đều hợp lệ.");
+        L($"! Step 3: prefix for the parameters you add (for example {example}). The component's own parameters keep their prefix");
+        L($"! ({string.Join(", ", c.Prefixes)}); both kinds of prefix are valid.");
         L($"PARAM_PREFIX {prefix}");
-        L("! Bước 4: loại document cần dựng. PART là một Part (.ipt); web hiện chỉ nhận PART.");
+        L("! Step 4: the kind of document to build. PART is a Part (.ipt); the web accepts only PART for now.");
         L("TARGET PART");
         L();
         L("BEGIN_FORM");
         L();
-        L($"  ! Bước 5: chèn nhóm thông số của component. Dòng này được thay bằng phần FORM của thư viện {c.Name},");
-        L("  ! gồm các thông số:");
+        L($"  ! Step 5: insert the parameter group of the component. This line is replaced by the FORM part of the library {c.Name},");
+        L("  ! which contains these parameters:");
         foreach (var w in parameters) L("  !   " + w);
         L($"  INCLUDE lib:{c.Name}");
         L();
-        L("  ! Bước 6: thêm thông số của riêng bạn tại đây. Mỗi dòng USER_INPUT_PARAM khai báo một ô nhập");
-        L("  ! (tên, kiểu và đơn vị, giá trị mặc định, MIN/MAX, LABEL). Bỏ dấu ! đầu dòng dưới đây để bật ví dụ:");
+        L("  ! Step 6: add your own parameters here. Each USER_INPUT_PARAM line declares one input field");
+        L("  ! (name, type and unit, default value, MIN/MAX, LABEL). Remove the leading ! from the line below to enable the example:");
         L($"  !   USER_INPUT_PARAM {example} LENGTH 100 mm MIN 10 MAX 500 LABEL \"Example\"");
         L();
         L("END_FORM");
         L();
         L("BEGIN_BUILD");
         L();
-        L($"  ! Bước 7: chèn các bước dựng của component. Dòng này được thay bằng phần BUILD của thư viện {c.Name}.");
-        L("  ! Sau dòng này bạn dùng được các biến dùng chung (đừng khai báo lại):");
+        L($"  ! Step 7: insert the build steps of the component. This line is replaced by the BUILD part of the library {c.Name}.");
+        L("  ! After this line you can use the shared variables (do not declare them again):");
         L($"  !   {vars}");
         L($"  INCLUDE lib:{c.Name}");
         L();
-        L("  ! Bước 8: thêm bước dựng của riêng bạn tại đây. Ví dụ dưới đây dựng một khối hộp bằng builder Block:");
-        L("  ! SizeX, SizeD, Height là kích thước, FEATURE_OUT nhận solid body vừa tạo, SET_REF_NAME đặt tên cho nó.");
+        L("  ! Step 8: add your own build steps here. The example below builds a box with the Block builder:");
+        L("  ! SizeX, SizeD, Height are the dimensions, FEATURE_OUT receives the solid body just created, SET_REF_NAME names it.");
         if (lengthVar != null)
-            L($"  ! Thêm FEATURE_IN \"Elevation\" {lengthVar.Name} nếu muốn đặt khối ở cao độ của biến {lengthVar.Name} (từ component).");
-        L("  ! Bỏ dấu ! đầu các dòng dưới đây để bật ví dụ:");
+            L($"  ! Add FEATURE_IN \"Elevation\" {lengthVar.Name} to place the box at the elevation of the variable {lengthVar.Name} (from the component).");
+        L("  ! Remove the leading ! from the lines below to enable the example:");
         L("  !   DECLARE_REFERENCE myBody");
         L("  !   CREATE_FEATURE builder:Block");
         L("  !     FEATURE_IN \"SizeX\"  200 mm");
@@ -222,7 +222,7 @@ public static partial class ComponentStarter
         return sb.ToString();
     }
 
-    /// <summary>Ngắt chuỗi thành các dòng không dài quá <paramref name="width"/> ký tự, ngắt sau dấu phẩy.</summary>
+    /// <summary>Splits text into lines no longer than <paramref name="width"/> characters, breaking after a comma.</summary>
     private static List<string> Wrap(string text, int width)
     {
         var lines = new List<string>();

@@ -5,7 +5,7 @@
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <RootNamespace>Cadflow.Api</RootNamespace>
-        <!-- Khóa R2 nằm ở user-secrets của máy (ngoài repo): dotnet user-secrets set "R2:SecretAccessKey" ... -->
+        <!-- The R2 key lives in the machine's user-secrets (outside the repo): dotnet user-secrets set "R2:SecretAccessKey" ... -->
         <UserSecretsId>cadflow-api-r2</UserSecretsId>
     </PropertyGroup>
 
@@ -18,24 +18,24 @@
 
     <ItemGroup>
         <!--
-          Dùng chung đúng một file định nghĩa thông số/ràng buộc với add-in (một định nghĩa duy nhất, mục 3.2 của cadflow-order-to-model-plan.md).
-          File chỉ phụ thuộc System nên biên dịch được cho net10.0 thuần.
+          Uses exactly one parameter/constraint definition file shared with the add-in (a single definition, section 3.2 of cadflow-order-to-model-plan.md).
+          The file depends only on System, so it compiles for plain net10.0.
         -->
         <Compile Include="..\..\InventorAddin\InventorAddin.Core\Models\BoxParams.cs" Link="Shared\BoxParams.cs" />
         <Compile Include="..\..\InventorAddin\InventorAddin.Core\Models\TransformerParams.cs" Link="Shared\TransformerParams.cs" />
         <Compile Include="..\..\InventorAddin\InventorAddin.Core\Models\TurbineParams.cs" Link="Shared\TurbineParams.cs" />
         <Compile Include="..\..\InventorAddin\InventorAddin.Core\Models\GeneratorParams.cs" Link="Shared\GeneratorParams.cs" />
-        <!-- Trình thông dịch .gea (không phụ thuộc Inventor): server tự biên dịch và tính FORM của script được import. -->
+        <!-- The .gea interpreter (no Inventor dependency): the server compiles and computes the FORM of imported scripts itself. -->
         <Compile Include="..\..\InventorAddin\InventorAddin.Core\Gea\*.cs" Link="Shared\Gea\%(Filename)%(Extension)" />
     </ItemGroup>
 
     <ItemGroup>
-        <!-- Script .gea mà worker chạy: server giữ cùng một bản (để export và để ghi nhận bản đã dùng cho từng job). -->
+        <!-- The .gea scripts the worker runs: the server keeps the same copy (to export and to record which copy each job used). -->
         <Content Include="..\..\InventorAddin\InventorAddin.Core\Scripts\transformer.gea" Link="Scripts\transformer.gea" CopyToOutputDirectory="PreserveNewest" />
         <Content Include="..\..\InventorAddin\InventorAddin.Core\Scripts\box.gea" Link="Scripts\box.gea" CopyToOutputDirectory="PreserveNewest" />
         <Content Include="..\..\InventorAddin\InventorAddin.Core\Scripts\turbine.gea" Link="Scripts\turbine.gea" CopyToOutputDirectory="PreserveNewest" />
         <Content Include="..\..\InventorAddin\InventorAddin.Core\Scripts\generator.gea" Link="Scripts\generator.gea" CopyToOutputDirectory="PreserveNewest" />
-        <!-- Thư viện component cho INCLUDE lib:<tên> (Scripts\lib\*.gea). -->
+        <!-- Component libraries for INCLUDE lib:<name> (Scripts\lib\*.gea). -->
         <Content Include="..\..\InventorAddin\InventorAddin.Core\Scripts\lib\*.gea" Link="Scripts\lib\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 

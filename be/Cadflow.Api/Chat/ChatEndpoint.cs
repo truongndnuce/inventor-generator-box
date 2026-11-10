@@ -11,8 +11,8 @@ public sealed record RenameRequest(string? Title);
 public sealed record ConfirmRequest(string? RequestedBy);
 
 /// <summary>
-/// Chat tạo job bằng ngôn ngữ tự nhiên. Server giữ API key, chạy vòng lặp tool và stream SSE về web.
-/// LLM KHÔNG có công cụ tạo job: nó chỉ đề xuất (propose_job); job chỉ được tạo khi user bấm xác nhận
+/// Chat that creates jobs from natural language. The server holds the API key, runs the tool loop and streams SSE to the web.
+/// The LLM has NO tool that creates a job: it can only propose (propose_job); a job is created only when the user presses confirm
 /// (POST /api/chat/confirm/{draftId}).
 /// </summary>
 public static class ChatEndpoint
@@ -56,7 +56,7 @@ public static class ChatEndpoint
         var chats = app.Services.GetRequiredService<ChatStore>();
         static string Owner(string? s) => (s ?? "").Trim();
 
-        // ---- lịch sử hội thoại (PostgreSQL), lọc theo owner
+        // ---- conversation history (PostgreSQL), filtered by owner
         app.MapGet("/api/chats", async (string? owner, CancellationToken ct) => Results.Ok(await chats.ListAsync(Owner(owner), ct)));
         app.MapGet("/api/chats/{id}", async (string id, string? owner, CancellationToken ct) =>
             await chats.GetAsync(id, Owner(owner), ct) is { } d ? Results.Ok(d) : Results.NotFound());
@@ -214,7 +214,7 @@ public static class ChatEndpoint
         catch (Exception ex) { return (JsonSerializer.Serialize(new { error = ex.Message }), true, null, null); }
     }
 
-    // ---------------------------------------------------------------- tool schemas (create_job chỉ có khi Chat:AutoCreate bật)
+    // ---------------------------------------------------------------- tool schemas (create_job exists only when Chat:AutoCreate is on)
 
     private static JsonElement P(object o) => JsonSerializer.SerializeToElement(o);
     private static readonly object Str = new { type = "string" };

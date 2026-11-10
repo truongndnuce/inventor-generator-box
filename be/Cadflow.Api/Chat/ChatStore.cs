@@ -5,13 +5,13 @@ using NpgsqlTypes;
 namespace Cadflow.Api.Chat;
 
 public sealed record ChatSummary(string Id, string Title, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
-/// <summary>Một dòng trong hội thoại: role = user | assistant | proposal | job; data chứa phần còn lại của thẻ (proposal/job).</summary>
+/// <summary>One row of a conversation: role = user | assistant | proposal | job; data holds the rest of the card (proposal/job).</summary>
 public sealed record ChatItem(string Role, string? Text, JsonElement? Data);
 public sealed record ChatDetail(ChatSummary Chat, List<ChatItem> Items);
 
 /// <summary>
-/// Lịch sử chat trên PostgreSQL (bảng chat_conversations, chat_messages). Hội thoại thuộc về "owner" (tên người dùng
-/// như requestedBy của job; hệ thống chưa có đăng nhập). Mọi truy vấn đều lọc theo owner.
+/// Chat history on PostgreSQL (tables chat_conversations, chat_messages). A conversation belongs to an "owner" (the user name,
+/// like requestedBy of a job; the system has no login). Every query filters by owner.
 /// </summary>
 public sealed class ChatStore
 {
@@ -144,7 +144,7 @@ public sealed class ChatStore
         await tx.CommitAsync(ct);
     }
 
-    /// <summary>Đánh dấu thẻ đề xuất đã được tạo job (để mở lại hội thoại vẫn thấy "created").</summary>
+    /// <summary>Marks a proposal card as turned into a job (so reopening the conversation still shows "created").</summary>
     public async Task MarkProposalCreatedAsync(string draftId, string jobId, CancellationToken ct = default)
     {
         await using var cmd = _db.CreateCommand("UPDATE chat_messages SET data = data || jsonb_build_object('jobId', @j::text) WHERE data ->> 'draftId' = @d");

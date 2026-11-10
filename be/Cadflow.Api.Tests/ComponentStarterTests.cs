@@ -39,7 +39,7 @@ public sealed class ComponentStarterTests : IDisposable
         Assert.False(script.HasErrors, string.Join("\n", script.Diagnostics));
         Assert.Equal("Reactor vessel", script.Program.ProductName);
         Assert.Equal("RX_", script.Program.ParamPrefix);
-        Assert.Contains("RX_Example", text);          // ví dụ trong chú thích dùng tiền tố mới
+        Assert.Contains("RX_Example", text);          // the example in the comments uses the new prefix
     }
 
     [Fact]
@@ -64,21 +64,21 @@ public sealed class ComponentStarterTests : IDisposable
         var text = Starter();
         var lines = text.Replace("\r\n", "\n").Split('\n');
 
-        // Mỗi lệnh khai báo ở phần đầu có chú thích riêng ngay phía trên.
+        // Every header statement has its own comment right above it.
         foreach (var keyword in new[] { "GEA_VERSION", "PRODUCT_NAME", "PARAM_PREFIX", "TARGET" })
         {
             var i = Array.FindIndex(lines, l => l.StartsWith(keyword + " "));
-            Assert.True(i > 0 && ComponentCommentsTests.IsComment(lines[i - 1]), $"Lệnh {keyword} chưa có chú thích ngay phía trên.");
+            Assert.True(i > 0 && ComponentCommentsTests.IsComment(lines[i - 1]), $"Statement {keyword} has no comment right above it.");
         }
-        // Mỗi INCLUDE có chú thích nói nó chèn gì; có chỗ thêm tham số và bước dựng riêng.
+        // Every INCLUDE has a comment saying what it inserts; there are places to add your own parameters and build steps.
         foreach (var i in Enumerable.Range(0, lines.Length).Where(i => lines[i].Trim() == "INCLUDE lib:tank-base-cover"))
-            Assert.True(ComponentCommentsTests.IsComment(lines[i - 1]), "INCLUDE chưa có chú thích.");
-        Assert.Contains(lines, l => l.Contains("thông số của riêng bạn"));
-        Assert.Contains(lines, l => l.Contains("bước dựng của riêng bạn"));
-        // Liệt kê tham số của component và các biến dùng chung.
+            Assert.True(ComponentCommentsTests.IsComment(lines[i - 1]), "INCLUDE has no comment.");
+        Assert.Contains(lines, l => l.Contains("your own parameters"));
+        Assert.Contains(lines, l => l.Contains("your own build steps"));
+        // Lists the component parameters and the shared variables.
         Assert.Contains("TR_TankLength", text);
         Assert.Contains("hTop", text);
-        // Quy ước chung cho mọi đoạn lệnh trong FORM/BUILD.
+        // The general convention for every statement paragraph in FORM/BUILD.
         Assert.Empty(ComponentCommentsTests.UncommentedParagraphs("starter", lines));
     }
 
@@ -86,7 +86,7 @@ public sealed class ComponentStarterTests : IDisposable
     [InlineData("a\"b", "MY_")]
     [InlineData("a\\b", "MY_")]
     [InlineData("two\nlines", "MY_")]
-    [InlineData("ok", "my")]          // thiếu dấu _ ở cuối
+    [InlineData("ok", "my")]          // missing the trailing _
     [InlineData("ok", "1X_")]
     [InlineData("ok", "TOO_LONG_PREFIX_NAME_")]
     [InlineData("ok", "A B_")]
