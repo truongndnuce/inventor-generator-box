@@ -159,7 +159,7 @@ public static partial class ComponentStarter
         void L(string line = "") => sb.Append(line).Append('\n');
 
         var parameters = Wrap(string.Join(", ", c.Parameters.Select(p => $"{p.Name} ({p.Label})")), 100);
-        var lengthVar = c.SharedVariables.FirstOrDefault(v => v.Type == "LENGTH");
+        var lengthVar = c.SharedVariables.LastOrDefault(v => v.Type == "LENGTH"); // thường là cao độ trên cùng (hTop)
         var vars = c.SharedVariables.Count == 0 ? "(component này không có biến dùng chung)" : string.Join(", ", c.SharedVariables.Select(v => v.Name));
         var example = prefix + "Example";
 

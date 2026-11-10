@@ -35,6 +35,7 @@ builder.Services.AddSingleton(new ScriptStore(dataDir));
 builder.Services.AddSingleton(new ConfigStore(dataDir));
 builder.Services.AddSingleton<JobService>();
 builder.Services.AddSingleton<DraftStore>();
+builder.Services.AddSingleton<ComponentCatalog>();
 builder.Services.AddSingleton<CadTools>();
 // MCP server (/mcp): cùng bộ công cụ CadTools với chat.
 builder.Services.AddMcpServer().WithHttpTransport().WithTools<CadTools>();
@@ -265,6 +266,22 @@ app.MapGet("/api/jobs/{id}/export.gea", (string id) =>
         return Results.NotFound(new { error = "This job has no .gea script (its product is not built from a script)." });
     var bytes = new System.Text.UTF8Encoding(false).GetBytes(GeaExport.Build(job, text));
     return Results.File(bytes, "text/plain; charset=utf-8", fileDownloadName: job.Id + ".gea");
+});
+
+// Danh mục component (thư viện INCLUDE lib:): xem, tải file gốc, tải script khởi tạo. Chỉ đọc, xem docs/superpowers/specs/2026-11-10-component-catalog-design.md.
+app.MapGet("/api/components", (ComponentCatalog catalog) => catalog.List());
+
+app.MapGet("/api/components/{name}/gea", (string name, ComponentCatalog catalog) =>
+    catalog.Raw(name) is { } text
+        ? Results.File(new System.Text.UTF8Encoding(false).GetBytes(text), "text/plain; charset=utf-8", fileDownloadName: name + ".gea")
+        : Results.NotFound(new { error = $"Unknown component '{name}'." }));
+
+app.MapGet("/api/components/{name}/starter", (string name, string? productName, string? prefix, ComponentCatalog catalog) =>
+{
+    var r = catalog.Starter(name, productName, prefix);
+    return r.Text != null
+        ? Results.File(new System.Text.UTF8Encoding(false).GetBytes(r.Text), "text/plain; charset=utf-8", fileDownloadName: name + "-starter.gea")
+        : Results.Json(new { error = r.Error }, statusCode: r.Status);
 });
 
 app.MapGet("/api/workers", () => store.Workers());
