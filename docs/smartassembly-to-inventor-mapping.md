@@ -1,259 +1,259 @@
-# Mapping: ngôn ngữ kiểu SmartAssembly → ngôn ngữ riêng chạy trên Inventor và web
+# Mapping: a SmartAssembly-style language → our own language that runs on Inventor and the web
 
-Tài liệu này dựa trên bảng mô tả ngôn ngữ SmartAssembly mà bạn cung cấp (mục 4.1 đến 4.12). Mục đích: khi người viết sản phẩm **gõ lệnh theo phong cách SmartAssembly**, hệ thống hiểu và thực thi được trên **Inventor (worker)** và **web (form, xem trước, chạy thử)**.
+This document is based on the SmartAssembly language description table you supplied (sections 4.1 to 4.12). Purpose: when the product author **types statements in the SmartAssembly style**, the system understands and executes them on **Inventor (worker)** and on the **web (form, preview, dry run)**.
 
-Nối tiếp `inventor-addin-plan.md` (mục 5c, DSL) và `cadflow-order-to-model-plan.md` (mục 15, web).
-
----
-
-## 1. Nguyên tắc
-
-1. **Giữ phong cách**: mệnh lệnh, mỗi dòng một lệnh, từ khóa viết hoa, không dùng cú pháp gọi hàm kiểu ngoặc đơn, có ba khối (giao diện, bảng, logic chính).
-2. **Giữ ý tưởng, tự đặt tên khi cần**: những lệnh chung (IF, FOR, DECLARE_VARIABLE...) giữ tên tương tự để quen tay. Lệnh gắn với thực thể Creo (UDF, feature, trail file) được thay bằng khái niệm tương đương của Inventor và đặt tên riêng. Nên tự đặt tên từ khóa và tự viết tài liệu của mình thay vì chép nguyên tài liệu của Sigmaxim; nếu có ý định thương mại hóa thì nên xem xét thêm về điều khoản và nhãn hiệu.
-3. **Script chỉ điều phối**: như bảng của bạn nhận xét, giá trị kỹ thuật nằm ở **thư viện thành phần** (UDF ở Creo). Với Inventor, thư viện đó là part, iPart, iFeature, assembly mẫu và các hàm dựng viết bằng C#. Không có thư viện thì ngôn ngữ ít giá trị (xem mục 7).
-4. **Người đặt hàng không viết code**: người dùng ở web chỉ điền giá trị vào form. Chỉ người soạn sản phẩm (tin cậy) mới viết script.
+It continues `inventor-addin-plan.md` (section 5c, DSL) and `cadflow-order-to-model-plan.md` (section 15, web).
 
 ---
 
-## 2. Khác biệt nền tảng giữa SmartAssembly và hệ thống này
+## 1. Principles
 
-| Điểm | SmartAssembly | Hệ thống này | Hệ quả cho ngôn ngữ |
+1. **Keep the style**: imperative, one statement per line, upper-case keywords, no parenthesized function-call syntax, three blocks (interface, tables, main logic).
+2. **Keep the idea, name things ourselves when needed**: the common statements (IF, FOR, DECLARE_VARIABLE...) keep similar names so they feel familiar. Statements tied to Creo entities (UDF, feature, trail file) are replaced by the equivalent Inventor concept and given their own names. It is better to name the keywords ourselves and write our own documentation instead of copying Sigmaxim's documentation as it is; if there is any intention to commercialize, consider the terms and trademarks further.
+3. **The script only orchestrates**: as your table remarks, the technical value lives in the **component library** (UDFs in Creo). For Inventor, that library is parts, iParts, iFeatures, sample assemblies and the build functions written in C#. Without a library the language has little value (see section 7).
+4. **The person ordering does not write code**: the user on the web only fills values into the form. Only the (trusted) product author writes scripts.
+
+---
+
+## 2. Fundamental differences between SmartAssembly and this system
+
+| Aspect | SmartAssembly | This system | Consequence for the language |
 |------|---------------|--------------|----------------------|
-| Nơi chạy | Trong Creo, trên model đang mở, người dùng ngồi trước máy | Trên worker (Inventor) không người trông; form ở web | Không có hộp thoại tương tác trên worker; mọi nhập liệu phải xong **trước** khi chạy |
-| Giao diện | Khối GUI hiện trong Creo | Khối GUI trở thành **form web** | Phải định nghĩa khi nào form được tính lại |
-| Chọn trực tiếp trong model (USER_SELECT) | Có | Không (người đặt hàng không thấy model) | Cần thay thế hoặc giới hạn ở chế độ tương tác |
-| Thông báo (MESSAGE_BOX) | Hộp thoại | Web hoặc nhật ký job | Phải định nghĩa hành vi khi không có người |
-| Tham chiếu thực thể | Kiểu dữ liệu hạng nhất, dễ mất hiệu lực sau regenerate | Cùng vấn đề trong Inventor | Nên tự phục hồi tham chiếu, giảm nhóm lỗi hay gặp nhất |
-| Thư viện | UDF của công ty | Part, iPart, iFeature, hàm dựng C# | Cần kế hoạch xây thư viện |
-| Chạy thử | Chạy trong Creo | Cần chạy thử **không cần Inventor** trên web | Cần phần chạy mô phỏng (mục 14) |
+| Where it runs | Inside Creo, on the open model, with the user sitting at the machine | On a worker (Inventor) with no one watching; the form is on the web | No interactive dialogs on the worker; all input must be done **before** running |
+| Interface | The GUI block shows inside Creo | The GUI block becomes a **web form** | It must define when the form is recomputed |
+| Picking directly in the model (USER_SELECT) | Yes | No (the person ordering does not see the model) | Needs a replacement or a limit to the interactive mode |
+| Messages (MESSAGE_BOX) | A dialog | The web or the job log | The behavior must be defined for when no one is there |
+| Entity references | A first-class data type, easily invalidated after a regenerate | The same problem in Inventor | Should recover references automatically, reducing the most common error group |
+| Library | The company's UDFs | Parts, iParts, iFeatures, C# builders | A plan to build the library is needed |
+| Dry run | Runs in Creo | A dry run **without Inventor** is needed on the web | Needs a simulated run (section 14) |
 
 ---
 
-## 3. Cấu trúc file: ba khối
+## 3. File structure: three blocks
 
-| Khối SmartAssembly | Bắt buộc | Vai trò trong hệ thống này | Đề xuất tên khối |
+| SmartAssembly block | Required | Role in this system | Suggested block name |
 |--------------------|----------|-----------------------------|------------------|
-| `BEGIN_GUI_DESCR ... END_GUI_DESCR` | Không | Mô tả **form web**: ô nhập, hộp chọn, hiện hoặc ẩn theo lựa chọn | `BEGIN_FORM ... END_FORM` |
-| `BEGIN_TAB_DESCR ... END_TAB_DESCR` | Không | Cấu hình **bảng**: catalog, BOM, bảng giá | `BEGIN_TABLES ... END_TABLES` |
-| `BEGIN_ASM_DESCR ... END_ASM_DESCR` | Có | **Logic dựng** chạy ở worker | `BEGIN_BUILD ... END_BUILD` |
+| `BEGIN_GUI_DESCR ... END_GUI_DESCR` | No | Describes the **web form**: input fields, choice boxes, show or hide by choice | `BEGIN_FORM ... END_FORM` |
+| `BEGIN_TAB_DESCR ... END_TAB_DESCR` | No | Configures **tables**: catalog, BOM, price table | `BEGIN_TABLES ... END_TABLES` |
+| `BEGIN_ASM_DESCR ... END_ASM_DESCR` | Yes | The **build logic** that runs on the worker | `BEGIN_BUILD ... END_BUILD` |
 
-Quy tắc:
-- Chú thích: `!` một dòng, `/* ... */` nhiều dòng (giữ nguyên).
-- Thụt lề bằng Tab chỉ để dễ đọc, không mang ý nghĩa cú pháp.
-- Mã hóa file: **UTF-8** (không dùng windows-1252) để viết được tiếng Việt trong thông báo.
-- Khai báo biến ở đầu khối, gom theo kiểu như khuyến nghị của bảng.
-- Khối FORM chạy ở **web và server** (hiện ô, kiểm tra), khối BUILD chạy ở **worker**.
+Rules:
+- Comments: `!` for one line, `/* ... */` for several lines (kept as they are).
+- Indenting with Tab is only for readability, it has no syntactic meaning.
+- File encoding: **UTF-8** (not windows-1252) so that non-ASCII text can be written in messages.
+- Declare variables at the top of a block, grouped by type as the table recommends.
+- The FORM block runs on the **web and the server** (showing fields, checks), the BUILD block runs on the **worker**.
 
 ---
 
-## 4. Kiểu dữ liệu và khai báo
+## 4. Data types and declarations
 
-| SmartAssembly | Đề xuất | Cách hiện thực |
+| SmartAssembly | Suggestion | How to implement |
 |---------------|---------|----------------|
-| `STRING`, `INTEGER`, `DOUBLE`, `BOOL` | Giữ nguyên | Kiểu .NET tương ứng |
-| (không có) | **Thêm `LENGTH`, `ANGLE`** (số có đơn vị) | Kiểm tra đơn vị tĩnh (quyết định D4); tránh nhầm mm với cm (đơn vị nội bộ API là cm và radian) |
-| `DECLARE_VARIABLE kiểu tên [giá trị]` | Giữ nguyên | |
-| `REFERENCE` / `DECLARE_REFERENCE tên` | Giữ, nhưng trỏ tới đối tượng Inventor | Feature, body, face, edge, occurrence, work plane, parameter (xem mục 6) |
-| `ARRAY` (`ADD_ARRAY_ELEM`, `GET_ARRAY_SIZE`, `CLEAR_ARRAY`) | Giữ nguyên | Danh sách .NET. Cần cho danh sách sứ, danh sách điểm đường ống |
-| `MAP` (`DECLARE_MAP`, `.key`, `.value`) | Giữ nguyên | Từ điển, dùng cho bảng tra |
-| `STRUCT` (`POINT`, `VECTOR`, `PDF_OPTION`) | Giữ `POINT`, `VECTOR`; đổi `PDF_OPTION` thành `EXPORT_OPTION` | Ánh xạ sang điểm, vector của Inventor và `NameValueMap` cho tùy chọn translator |
-| `STOPWATCH` | Giữ nguyên | Đo thời gian từng bước, đưa vào nhật ký job |
+| `STRING`, `INTEGER`, `DOUBLE`, `BOOL` | Keep | The matching .NET types |
+| (none) | **Add `LENGTH`, `ANGLE`** (numbers with units) | Static unit checking (decision D4); avoids mixing up mm and cm (the internal unit of the API is cm and radians) |
+| `DECLARE_VARIABLE type name [value]` | Keep | |
+| `REFERENCE` / `DECLARE_REFERENCE name` | Keep, but pointing to an Inventor object | Feature, body, face, edge, occurrence, work plane, parameter (see section 6) |
+| `ARRAY` (`ADD_ARRAY_ELEM`, `GET_ARRAY_SIZE`, `CLEAR_ARRAY`) | Keep | A .NET list. Needed for the list of bushings, the list of pipe points |
+| `MAP` (`DECLARE_MAP`, `.key`, `.value`) | Keep | A dictionary, used for lookup tables |
+| `STRUCT` (`POINT`, `VECTOR`, `PDF_OPTION`) | Keep `POINT`, `VECTOR`; rename `PDF_OPTION` to `EXPORT_OPTION` | Maps to the Inventor point and vector, and `NameValueMap` for translator options |
+| `STOPWATCH` | Keep | Times each step, goes into the job log |
 
 ---
 
-## 5. Luồng điều khiển
+## 5. Control flow
 
-| SmartAssembly | Đề xuất | Ghi chú |
+| SmartAssembly | Suggestion | Note |
 |---------------|---------|---------|
-| `IF / ELSE_IF / ELSE / END_IF` | Giữ nguyên | |
-| `AND OR NOT == <> < <=` (và `>`, `>=`) | Giữ nguyên, thêm `>` và `>=` nếu thiếu | So sánh số có đơn vị phải cùng đơn vị hoặc đổi được |
-| `FOR x REF ARRAY / REF MAP ... END_FOR` | Giữ nguyên | |
-| `WHILE ... END_WHILE`, `BREAK`, `CONTINUE`, `i++`, `i--` | Giữ nguyên | Thêm **giới hạn số vòng lặp tối đa** để job không chạy vô hạn |
-| `RETURN` | Giữ nguyên | Kết thúc sớm, job vẫn thành công nếu chưa có lỗi |
-| Hàm tiện ích (đổi chuỗi và số, trị tuyệt đối, tìm chuỗi con) | Giữ, thêm `MIN`, `MAX`, `ROUND`, `SQRT`, `ABS` | Dùng trong biểu thức |
-| Không xóa phần tử khi đang duyệt mảng | **Chặn bằng trình thông dịch**: duyệt trên bản sao hoặc báo lỗi rõ ràng | Hệ thống tự xử lý, không để người viết gặp lỗi khó hiểu |
+| `IF / ELSE_IF / ELSE / END_IF` | Keep | |
+| `AND OR NOT == <> < <=` (and `>`, `>=`) | Keep, add `>` and `>=` if missing | Comparing numbers with units must use the same unit or one that can be converted |
+| `FOR x REF ARRAY / REF MAP ... END_FOR` | Keep | |
+| `WHILE ... END_WHILE`, `BREAK`, `CONTINUE`, `i++`, `i--` | Keep | Add a **maximum iteration limit** so a job does not run forever |
+| `RETURN` | Keep | Finishes early, the job still succeeds if there was no error |
+| Helper functions (converting strings and numbers, absolute value, finding a substring) | Keep, add `MIN`, `MAX`, `ROUND`, `SQRT`, `ABS` | Used in expressions |
+| Do not delete elements while iterating an array | **Blocked by the interpreter**: iterate over a copy or report a clear error | The system handles it itself, so the author does not hit confusing errors |
 
 ---
 
-## 6. Mô hình tham chiếu (phần khó nhất)
+## 6. The reference model (the hardest part)
 
-| SmartAssembly | Tương đương trong Inventor | Đề xuất |
+| SmartAssembly | Equivalent in Inventor | Suggestion |
 |---------------|-----------------------------|---------|
-| `SEARCH_MDL_REF` | Tìm một đối tượng trong model | Giữ tên. Tìm theo **loại** (body, feature, face, edge, work plane, occurrence), **tên có ký tự đại diện**, hoặc **thuộc tính gắn** |
-| `SEARCH_MDL_REFS` | Tìm nhiều đối tượng vào mảng | Giữ tên |
-| `SET_FEAT_PARAM`, `SET_REF_PARAM` (gắn tham số lên feature hoặc cạnh để tìm lại) | **AttributeSets** gắn lên feature, face, edge, body (lưu trong file, còn sau khi mở lại) | Giữ ý tưởng, đổi tên thành `SET_REF_ATTR`; tìm bằng `SEARCH_MDL_REFS ... ATTR` |
-| `REF_VALID`, `REF_EQUAL`, `IS_FAILED`, `PARAM_VALID` | Kiểm tra đối tượng còn hợp lệ, so sánh hai đối tượng, kiểm tra lệnh vừa chạy có lỗi | Giữ tên |
-| `INVALIDATE_REF` rồi tìm lại sau regenerate | Đối tượng có thể hết hiệu lực sau khi model cập nhật | **Tự động hóa**: lưu tham chiếu dạng khóa bền (reference key của Inventor) hoặc theo thuộc tính, tự gắn lại khi dùng; vẫn giữ `INVALIDATE_REF` cho ai muốn tự làm |
-| `COPY_REF`, `SET_REF_NAME` (ký tự `*` để tạo tên duy nhất), `GET_REF_NAME` | Đổi tên feature, body, occurrence | Giữ tên và quy tắc `*` |
+| `SEARCH_MDL_REF` | Finds one object in the model | Keep the name. Search by **kind** (body, feature, face, edge, work plane, occurrence), a **name with wildcards**, or an **attached attribute** |
+| `SEARCH_MDL_REFS` | Finds many objects into an array | Keep the name |
+| `SET_FEAT_PARAM`, `SET_REF_PARAM` (attach a parameter to a feature or edge to find it again) | **AttributeSets** attached to a feature, face, edge, body (stored in the file, still there after reopening) | Keep the idea, rename to `SET_REF_ATTR`; find with `SEARCH_MDL_REFS ... ATTR` |
+| `REF_VALID`, `REF_EQUAL`, `IS_FAILED`, `PARAM_VALID` | Check that an object is still valid, compare two objects, check whether the last statement failed | Keep the names |
+| `INVALIDATE_REF` then search again after a regenerate | An object may become invalid after the model updates | **Automate it**: store the reference as a durable key (the Inventor reference key) or by attribute, and re-bind it on use; still keep `INVALIDATE_REF` for anyone who wants to do it by hand |
+| `COPY_REF`, `SET_REF_NAME` (the `*` character makes a unique name), `GET_REF_NAME` | Rename a feature, body, occurrence | Keep the names and the `*` rule |
 
-Ghi chú:
-- Tên chính xác của các thành phần API (reference key, attribute sets) cần kiểm tra lại với tài liệu Inventor 2027 khi làm.
-- **Tự phục hồi tham chiếu** là cải tiến lớn so với SmartAssembly, vì bảng của bạn nêu đây là nhóm lỗi thường gặp nhất. Đổi lại, nó thêm công việc cho trình thông dịch và có thể chậm hơn; có thể làm sau Cấp 2.
-- Nên **gắn nhãn bằng thuộc tính ngay khi tạo** (vai trò: `TANK`, `COVER`, `BUSHING_1`...) thay vì tìm theo tên dễ đổi.
+Notes:
+- The exact names of the API parts (reference key, attribute sets) must be checked again against the Inventor 2027 documentation when doing the work.
+- **Automatic reference recovery** is a big improvement over SmartAssembly, because your table says this is the most common error group. In return it adds work for the interpreter and may be slower; it can be done after Level 2.
+- Prefer **labeling with attributes right at creation** (a role: `TANK`, `COVER`, `BUSHING_1`...) instead of searching by a name that is easily changed.
 
 ---
 
-## 7. Dựng model: tương đương của UDF
+## 7. Building the model: the equivalent of a UDF
 
-SmartAssembly không vẽ từng feature mà gọi UDF có sẵn, truyền tham chiếu vào, lấy tham chiếu ra. Tương đương trong Inventor:
+SmartAssembly does not draw each feature but calls a ready-made UDF, passing references in and getting references out. The equivalents in Inventor:
 
-| Cách | Mô tả | Ưu | Nhược | Dùng khi |
+| Approach | Description | Pros | Cons | Use when |
 |------|-------|-----|-------|----------|
-| **iFeature** | Feature đóng gói, dùng lại (gần UDF nhất) | Kỹ sư tự soạn bằng giao diện Inventor, không cần code | Khó kiểm thử tự động, quản lý phiên bản tệp | Chi tiết nhỏ lặp lại (lỗ, gân, rãnh) |
-| **iPart / iAssembly** | Họ chi tiết hoặc cụm theo bảng thông số | Có sẵn bảng biến thể | Số biến thể cố định theo bảng | Họ sứ xuyên, van, mặt bích theo cấp điện áp |
-| **Part hoặc assembly mẫu có Parameter** | File mẫu, chèn rồi gán Parameter | Đơn giản, trực quan | Mỗi biến thể là một lần cập nhật file | Các thành phần lớn (bộ làm mát, bình dầu) |
-| **Hàm dựng C# (builder)** | Mã dựng sketch, feature, assembly, gọi từ script | Kiểm thử và quản lý phiên bản tốt, không phụ thuộc file | Phải viết code cho từng thành phần | Thùng, nắp, chi tiết hình học đơn giản (Cấp 1-2); bắt đầu bằng cách này |
+| **iFeature** | A packaged, reusable feature (the closest to a UDF) | Engineers author it themselves in the Inventor UI, no code | Hard to test automatically, file version management | Small repeated details (holes, ribs, slots) |
+| **iPart / iAssembly** | A family of parts or assemblies by a parameter table | A variant table is ready-made | The number of variants is fixed by the table | Families of bushings, valves, flanges by voltage class |
+| **A sample part or assembly with Parameters** | A template file, inserted then given Parameters | Simple, visual | Each variant is one file update | Large components (cooler, oil tank) |
+| **A C# build function (builder)** | Code that builds sketches, features, assemblies, called from the script | Good testing and version management, independent of files | Code must be written for each component | Tank, cover, simple geometric parts (Levels 1-2); start with this |
 
-Đề xuất lệnh:
+Suggested statements:
 
-| SmartAssembly | Đề xuất | Ý nghĩa |
+| SmartAssembly | Suggestion | Meaning |
 |---------------|---------|---------|
-| `CREATE_UDF <đường dẫn> <model> [tùy chọn] <nhóm> ... END_CREATE_UDF` | `CREATE_FEATURE <nguồn> ... END_CREATE_FEATURE` (nguồn có thể là `lib:` iFeature, hoặc `builder:` hàm C#) | Tạo feature hoặc body |
-| `UDF_REF "tên" <ref>` | `FEATURE_IN "tên" <ref>` | Truyền tham chiếu đầu vào |
-| `UDF_EXP_REF <biến> FEATURE <chỉ số>` | `FEATURE_OUT <biến> "tên"` | Lấy tham chiếu đầu ra (theo **tên**, không theo chỉ số, để ít vỡ khi thư viện đổi) |
-| `UNGROUP_FEATURES` | Không cần | Builder và iFeature trả về đối tượng đã có tên |
-| `SET_REF_NAME` | Giữ | Đặt tên |
-| `GET_FEATURE_DIMS`, `GET_DIM_VALUE`, `SET_DIM_VALUE`, `SET_DIM_SYMBOL` | `GET_PARAM`, `SET_PARAM` (theo **tên Parameter**), `SET_PARAM_EXPR` | Dùng ModelParameters và UserParameters; điều khiển theo tên có đơn vị, không theo chỉ số kích thước |
-| `ASSEMBLE` với ràng buộc | `ADD_COMPONENT <nguồn> <biến>` rồi khối `ASSEMBLE ... END_ASSEMBLE` với `MATE`, `FLUSH`, `INSERT`, `ANGLE` | Chèn occurrence và gán constraint |
-| `REGEN_MDL` | `REGEN_MDL` | Cập nhật model (gọi lệnh cập nhật của document) |
+| `CREATE_UDF <path> <model> [options] <group> ... END_CREATE_UDF` | `CREATE_FEATURE <source> ... END_CREATE_FEATURE` (the source can be `lib:` an iFeature, or `builder:` a C# function) | Creates a feature or body |
+| `UDF_REF "name" <ref>` | `FEATURE_IN "name" <ref>` | Passes an input reference |
+| `UDF_EXP_REF <variable> FEATURE <index>` | `FEATURE_OUT <variable> "name"` | Gets an output reference (by **name**, not by index, so it breaks less when the library changes) |
+| `UNGROUP_FEATURES` | Not needed | Builders and iFeatures return objects that already have names |
+| `SET_REF_NAME` | Keep | Sets the name |
+| `GET_FEATURE_DIMS`, `GET_DIM_VALUE`, `SET_DIM_VALUE`, `SET_DIM_SYMBOL` | `GET_PARAM`, `SET_PARAM` (by **Parameter name**), `SET_PARAM_EXPR` | Uses ModelParameters and UserParameters; control by a name with a unit, not by a dimension index |
+| `ASSEMBLE` with constraints | `ADD_COMPONENT <source> <variable>` then a block `ASSEMBLE ... END_ASSEMBLE` with `MATE`, `FLUSH`, `INSERT`, `ANGLE` | Inserts an occurrence and assigns constraints |
+| `REGEN_MDL` | `REGEN_MDL` | Updates the model (calls the document update command) |
 
-**Kế hoạch xây thư viện** (nếu không có thư viện thì ngôn ngữ không có gì để điều phối):
-- Cấp 1-2: hàm dựng C# cho thùng, nắp, gân, nắp kiểm tra (đã có thiết kế ở add-in).
-- Cấp 3: họ sứ xuyên bằng iPart hoặc builder tham số hóa.
-- Cấp 4-5: ống, van, bộ làm mát bằng assembly mẫu và builder cho đường ống.
-- Mỗi thành phần có **tên, phiên bản, danh sách thông số vào và đối tượng ra** được ghi lại, và ghi phiên bản vào mỗi job.
+**Plan to build the library** (without a library the language has nothing to orchestrate):
+- Levels 1-2: C# build functions for the tank, cover, ribs, inspection cover (already designed in the add-in).
+- Level 3: the bushing family as an iPart or a parametric builder.
+- Levels 4-5: pipes, valves, cooler as sample assemblies and a builder for the pipe route.
+- Each component has a **name, version, list of input parameters and output objects** recorded, and the version is written into each job.
 
 ---
 
-## 8. Khối GUI sang form web
+## 8. From the GUI block to a web form
 
-| SmartAssembly | Form web | Ghi chú |
+| SmartAssembly | Web form | Note |
 |---------------|----------|---------|
-| `CHECKBOX_PARAM` | Ô đánh dấu | Cờ "done" để chia nhiều giai đoạn tương ứng với **form nhiều bước (wizard)** |
-| `RADIOBUTTON_PARAM` | Nhóm nút chọn một (hoặc hộp chọn) | |
-| `USER_INPUT_PARAM` (`REQUIRED`, `TOOLTIP`) | Ô nhập số hoặc chữ, bắt buộc, gợi ý | Thêm đơn vị, `MIN`, `MAX`, mặc định |
-| `USER_SELECT`, `USER_SELECT_MULTIPLE` (chọn cạnh, mặt, feature trong model) | **Không hỗ trợ trên web đặt hàng.** Thay bằng: chọn theo **tên hoặc vai trò** từ danh sách có sẵn; hoặc chỉ cho phép ở **chế độ tương tác trong add-in** (dùng chọn đối tượng của Inventor) | Là chỗ khác biệt lớn nhất với SmartAssembly |
-| `MESSAGE_BOX`, `MESSAGE_BOX_EX` | Trên web: thông báo hoặc hộp xác nhận trong form. Trên worker: **ghi nhật ký job**; bản hỏi sẽ lấy **giá trị mặc định** đã khai báo, không chờ | Phải khai báo giá trị mặc định cho mọi hộp hỏi để job không bị treo |
-| `PROCESSING_BOX_START/SET_STATE/END` | **Tiến trình job** (các bước hiện trên trang job như trong video: đang dựng assembly...) | Đặt tên bước để hiển thị |
-| `IF` trong khối GUI (hiện hoặc ẩn ô) | Hiện hoặc ẩn ô trên web | |
-| (thêm) | `ASSERT <điều kiện> "thông báo"` | Luật kiểm tra giá trị, thông báo hiện trên web và dừng gửi đơn nếu sai (thay cho kiểu "IF rồi MESSAGE_BOX rồi RETURN") |
-| (thêm) | `OPTIONS`, `LOOKUP bảng` | Danh sách lựa chọn lấy từ bảng catalog, kèm quan hệ giữa lựa chọn (công suất và cấp điện áp hợp lệ) |
+| `CHECKBOX_PARAM` | A checkbox | The "done" flag used to split into several phases corresponds to a **multi-step form (wizard)** |
+| `RADIOBUTTON_PARAM` | A group of single-choice buttons (or a choice box) | |
+| `USER_INPUT_PARAM` (`REQUIRED`, `TOOLTIP`) | A number or text input, required, with a hint | Add the unit, `MIN`, `MAX`, default |
+| `USER_SELECT`, `USER_SELECT_MULTIPLE` (pick edges, faces, features in the model) | **Not supported on the order web.** Replace with: choose by **name or role** from a ready list; or allow it only in the **interactive mode in the add-in** (using the Inventor object picker) | The biggest difference from SmartAssembly |
+| `MESSAGE_BOX`, `MESSAGE_BOX_EX` | On the web: a notice or a confirmation box in the form. On the worker: **write to the job log**; a question box takes the declared **default value** and does not wait | A default value must be declared for every question box so a job does not hang |
+| `PROCESSING_BOX_START/SET_STATE/END` | **Job progress** (steps shown on the job page like in the video: building the assembly...) | Name the steps for display |
+| `IF` in the GUI block (show or hide a field) | Show or hide a field on the web | |
+| (added) | `ASSERT <condition> "message"` | A value-checking rule, the message shows on the web and submitting stops if false (replacing the "IF then MESSAGE_BOX then RETURN" style) |
+| (added) | `OPTIONS`, `LOOKUP table` | A choice list taken from a catalog table, with relations between choices (valid ratings and voltage classes) |
 
-**Khi nào khối FORM được tính lại?** Bảng của bạn ghi đây chỉ là suy luận từ mẫu code. Vì đây là ngôn ngữ của bạn nên **tự định nghĩa**: khối FORM là **một hàm thuần được chạy lại mỗi khi bất kỳ giá trị nào đổi** (server hoặc WebAssembly). Mỗi lần chạy trả về: các ô hiện, các ô ẩn, giá trị hợp lệ, danh sách lỗi `ASSERT`, giá sơ bộ. Cách này cho hành vi dự đoán được và khớp với trải nghiệm trên web.
+**When is the FORM block recomputed?** Your table notes that this is only an inference from sample code. Since this is your language, **define it yourself**: the FORM block is **a pure function that runs again whenever any value changes** (server or WebAssembly). Each run returns: the fields shown, the fields hidden, the valid values, the list of `ASSERT` errors, a rough price. This gives predictable behavior that matches the web experience.
 
 ---
 
-## 9. Mô-đun hóa và đường dẫn
+## 9. Modularization and paths
 
-| SmartAssembly | Đề xuất |
+| SmartAssembly | Suggestion |
 |---------------|---------|
-| `INCLUDE lib:Ten_File.tab` | Giữ lệnh `INCLUDE lib:Ten_File` (đã làm: `Scripts/lib/<tên>.gea`, xem `gea-language-spec.md` mục 20) |
-| Tiền tố `lib:` phân giải qua cấu hình (`SA_Paths.txt`), không dùng đường dẫn cứng | Phân giải theo **kho thư viện của phiên bản sản phẩm** (cấu hình trên server, mỗi worker có bản sao đồng bộ); cấm đường dẫn cứng |
-| Module dùng chung biến của file cha (phạm vi không cô lập) | **Đã chốt (D6): dùng chung biến** như SmartAssembly. Trùng tên khai báo là lỗi `GEA2003`; thư viện có `PARAM_PREFIX` riêng được thêm vào tiền tố hợp lệ của script cha |
+| `INCLUDE lib:File_Name.tab` | Keep the statement `INCLUDE lib:File_Name` (done: `Scripts/lib/<name>.gea`, see `gea-language-spec.md` section 20) |
+| The `lib:` prefix is resolved through configuration (`SA_Paths.txt`), no hard-coded paths | Resolved by the **library store of the product version** (configured on the server, each worker has a synchronized copy); hard-coded paths are banned |
+| A module shares the variables of the parent file (scope not isolated) | **Settled (D6): share variables** like SmartAssembly. A duplicate declaration is error `GEA2003`; a library with its own `PARAM_PREFIX` has it added to the valid prefixes of the parent script |
 
 ---
 
-## 10. Xử lý lỗi và gỡ lỗi
+## 10. Error handling and debugging
 
-| SmartAssembly | Đề xuất |
+| SmartAssembly | Suggestion |
 |---------------|---------|
-| `BEGIN_CATCH_ERROR ... END_CATCH_ERROR`, cờ `ERROR`, `CLEAR_CATCH_ERROR` | Giữ lệnh. Cải tiến: **khi vào khối catch thì cờ tự xóa**, tránh dương tính giả; ngoại lệ từ Inventor (COM) được chuyển thành cờ `ERROR` kèm nội dung |
-| `FIX_FAIL_UDF` | `FIX_FAIL_FEATURE` (thử sửa feature lỗi), dùng sau, chưa cần ở Cấp 1 |
-| Mẫu "thử UDF trái, lỗi thì thử UDF phải" | Giữ, dùng khối catch |
-| Trail file Creo (đường dẫn file, số dòng, thông báo) | **Nhật ký job**: tên file script, **dòng, cột**, lệnh, thông báo, thời gian; lưu theo job và hiện trên web |
-| Tô sáng độ phủ dòng đã chạy (extension VS Code, `DEBUG_TAB_PERFORMANCE`) | Trình thông dịch ghi **vết thực thi** (dòng nào đã chạy); trang job và Product Studio tô sáng dòng đã chạy |
-| (thêm) | `PRINT`, mức nhật ký (info, cảnh báo, lỗi), `STOPWATCH` cho từng bước |
+| `BEGIN_CATCH_ERROR ... END_CATCH_ERROR`, the `ERROR` flag, `CLEAR_CATCH_ERROR` | Keep the statements. Improvement: **entering a catch block clears the flag automatically**, avoiding false positives; an exception from Inventor (COM) is turned into the `ERROR` flag with its text |
+| `FIX_FAIL_UDF` | `FIX_FAIL_FEATURE` (try to repair a failed feature), used later, not needed at Level 1 |
+| The pattern "try the left UDF, on error try the right UDF" | Keep, use the catch block |
+| The Creo trail file (file path, line number, message) | **Job log**: script file name, **line, column**, statement, message, time; stored per job and shown on the web |
+| Highlighting the coverage of lines that ran (VS Code extension, `DEBUG_TAB_PERFORMANCE`) | The interpreter records an **execution trace** (which lines ran); the job page and Product Studio highlight the lines that ran |
+| (added) | `PRINT`, log levels (info, warning, error), `STOPWATCH` for each step |
 
 ---
 
-## 11. Tích hợp ra ngoài
+## 11. External integration
 
-| SmartAssembly | Đề xuất cho hệ thống này | Ghi chú |
+| SmartAssembly | Suggestion for this system | Note |
 |---------------|--------------------------|---------|
-| `EXCEL_*` (mở, đọc, ghi, đóng, `EXCEL_DISCONNECT`) | Đọc và ghi **file xlsx bằng thư viện** (không điều khiển ứng dụng Excel); lệnh `TABLE_LOAD`, `TABLE_GET`, `TABLE_SET` | Không để lại tiến trình Excel, không cần cài Excel trên worker |
-| `JSON_LOAD_DOCUMENT`, `JSON_GET_VALUE`, `JSON_SET_VALUE` | Giữ | Dùng cho đầu vào của đơn và trao đổi với API |
-| `READ_FEATURE_XML`, `MODIFY_FEATURE_XML` | Không cần | Đặc thù Creo |
-| Bản vẽ: `CREATE_DRW_VIEW_GENERAL`, `CREATE_DRW_NOTE`, `SET_DRW_*`, `EXPORT_DRW_PDF` | `DRW_NEW`, `DRW_ADD_VIEW`, `DRW_ADD_SECTION`, `DRW_ADD_BALLOONS`, `DRW_ADD_PARTSLIST`, `DRW_ADD_NOTE`, `DRW_SET_*`, `EXPORT_PDF`, `EXPORT_STEP`, `EXPORT_IMAGE` | Ánh xạ sang các thành phần của tài liệu bản vẽ Inventor và translator xuất PDF, STEP. Đây là phần dễ vỡ nhất (xem rủi ro) |
-| `FILE_OPEN/READ_LINE/WRITE_LINE/CLOSE`, `DELETE_FILE`, `WAIT_FOR_FILE` | Giữ nhưng chỉ cho phép trong **thư mục làm việc của job** | Chặn ghi ra ngoài thư mục job |
-| Chạy `.exe`, VB, Java, C++, macro Excel, PowerShell qua COM | **Mặc định cấm** | Script nằm trên worker có quyền cao; chỉ bật cho script tin cậy, có danh sách cho phép |
+| `EXCEL_*` (open, read, write, close, `EXCEL_DISCONNECT`) | Read and write **xlsx files with a library** (not driving the Excel application); the statements `TABLE_LOAD`, `TABLE_GET`, `TABLE_SET` | No Excel process left behind, no need to install Excel on the worker |
+| `JSON_LOAD_DOCUMENT`, `JSON_GET_VALUE`, `JSON_SET_VALUE` | Keep | Used for the input of the order and exchange with the API |
+| `READ_FEATURE_XML`, `MODIFY_FEATURE_XML` | Not needed | Specific to Creo |
+| Drawings: `CREATE_DRW_VIEW_GENERAL`, `CREATE_DRW_NOTE`, `SET_DRW_*`, `EXPORT_DRW_PDF` | `DRW_NEW`, `DRW_ADD_VIEW`, `DRW_ADD_SECTION`, `DRW_ADD_BALLOONS`, `DRW_ADD_PARTSLIST`, `DRW_ADD_NOTE`, `DRW_SET_*`, `EXPORT_PDF`, `EXPORT_STEP`, `EXPORT_IMAGE` | Maps to the parts of an Inventor drawing document and the PDF and STEP export translators. This is the most fragile part (see risks) |
+| `FILE_OPEN/READ_LINE/WRITE_LINE/CLOSE`, `DELETE_FILE`, `WAIT_FOR_FILE` | Keep but allow only in the **working folder of the job** | Block writing outside the job folder |
+| Running `.exe`, VB, Java, C++, Excel macros, PowerShell through COM | **Banned by default** | A script on the worker has high privileges; enable only for trusted scripts, with an allow list |
 
-**Về an toàn:** vì script chạy trên máy worker có quyền lớn, nguyên tắc là **người đặt hàng chỉ cung cấp giá trị, không cung cấp script**. Script chỉ do người soạn sản phẩm đã đăng nhập và có quyền xuất bản. Phiên bản đã xuất bản không sửa được.
+**On safety:** because a script runs on a worker machine with high privileges, the principle is that **the person ordering only supplies values, not a script**. Scripts come only from the product author who is logged in and has the right to publish. A published version cannot be edited.
 
-> **Cập nhật:** quyết định R1 trong `r2-dashboard-gea-roundtrip-plan.md` cho phép người đặt hàng import `.gea` và chạy chính script đó. Nguyên tắc trên được nới có điều kiện: script phải qua `GeaChecker`, giới hạn kích thước và số bước, chỉ ghi trong thư mục job, và job được đánh dấu `ScriptSource = "imported"`. Khi có đăng nhập, nên giới hạn import script theo vai trò (xem mục 6.3 của doc đó).
+> **Update:** decision R1 in `r2-dashboard-gea-roundtrip-plan.md` lets the person ordering import a `.gea` and run that very script. The principle above is relaxed with conditions: the script must pass `GeaChecker`, size and step limits apply, it may only write inside the job folder, and the job is marked `ScriptSource = "imported"`. Once there is login, importing scripts should be limited by role (see section 6.3 of that doc).
 
 ---
 
-## 12. Phân tích hình học
+## 12. Geometry analysis
 
-| SmartAssembly | Tương đương Inventor | Ưu tiên |
+| SmartAssembly | Inventor equivalent | Priority |
 |---------------|----------------------|---------|
-| `GET_SURFACE_NORM` | Lấy pháp tuyến mặt từ bộ tính của face | Thấp (Cấp 4 trở đi) |
-| `VECTOR_NORMALIZE`, `VECTOR_FROM_POINTS` | Phép tính vector | Thấp |
-| `MEASURE_DISTANCE` | Đo khoảng cách nhỏ nhất giữa hai đối tượng | Thấp |
-| `GET_SURFACE_CONTOUR` | Đường bao của mặt (các vòng cạnh) | Thấp |
-| `GET_REF_VERTEX`, `GET_REF_POS` | Đỉnh đầu, đỉnh cuối cạnh, vị trí | Thấp |
+| `GET_SURFACE_NORM` | Gets the face normal from the face evaluator | Low (Level 4 onward) |
+| `VECTOR_NORMALIZE`, `VECTOR_FROM_POINTS` | Vector arithmetic | Low |
+| `MEASURE_DISTANCE` | Measures the minimum distance between two objects | Low |
+| `GET_SURFACE_CONTOUR` | The outline of a face (the edge loops) | Low |
+| `GET_REF_VERTEX`, `GET_REF_POS` | The start and end vertex of an edge, the position | Low |
 
-Với các cấp đầu (Part, thùng và nắp) **hầu như không cần** nhóm này, vì kích thước đến từ thông số, không đến từ phân tích mặt cạnh. Cần khi đặt ống theo mặt, tìm hai mặt đối nhau để đặt mối nối. Tên API cụ thể kiểm tra khi làm.
+For the first levels (a Part, tank and cover) this group is **hardly needed**, because the dimensions come from parameters, not from analyzing faces and edges. It is needed when placing pipes by face, finding two opposite faces to place a joint. The specific API names are checked when doing the work.
 
 ---
 
-## 13. Bảng nhóm lệnh tổng hợp và mức ưu tiên
+## 13. Summary of statement groups and priority
 
-Ưu tiên theo các cấp của đối tượng (mục 5d của `inventor-addin-plan.md`): **P0** cần cho Cấp 1 (thùng và nắp), **P1** Cấp 2, **P2** Cấp 3-4 (sứ, ống, assembly), **P3** Cấp 5 và mở rộng.
+Priority follows the levels of the object (section 5d of `inventor-addin-plan.md`): **P0** needed for Level 1 (tank and cover), **P1** Level 2, **P2** Levels 3-4 (bushings, pipes, assembly), **P3** Level 5 and extensions.
 
-| Nhóm | Lệnh | Ưu tiên |
+| Group | Statements | Priority |
 |------|------|---------|
-| Khai báo | `DECLARE_VARIABLE`, `DECLARE_REFERENCE`, `DECLARE_ARRAY`, `DECLARE_MAP`, `DECLARE_STRUCT` | P0 (biến), P1 (mảng), P2 (map, struct) |
-| Luồng | `IF`, `FOR`, `WHILE`, `BREAK`, `CONTINUE`, `RETURN` | P0 |
-| Biểu thức | Số học, so sánh, `MIN/MAX/ABS/ROUND`, đơn vị | P0 |
-| Thông số | `SET_PARAM`, `GET_PARAM`, `SET_PARAM_EXPR` | P0 |
-| Dựng | `CREATE_FEATURE` (builder), `SET_REF_NAME`, `REGEN_MDL` | P0 |
-| Gắn nhãn | `SET_REF_ATTR` | P0 |
-| Tìm | `SEARCH_MDL_REF`, `SEARCH_MDL_REFS`, `REF_VALID`, `INVALIDATE_REF` | P1 (theo tên, thuộc tính), P2 (theo mặt, cạnh) |
-| Lỗi | `BEGIN_CATCH_ERROR`, `CLEAR_CATCH_ERROR`, `ERROR` | P0 |
-| Giao diện | `USER_INPUT_PARAM`, `CHECKBOX_PARAM`, `RADIOBUTTON_PARAM`, `ASSERT`, `IF` trong FORM | P0 |
-| Tiến trình | `PROCESSING_BOX_*` (thành bước job), `PRINT` | P0 |
-| Thông báo | `MESSAGE_BOX*` | P1 |
-| Chọn trong model | `USER_SELECT*` (chỉ chế độ tương tác) | P3 |
-| Lắp ráp | `ADD_COMPONENT`, `ASSEMBLE` (`MATE`, `FLUSH`, `INSERT`, `ANGLE`) | P2 |
-| Bảng, dữ liệu | `TABLE_*`, `JSON_*`, `LOOKUP` | P1 (catalog, giá), P2 |
-| Bản vẽ, xuất file | `DRW_*`, `EXPORT_PDF`, `EXPORT_STEP`, `EXPORT_IMAGE` | P2 (ảnh, STEP), P2 (bản vẽ) |
-| Hình học | `GET_SURFACE_NORM`, `MEASURE_DISTANCE`... | P3 |
+| Declarations | `DECLARE_VARIABLE`, `DECLARE_REFERENCE`, `DECLARE_ARRAY`, `DECLARE_MAP`, `DECLARE_STRUCT` | P0 (variables), P1 (arrays), P2 (map, struct) |
+| Flow | `IF`, `FOR`, `WHILE`, `BREAK`, `CONTINUE`, `RETURN` | P0 |
+| Expressions | Arithmetic, comparison, `MIN/MAX/ABS/ROUND`, units | P0 |
+| Parameters | `SET_PARAM`, `GET_PARAM`, `SET_PARAM_EXPR` | P0 |
+| Building | `CREATE_FEATURE` (builder), `SET_REF_NAME`, `REGEN_MDL` | P0 |
+| Labeling | `SET_REF_ATTR` | P0 |
+| Searching | `SEARCH_MDL_REF`, `SEARCH_MDL_REFS`, `REF_VALID`, `INVALIDATE_REF` | P1 (by name, attribute), P2 (by face, edge) |
+| Errors | `BEGIN_CATCH_ERROR`, `CLEAR_CATCH_ERROR`, `ERROR` | P0 |
+| Interface | `USER_INPUT_PARAM`, `CHECKBOX_PARAM`, `RADIOBUTTON_PARAM`, `ASSERT`, `IF` in FORM | P0 |
+| Progress | `PROCESSING_BOX_*` (becoming job steps), `PRINT` | P0 |
+| Messages | `MESSAGE_BOX*` | P1 |
+| Picking in the model | `USER_SELECT*` (interactive mode only) | P3 |
+| Assembly | `ADD_COMPONENT`, `ASSEMBLE` (`MATE`, `FLUSH`, `INSERT`, `ANGLE`) | P2 |
+| Tables, data | `TABLE_*`, `JSON_*`, `LOOKUP` | P1 (catalog, price), P2 |
+| Drawings, file export | `DRW_*`, `EXPORT_PDF`, `EXPORT_STEP`, `EXPORT_IMAGE` | P2 (image, STEP), P2 (drawing) |
+| Geometry | `GET_SURFACE_NORM`, `MEASURE_DISTANCE`... | P3 |
 | Module | `INCLUDE` | P1 |
-| Tiện ích | `STOPWATCH`, `FILE_*` (trong thư mục job) | P2 |
+| Utilities | `STOPWATCH`, `FILE_*` (inside the job folder) | P2 |
 
 ---
 
-## 14. Kiến trúc thông dịch
+## 14. Interpreter architecture
 
-Khác với kế hoạch trước (tạo "kế hoạch dựng" trừu tượng rồi mới thực thi), ngôn ngữ kiểu SmartAssembly là **mệnh lệnh**: từng dòng chạy và có thể phụ thuộc kết quả dòng trước (ví dụ tìm tham chiếu rồi mới dựng tiếp). Vì vậy:
+Unlike the earlier plan (create an abstract "build plan" and only then execute), a SmartAssembly-style language is **imperative**: each line runs and may depend on the result of the previous line (for example find a reference and only then keep building). Therefore:
 
-### 14.1. Đường ống
-1. **Lexer** theo dòng: nhận từ khóa viết hoa, hằng, định danh, ghi dòng và cột.
-2. **Parser** theo lệnh: mỗi lệnh có hình dạng tham số cố định (bảng lệnh khai báo số tham số, kiểu, tham số tùy chọn); khối lồng nhau (`IF/END_IF`, `FOR/END_FOR`, `CREATE_FEATURE/END_CREATE_FEATURE`).
-3. **Phân tích ngữ nghĩa**: tên chưa khai báo, kiểu và đơn vị, `END_*` thiếu, lệnh không cho phép trong khối đó (ví dụ lệnh dựng trong khối FORM).
-4. **Thông dịch (interpreter)** chạy cây lệnh và gọi **giao diện máy chủ (Host)** cho mọi việc đụng tới model.
+### 14.1. Pipeline
+1. A line-based **lexer**: recognizes upper-case keywords, constants, identifiers, records the line and column.
+2. A statement-based **parser**: each statement has a fixed parameter shape (a statement table declares the number of parameters, types, optional parameters); nested blocks (`IF/END_IF`, `FOR/END_FOR`, `CREATE_FEATURE/END_CREATE_FEATURE`).
+3. **Semantic analysis**: undeclared names, types and units, a missing `END_*`, a statement not allowed in that block (for example a build statement in the FORM block).
+4. The **interpreter** runs the statement tree and calls the **Host interface** for everything that touches the model.
 
-### 14.2. Giao diện Host và hai bộ thực thi
-| Bộ thực thi | Dùng ở đâu | Làm gì |
+### 14.2. The Host interface and the two executors
+| Executor | Used where | What it does |
 |-------------|-----------|--------|
-| **Inventor Host** | Worker (và add-in) | Gọi Inventor API thật: dựng, đặt Parameter, tìm tham chiếu, bản vẽ, xuất file |
-| **Mô phỏng Host (virtual model)** | Server và trình duyệt, test | Giữ một model **trong bộ nhớ**: Parameter, danh sách thành phần và vị trí, nhãn, cờ, BOM, giá, khối lượng ước tính; ghi lại **vết lệnh** |
+| **Inventor Host** | Worker (and add-in) | Calls the real Inventor API: build, set Parameters, find references, drawings, export files |
+| **Simulation Host (virtual model)** | Server and browser, tests | Keeps a model **in memory**: Parameters, the list of components and positions, labels, flags, BOM, price, estimated mass; records a **statement trace** |
 
-Mô phỏng Host chính là ý tưởng "mô hình chủ ảo": cho phép **chạy thử trên web mà không cần Inventor**, cho ra BOM, giá, danh sách lỗi `ASSERT`, xem trước sơ đồ (từ vết lệnh) và test tự động.
+The Simulation Host is the "virtual host model" idea: it allows a **dry run on the web without Inventor**, producing the BOM, price, the list of `ASSERT` errors, a diagram preview (from the statement trace) and automated tests.
 
-**Giới hạn cần nói rõ**: mô phỏng không thể tái tạo hình học thật. Các lệnh phụ thuộc mặt, cạnh (`SEARCH_MDL_REFS` theo mặt, đo khoảng cách) chỉ chạy được ở Inventor Host; ở mô phỏng chúng trả giá trị giả hoặc bị bỏ qua và **đánh dấu "không mô phỏng được"** trong kết quả chạy thử. Vì vậy chạy thử trên web bảo đảm phần **logic, luật, giá, BOM**, còn đúng sai hình học vẫn cần chạy thử trên worker.
+**A limit that must be stated clearly**: the simulation cannot recreate real geometry. Statements that depend on faces and edges (`SEARCH_MDL_REFS` by face, distance measurement) only run on the Inventor Host; in the simulation they return a fake value or are skipped and are **marked "cannot be simulated"** in the dry-run result. So the dry run on the web guarantees the **logic, rules, price, BOM**, while the geometric correctness still needs a dry run on a worker.
 
-### 14.3. Hệ quả cho kế hoạch DSL
-- Bước "kế hoạch dựng" ở mục 5c được thay bằng **giao diện Host và vết lệnh**. Phần còn lại của mục 5c (lexer, parser, ngữ nghĩa, đơn vị, thông báo lỗi có dòng cột, lộ trình D0-D5) vẫn dùng được.
-- Canvas xem trước trên web đọc **vết lệnh của mô phỏng Host**, giữ nguyên ý tưởng "cùng một định nghĩa cho form, kiểm tra và xem trước".
-- Adapter vẫn chỉ nhận một đối tượng `Inventor.Application` và là bên hiện thực **Inventor Host**.
+### 14.3. Consequences for the DSL plan
+- The "build plan" step in section 5c is replaced by the **Host interface and the statement trace**. The rest of section 5c (lexer, parser, semantics, units, error messages with line and column, the D0-D5 roadmap) can still be used.
+- The preview canvas on the web reads the **statement trace of the Simulation Host**, keeping the idea of "one definition for the form, the checks and the preview".
+- The Adapter still only receives an `Inventor.Application` object and is the party that implements the **Inventor Host**.
 
 ---
 
-## 15. Ví dụ minh họa cú pháp đề xuất
+## 15. An illustrative example of the proposed syntax
 
-Ví dụ này chỉ minh họa phong cách và cách ánh xạ, **chưa chốt tên lệnh**. Đối tượng là Cấp 1 (thùng và nắp).
+This example only illustrates the style and the mapping, **statement names are not settled**. The object is Level 1 (tank and cover).
 
 ```
 ! May bien ap - Cap 1: thung va nap
@@ -310,66 +310,66 @@ BEGIN_BUILD
 END_BUILD
 ```
 
-### Bảng ánh xạ từng dòng gõ
+### Line-by-line mapping table
 
-| Dòng người dùng gõ | Trình thông dịch hiểu | Inventor Host làm | Mô phỏng Host làm |
+| The line the user types | What the interpreter understands | What the Inventor Host does | What the Simulation Host does |
 |--------------------|-----------------------|--------------------|--------------------|
-| `USER_INPUT_PARAM ... LENGTH 100 mm MIN 40 MAX 500` | Khai báo thông số có đơn vị và giới hạn | Tạo User Parameter có tên, đơn vị mm | Thêm vào model ảo, kiểm tra khoảng giá trị |
-| `IF TR_HasManhole` trong FORM | Điều kiện hiện ô | (không chạy ở Inventor) | Tính lại khi giá trị đổi, hiện hoặc ẩn ô trên web |
-| `ASSERT ... "thông báo"` | Luật kiểm tra | Dừng job nếu sai | Trả danh sách lỗi cho form |
-| `DECLARE_REFERENCE tank` | Khai báo tham chiếu | Ô lưu đối tượng Inventor | Ô lưu tham chiếu ảo |
-| `CREATE_FEATURE builder:Tank ... END_CREATE_FEATURE` | Gọi hàm dựng với các đối số | Chạy hàm C# dựng body bằng Inventor API trong Transaction | Ghi vết "tạo thùng với các kích thước" và thêm khối ảo |
-| `FEATURE_OUT tank "Body"` | Lấy đối tượng ra theo tên | Gán body vừa tạo vào biến | Gán khối ảo |
-| `SET_REF_NAME tank "TR_Tank*"` | Đặt tên duy nhất | Đổi tên body, tự thêm hậu tố nếu trùng | Đặt tên ảo |
-| `SET_REF_ATTR tank "ROLE" "TANK"` | Gắn nhãn | Gắn AttributeSet lên body | Ghi nhãn |
-| `IF TR_HasManhole ... CREATE_FEATURE builder:Manhole` | Dựng có điều kiện | Chạy builder khi đúng | Ghi vết khi đúng |
-| `BEGIN_CATCH_ERROR ... END_CATCH_ERROR` | Bắt lỗi | Ngoại lệ COM đặt cờ `ERROR` | Cờ lỗi nếu builder ảo báo lỗi |
-| `PROCESSING_BOX_SET_STATE "..."` | Cập nhật tiến trình | Gửi bước lên server cho trang job | Ghi vào vết |
-| `REGEN_MDL` | Cập nhật model | Cập nhật document Inventor | Không làm gì (có thể tính lại khối lượng ước tính) |
-| `SET_APPEARANCE tank TR_Paint` | Đặt màu sơn | Gán Appearance cho body | Ghi vào vết để vẽ xem trước |
+| `USER_INPUT_PARAM ... LENGTH 100 mm MIN 40 MAX 500` | Declares a parameter with a unit and limits | Creates a User Parameter with a name, unit mm | Adds it to the virtual model, checks the value range |
+| `IF TR_HasManhole` in FORM | A field-visibility condition | (does not run in Inventor) | Recomputed when a value changes, shows or hides the field on the web |
+| `ASSERT ... "message"` | A validation rule | Stops the job if false | Returns the error list to the form |
+| `DECLARE_REFERENCE tank` | Declares a reference | A slot holding an Inventor object | A slot holding a virtual reference |
+| `CREATE_FEATURE builder:Tank ... END_CREATE_FEATURE` | Calls the build function with the arguments | Runs the C# function that builds the body with the Inventor API in a Transaction | Records a trace "create tank with these dimensions" and adds a virtual block |
+| `FEATURE_OUT tank "Body"` | Takes the output object by name | Assigns the body just created to the variable | Assigns the virtual block |
+| `SET_REF_NAME tank "TR_Tank*"` | Sets a unique name | Renames the body, adds a suffix automatically on a clash | Sets a virtual name |
+| `SET_REF_ATTR tank "ROLE" "TANK"` | Attaches a label | Attaches an AttributeSet to the body | Records the label |
+| `IF TR_HasManhole ... CREATE_FEATURE builder:Manhole` | A conditional build | Runs the builder when true | Records the trace when true |
+| `BEGIN_CATCH_ERROR ... END_CATCH_ERROR` | Catches errors | A COM exception sets the `ERROR` flag | An error flag if the virtual builder reports an error |
+| `PROCESSING_BOX_SET_STATE "..."` | Updates the progress | Sends the step to the server for the job page | Writes to the trace |
+| `REGEN_MDL` | Updates the model | Updates the Inventor document | Does nothing (may recompute the estimated mass) |
+| `SET_APPEARANCE tank TR_Paint` | Sets the paint color | Assigns an Appearance to the body | Writes to the trace to draw the preview |
 
 ---
 
-## 16. Các quyết định cần chốt (cập nhật D1-D8 ở mục 5c)
+## 16. Decisions to settle (updating D1-D8 in section 5c)
 
-| # | Quyết định | Đề xuất |
+| # | Decision | Suggestion |
 |---|-----------|---------|
-| D1 | Phong cách | **Đã chọn hướng:** mệnh lệnh theo dòng, từ khóa viết hoa, ba khối, kiểu SmartAssembly (thay cho phương án lai ở bản trước) |
-| D2 | Cú pháp bên ngoài | Văn bản riêng theo mục 3-5; đuôi file chọn sau |
-| D3 | Parser | Viết tay theo dòng, bảng lệnh khai báo hình dạng tham số cho từng lệnh |
-| D4 | Đơn vị | Có `LENGTH`, `ANGLE` với kiểm tra tĩnh |
-| D5 | Tên tham chiếu | Dùng tên Parameter trực tiếp; nhãn thuộc tính cho thực thể |
-| D6 | Phạm vi biến của module | **Đã chốt: chung biến như SmartAssembly** (mục 9, `gea-language-spec.md` mục 20) |
-| D7 | Phiên bản ngôn ngữ | Có dòng khai báo phiên bản ở đầu file |
-| D8 | Thông báo lỗi | Dòng, cột, lệnh, đoạn trích; tiếng Việt |
-| **D9 (mới)** | Khi nào FORM tính lại | Chạy lại mỗi khi bất kỳ giá trị nào đổi (mục 8) |
-| **D10 (mới)** | Tham chiếu tự phục hồi | Làm sau Cấp 2 (mục 6) |
-| **D11 (mới)** | Nguồn thành phần ở Cấp 1 | Hàm dựng C# trước, iFeature và iPart từ Cấp 3 (mục 7) |
-| **D12 (mới)** | Chạy chương trình ngoài | Mặc định cấm (mục 11) |
+| D1 | Style | **Direction chosen:** line-by-line imperative, upper-case keywords, three blocks, in the SmartAssembly style (replacing the hybrid option of the earlier version) |
+| D2 | External syntax | A custom text per sections 3-5; the file extension is chosen later |
+| D3 | Parser | Hand-written line by line, a statement table declares the parameter shape of each statement |
+| D4 | Units | Has `LENGTH`, `ANGLE` with static checking |
+| D5 | Reference names | Use the Parameter names directly; attribute labels for entities |
+| D6 | Variable scope of a module | **Settled: shared variables like SmartAssembly** (section 9, `gea-language-spec.md` section 20) |
+| D7 | Language version | A version declaration line at the top of the file |
+| D8 | Error messages | Line, column, statement, excerpt; in English |
+| **D9 (new)** | When FORM is recomputed | Run again whenever any value changes (section 8) |
+| **D10 (new)** | Self-recovering references | Do after Level 2 (section 6) |
+| **D11 (new)** | The source of components at Level 1 | C# build functions first, iFeatures and iParts from Level 3 (section 7) |
+| **D12 (new)** | Running external programs | Banned by default (section 11) |
 
 ---
 
-## 17. Rủi ro
+## 17. Risks
 
-| Rủi ro | Cách giảm |
+| Risk | How to reduce it |
 |--------|-----------|
-| Ngôn ngữ phình to, không dùng được vì thiếu thư viện thành phần | Làm thư viện song song và theo từng cấp; Cấp 1 chỉ cần vài builder |
-| Mô phỏng Host phải theo kịp mọi lệnh mới | Mỗi lệnh khi thêm phải nói rõ hành vi ở cả hai Host, hoặc đánh dấu "không mô phỏng được" |
-| Chạy thử trên web cho kết quả khác Inventor | Chỉ hứa bảo đảm logic, luật, giá, BOM; có bộ so sánh đầu ra giữa hai Host trên cùng bộ giá trị mẫu |
-| Tham chiếu mất hiệu lực sau regenerate | Gắn nhãn thuộc tính ngay khi tạo; làm tham chiếu tự phục hồi (D10) |
-| Script chạy lệnh nguy hiểm trên worker | Người đặt hàng không viết script; xuất bản có kiểm soát; mặc định cấm chạy chương trình ngoài và ghi file ngoài thư mục job |
-| Hộp thoại chờ người trong worker | Mọi hộp hỏi có giá trị mặc định; chạy Inventor ở chế độ không hộp thoại |
-| Vòng lặp vô hạn | Giới hạn số vòng và thời gian tối đa mỗi job |
-| Copy quá sát ngôn ngữ độc quyền | Tự đặt tên và tài liệu riêng; chỉ giữ ý tưởng cấu trúc; xem xét điều khoản nếu thương mại hóa |
-| Tên API Inventor thay đổi ở 2027 | Kiểm tra từng thành phần API khi hiện thực, ghi chú trong bảng lệnh |
+| The language grows large and is unusable for lack of a component library | Build the library in parallel and level by level; Level 1 needs only a few builders |
+| The Simulation Host must keep up with every new statement | Each statement added must state its behavior on both Hosts, or be marked "cannot be simulated" |
+| A dry run on the web gives a result different from Inventor | Promise only the logic, rules, price, BOM; have an output comparison suite between the two Hosts on the same sample value sets |
+| References become invalid after a regenerate | Attach attribute labels right at creation; build self-recovering references (D10) |
+| A script runs dangerous statements on a worker | The person ordering does not write scripts; controlled publishing; by default ban running external programs and writing files outside the job folder |
+| A dialog waiting for a person in the worker | Every question box has a default value; run Inventor in a no-dialog mode |
+| An infinite loop | A limit on the iteration count and the maximum time per job |
+| Copying a proprietary language too closely | Name things and write documentation ourselves; keep only the structural ideas; review the terms if commercialized |
+| Inventor API names change in 2027 | Check each API part when implementing, note it in the statement table |
 
 ---
 
-## 18. Việc làm ngay tiếp theo
+## 18. Next things to do right away
 
-1. (D6 đã chốt: chung biến) Chốt đuôi file; xác nhận D1 là mệnh lệnh kiểu SmartAssembly.
-2. **D0 (viết tay):** hoàn thiện ví dụ ở mục 15 thành file thật cho Cấp 1, dùng làm thước đo cho cú pháp.
-3. Viết **bảng lệnh P0** (số tham số, kiểu, hành vi ở Inventor Host và mô phỏng Host).
-4. Làm lexer, parser và thông dịch cho P0 cùng **mô phỏng Host** (không cần Inventor), kèm test và vết lệnh.
-5. Viết **Inventor Host** cho P0 và hàm dựng C# cho thùng, nắp (dùng lại phần Adapter của add-in).
-6. Nối vào web: khối FORM sinh form, chạy thử bằng mô phỏng Host, gửi job cho worker.
+1. (D6 is settled: shared variables) Settle the file extension; confirm D1 as imperative in the SmartAssembly style.
+2. **D0 (by hand):** turn the example in section 15 into a real file for Level 1, to serve as a yardstick for the syntax.
+3. Write the **P0 statement table** (the number of parameters, types, the behavior on the Inventor Host and the Simulation Host).
+4. Build the lexer, parser and interpreter for P0 together with the **Simulation Host** (no Inventor needed), with tests and the statement trace.
+5. Write the **Inventor Host** for P0 and the C# build functions for the tank and cover (reusing the Adapter part of the add-in).
+6. Wire into the web: the FORM block generates the form, a dry run with the Simulation Host, sending the job to a worker.
