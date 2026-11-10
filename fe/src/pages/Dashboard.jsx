@@ -6,9 +6,9 @@ import { JOB_COLUMNS, JobCells } from './Orders.jsx';
 
 const STATUSES = ['queued', 'running', 'succeeded', 'failed', 'cancelled'];
 const DAYS = [[7, 'Last 7 days'], [14, 'Last 14 days'], [30, 'Last 30 days'], [90, 'Last 90 days']];
-const ALL = 'all'; // Radix Select không nhận giá trị rỗng
+const ALL = 'all'; // Radix Select does not accept an empty value
 
-/** Biểu đồ cột một chuỗi: points = [{ label, value, tip }]. Cột bo góc ở đầu, hover hiện tooltip. */
+/** Bar chart of one series: points = [{ label, value, tip }]. Bars have rounded tops, hover shows a tooltip. */
 function BarChart({ title, points, integer = false, unit = '' }) {
   const [hot, setHot] = useState(null); // { i, x, y }
   const W = 460, H = 170, L = 36, R = 8, T = 10, B = 24;
@@ -48,7 +48,7 @@ function BarChart({ title, points, integer = false, unit = '' }) {
                 {(points.length - 1 - i) % labelEvery === 0 && (
                   <text x={x + bw / 2} y={H - 6} textAnchor="middle" className="tick">{p.label}</text>
                 )}
-                {/* Vùng bắt hover rộng hơn cột (cả khe và cột rỗng). */}
+                {/* Hover target wider than the bar (including the gap and empty bars). */}
                 <rect x={L + slot * i} y={T} width={slot} height={H - T - B} className="hit"
                   onMouseEnter={onMove(i)} onMouseMove={onMove(i)} onMouseLeave={() => setHot(null)} />
               </g>
@@ -72,7 +72,7 @@ function Tile({ label, value, sub, color }) {
   );
 }
 
-/** Dashboard: thẻ thống kê, biểu đồ theo ngày, và toàn bộ job đã chạy (có lọc). Job 'succeeded' mở ra được trang kết quả. */
+/** Dashboard: statistic cards, a chart per day, and every job that has run (with filters). A 'succeeded' job opens its result page. */
 export default function Dashboard() {
   const [days, setDays] = useState('14');
   const [status, setStatus] = useState(ALL);
@@ -83,7 +83,7 @@ export default function Dashboard() {
   const [jobs, setJobs] = useState(null);
   const user = localStorage.getItem('cadflow.user') || '';
 
-  useEffect(() => { api('/api/products').then(setProducts).catch(() => {}); }, []); // lọc theo sản phẩm là phụ
+  useEffect(() => { api('/api/products').then(setProducts).catch(() => {}); }, []); // filtering by product is secondary
 
   usePolling(async () => {
     const sq = new URLSearchParams({ days });

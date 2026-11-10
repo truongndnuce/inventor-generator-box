@@ -37,9 +37,9 @@ function WorkerPill() {
 export default function App() {
   const hash = useHash();
   const [dark, setDark] = useState(() => {
-    try { return localStorage.getItem('cadflow.theme') !== 'light'; } catch { return true; } // giao diện tối là mặc định
+    try { return localStorage.getItem('cadflow.theme') !== 'light'; } catch { return true; } // the dark theme is the default
   });
-  // Trang job tự đặt mục nav theo trạng thái job (qua onNav): đang chờ/chạy thuộc Ordered, đã xong thuộc Dashboard.
+  // The job page sets the nav entry itself by job status (through onNav): waiting/running belongs to Ordered, finished belongs to Dashboard.
   const [jobNav, setJobNav] = useState('orders');
 
   const active = hash.startsWith('#/chat') ? 'chat'
@@ -65,7 +65,7 @@ export default function App() {
 
   const toggle = () => {
     setDark((d) => {
-      try { localStorage.setItem('cadflow.theme', d ? 'light' : 'dark'); } catch { /* bỏ qua */ }
+      try { localStorage.setItem('cadflow.theme', d ? 'light' : 'dark'); } catch { /* ignore */ }
       return !d;
     });
   };

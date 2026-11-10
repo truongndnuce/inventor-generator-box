@@ -5,7 +5,7 @@ import { Notice } from '../components.jsx';
 
 const isText = (f) => f.kind === 'radio' || f.kind === 'text';
 
-/** Một ô của form sinh từ khối FORM của script: radio -> Select, text, checkbox, hoặc số. */
+/** One field of the form generated from the FORM block of the script: radio -> Select, text, checkbox, or number. */
 function ScriptField({ f, value, text, invalid, setValue, setText }) {
   const label = <Text as="label" htmlFor={f.name} size="2" weight="medium" title={f.tooltip || ''}>{f.label}</Text>;
   const color = invalid ? 'red' : undefined;
@@ -34,8 +34,8 @@ function ScriptField({ f, value, text, invalid, setValue, setText }) {
 
 export default function ScriptOrder({ scriptId }) {
   const [state, setState] = useState(null);       // { imported, result }
-  const [values, setValues] = useState({});       // ô số và ô tích (1/0)
-  const [texts, setTexts] = useState({});         // ô text và ô chọn một
+  const [values, setValues] = useState({});       // number and checkbox fields (1/0)
+  const [texts, setTexts] = useState({});         // text and single-choice fields
   const [result, setResult] = useState(null);
   const [note, setNote] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -48,8 +48,8 @@ export default function ScriptOrder({ scriptId }) {
     let alive = true;
     (async () => {
       let imported = {}; let retry = {};
-      try { const s = JSON.parse(sessionStorage.getItem('cadflow.import') || '{}'); if (s.scriptId === scriptId) imported = s; } catch { /* bỏ qua */ }
-      try { const s = JSON.parse(sessionStorage.getItem('cadflow.importRetry') || '{}'); if (s.scriptId === scriptId) retry = s; } catch { /* bỏ qua */ }
+      try { const s = JSON.parse(sessionStorage.getItem('cadflow.import') || '{}'); if (s.scriptId === scriptId) imported = s; } catch { /* ignore */ }
+      try { const s = JSON.parse(sessionStorage.getItem('cadflow.importRetry') || '{}'); if (s.scriptId === scriptId) retry = s; } catch { /* ignore */ }
       sessionStorage.removeItem('cadflow.importRetry');
       const v = { ...(imported.values || {}), ...(retry.values || {}) };
       const t = { ...(imported.texts || {}), ...(retry.texts || {}) };
@@ -67,7 +67,7 @@ export default function ScriptOrder({ scriptId }) {
     return () => { alive = false; };
   }, [scriptId]);
 
-  // Server tính lại ô ẩn/hiện và luật ASSERT mỗi khi giá trị đổi.
+  // The server recomputes which fields are shown/hidden and the ASSERT rules whenever a value changes.
   useEffect(() => {
     if (!ready.current) return undefined;
     const mine = ++seq.current;

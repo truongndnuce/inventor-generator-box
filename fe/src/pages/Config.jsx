@@ -22,7 +22,7 @@ const fieldText = (f, v) => {
   return f.unit ? `${v} ${f.unit}` : v;
 };
 
-// ------------------------------------------------------------------ hộp thoại tạo / sửa một Configuration
+// ------------------------------------------------------------------ dialog to create / edit a Configuration
 
 function ConfigDialog({ open, onClose, onSaved, code, schema, cfgSchema, initial, editingId }) {
   const [form, setForm] = useState(initial);
@@ -152,7 +152,7 @@ function ConfigDialog({ open, onClose, onSaved, code, schema, cfgSchema, initial
   );
 }
 
-// ------------------------------------------------------------------ trang Config: ma trận so sánh các Configuration
+// ------------------------------------------------------------------ Config page: a matrix comparing the Configurations
 
 export default function Config({ code }) {
   const [products, setProducts] = useState(null);
@@ -162,7 +162,7 @@ export default function Config({ code }) {
   const [note, setNote] = useState(null);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
-  const [closed, setClosed] = useState(new Set()); // nhóm bên trái đang thu gọn
+  const [closed, setClosed] = useState(new Set()); // the groups on the left that are collapsed
   const [dialog, setDialog] = useState(null);      // { initial, editingId }
   const [toDelete, setToDelete] = useState(null);
 
@@ -188,7 +188,7 @@ export default function Config({ code }) {
   const shown = useMemo(() => (configs || []).filter((c) =>
     (filter === 'all' || c.status === filter) && c.name.toLowerCase().includes(search.trim().toLowerCase())), [configs, filter, search]);
 
-  // Các hàng của ma trận. Mỗi mục: nhóm (có thể thu gọn) gồm hàng giá trị hoặc nhóm con.
+  // The rows of the matrix. Each entry: a group (collapsible) holding value rows or a sub-group.
   const sections = useMemo(() => {
     if (!schema || !cfgSchema) return [];
     const fieldRows = (g) => g.fields.map((f) => ({

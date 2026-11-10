@@ -2,7 +2,7 @@
 import { Badge, Button, Callout, Flex, Slider, Text, TextField } from '@radix-ui/themes';
 import { API, STATUS_COLOR, importScriptText, reorder } from './lib.js';
 
-/** Dải tiêu đề trang: nền đen với ảnh sản phẩm (public/hero.jpg) mờ dần về bên trái. */
+/** Page title strip: a black background with the product image (public/hero.jpg) fading toward the left. */
 const HERO_IMAGES = { 'gas-turbine': '/hero-turbine.jpg', generator: '/hero-generator.png', transformer: '/hero-transformer.png' };
 
 export function Hero({ product, eyebrow, title, text, children }) {
@@ -19,7 +19,7 @@ export function Hero({ product, eyebrow, title, text, children }) {
   );
 }
 
-/** Một thông số: ô số + thanh trượt đồng bộ với nhau; ô đỏ khi vi phạm luật (do server báo). `note` hiện dưới nhãn (vd. đã đổi so với gốc). */
+/** One parameter: a number box + a slider kept in sync; the box turns red when a rule is violated (reported by the server). `note` shows under the label (e.g. changed from the original). */
 export function ParamField({ p, value, invalid, onChange, note }) {
   const step = p.integer || p.max - p.min > 50 ? 1 : 0.1;
   return (
@@ -44,7 +44,7 @@ export function StatusBadge({ status }) {
   return <Badge color={STATUS_COLOR[status] || 'gray'} variant="soft" radius="full">{status}</Badge>;
 }
 
-/** Hộp thông báo lỗi/cảnh báo; children null thì không hiện. */
+/** A box for errors/warnings; shows nothing when children is null. */
 export function Notice({ color = 'red', children }) {
   if (!children || (Array.isArray(children) && children.length === 0)) return null;
   return (
@@ -54,7 +54,7 @@ export function Notice({ color = 'red', children }) {
   );
 }
 
-/** Liên kết tải file .gea (script đã dùng + giá trị) của job; không hiện nếu job không dựng bằng script. */
+/** Link to download the .gea file (the script used + the values) of a job; hidden if the job was not built from a script. */
 export function ExportGeaLink({ job }) {
   if (!job.scriptSha256) return null;
   return (
@@ -64,12 +64,12 @@ export function ExportGeaLink({ job }) {
   );
 }
 
-/** "Order again": đổ đầu vào của job cũ vào form New order (dùng chung cơ chế với "Edit and resubmit"). */
+/** "Order again": pours the input of an old job into the New order form (shares the mechanism with "Edit and resubmit"). */
 export function OrderAgainButton({ job, size = '1' }) {
   return <Button variant="soft" size={size} title="Open New order with this job's inputs" onClick={() => reorder(job)}>Order again</Button>;
 }
 
-/** Nút "Import .gea": gửi file lên server để biên dịch; thành công thì chuyển sang trang đặt hàng từ script. */
+/** The "Import .gea" button: sends the file to the server to compile it; on success it goes to the order-from-script page. */
 export function ImportGeaButton({ onError }) {
   const input = useRef(null);
   const onChange = async () => {

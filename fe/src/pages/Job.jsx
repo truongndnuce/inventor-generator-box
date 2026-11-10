@@ -4,10 +4,10 @@ import { API, api, fmtDate, fmtSize, fmtTime, productLabel, reorder, usePolling 
 import { ExportGeaLink, OrderAgainButton, StatusBadge } from '../components.jsx';
 
 const VIEW_LABELS = { front: 'Front', top: 'Top', right: 'Right' };
-/** Tên góc nhìn từ tên file: <id>_front.png -> Front; <id>.png (không hậu tố) là góc iso. */
+/** View name from the file name: <id>_front.png -> Front; <id>.png (no suffix) is the iso view. */
 const viewLabel = (name) => VIEW_LABELS[(name.match(/_([a-z]+)\.png$/) || [])[1]] || 'Isometric';
 
-/** Thư viện ảnh: ảnh lớn + dải thumbnail; bấm thumbnail để đổi, bấm ảnh lớn để mở bản đầy đủ ở tab mới. */
+/** Image gallery: a large image + a strip of thumbnails; click a thumbnail to switch, click the large image to open the full version in a new tab. */
 function Gallery({ images, url }) {
   const sorted = [...images].sort((a, b) =>
     (viewLabel(a.name) === 'Isometric' ? -1 : viewLabel(b.name) === 'Isometric' ? 1 : a.name.localeCompare(b.name)));
@@ -51,13 +51,13 @@ export default function Job({ id, onNav }) {
   const [tick, setTick] = useState(0);
   const done = job ? ['succeeded', 'failed', 'cancelled'].includes(job.status) : false;
 
-  // Polling đến khi job kết thúc (nâng lên SSE/SignalR khi cần, mục 8 của kế hoạch).
+  // Poll until the job ends (upgrade to SSE/SignalR when needed, section 8 of the plan).
   usePolling(async () => {
     if (done) return;
     try {
       const j = await api(`/api/jobs/${encodeURIComponent(id)}`);
       setJob(j);
-      onNav(['succeeded', 'failed', 'cancelled'].includes(j.status) ? 'dashboard' : 'orders'); // đang chờ/chạy thuộc Ordered, đã xong thuộc Dashboard
+      onNav(['succeeded', 'failed', 'cancelled'].includes(j.status) ? 'dashboard' : 'orders'); // waiting/running belongs to Ordered, finished belongs to Dashboard
     } catch (e) { setError(e.message); }
   }, 1500, [id, done, tick]);
 
@@ -75,7 +75,7 @@ export default function Job({ id, onNav }) {
   const pdf = job.artifacts.find((a) => a.kind === 'pdf');
   const dwg = job.artifacts.find((a) => a.kind === 'dwg');
   const url = (a) => `${API}/api/jobs/${encodeURIComponent(job.id)}/artifacts/${encodeURIComponent(a.name)}`;
-  // Tải về: ?download=true để server ký URL R2 với Content-Disposition: attachment (thuộc tính download bị bỏ qua khi redirect sang origin khác).
+  // Download: ?download=true so the server signs the R2 URL with Content-Disposition: attachment (the download attribute is ignored when redirecting to another origin).
   const dl = (a) => `${url(a)}?download=true`;
   const cancel = async () => { await api(`/api/jobs/${job.id}/cancel`, { method: 'POST' }).catch(() => {}); setTick((t) => t + 1); };
   const isImported = job.productCode === 'imported';

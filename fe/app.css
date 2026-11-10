@@ -1,5 +1,5 @@
 ﻿
-/* Màn hình Config: ma trận so sánh các Configuration (cột = configuration, hàng = nhóm tham số) */
+/* Config screen: a matrix comparing the Configurations (column = configuration, row = parameter group) */
 .cfg-card { padding: 0; overflow: hidden; }
 .cfg-scroll { overflow: auto; max-height: calc(100vh - 260px); }
 .cfg-grid { display: grid; min-width: max-content; font-size: 13px; }

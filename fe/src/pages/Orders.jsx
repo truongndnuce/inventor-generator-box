@@ -5,7 +5,7 @@ import { StatusBadge } from '../components.jsx';
 
 export const JOB_COLUMNS = ['Job', 'Product', 'Status', 'Created', 'Requested by', 'Worker'];
 
-/** Các ô chung của một dòng job (dùng ở Ordered và Dashboard). */
+/** The cells shared by a job row (used in Ordered and Dashboard). */
 export function JobCells({ j }) {
   return (
     <>
@@ -19,7 +19,7 @@ export function JobCells({ j }) {
   );
 }
 
-/** Ordered: chỉ job đang chờ/chạy. Bấm vào chỉ thấy tiến độ; job xong tự rời danh sách (xem ở Dashboard). */
+/** Ordered: only waiting/running jobs. Clicking shows progress only; a finished job leaves the list by itself (see it in the Dashboard). */
 export default function Orders() {
   const [jobs, setJobs] = useState(null);
   usePolling(async () => setJobs(await api('/api/jobs?status=queued,running')), 3000);

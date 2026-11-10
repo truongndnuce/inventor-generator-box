@@ -4,7 +4,7 @@ import { API, api, importScriptText } from '../lib.js';
 
 const range = (p) => (p.min != null && p.max != null ? `${p.min} - ${p.max}` : '');
 
-/** Nhóm tham số theo nhóm FORM, giữ thứ tự khai báo. */
+/** Groups the parameters by FORM group, keeping the declaration order. */
 function byGroup(params) {
   const groups = [];
   for (const p of params) {
@@ -24,17 +24,17 @@ function Component({ c }) {
   const include = `INCLUDE lib:${c.name}`;
 
   const copy = async () => {
-    try { await navigator.clipboard.writeText(include); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* không có quyền clipboard */ }
+    try { await navigator.clipboard.writeText(include); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* no clipboard permission */ }
   };
 
-  // Đặt hàng chính component: lấy script khởi tạo rồi đi qua đúng đường Import .gea.
+  // Order the component itself: fetch the starter script, then go through exactly the Import .gea path.
   const order = async () => {
     setBusy(true); setErr(null);
     try {
       const res = await fetch(`${API}/api/components/${name}/starter`);
       if (!res.ok) {
         let msg = `${res.status} ${res.statusText}`;
-        try { msg = (await res.json()).error || msg; } catch { /* không phải JSON */ }
+        try { msg = (await res.json()).error || msg; } catch { /* not JSON */ }
         throw new Error(msg);
       }
       await importScriptText(await res.text(), `${c.name}-starter.gea`);
@@ -137,7 +137,7 @@ function Component({ c }) {
   );
 }
 
-/** Components: các thư viện dùng lại bằng INCLUDE lib:<tên>. Xem, tải file, tạo script mới hoặc đặt hàng chính component. */
+/** Components: libraries reused with INCLUDE lib:<name>. View, download files, create a new script or order the component itself. */
 export default function Components() {
   const [list, setList] = useState(null);
   const [error, setError] = useState('');
