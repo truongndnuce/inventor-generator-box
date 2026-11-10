@@ -126,6 +126,16 @@ public sealed class GeaProgram
     public int Version { get; init; }
     public string ProductName { get; init; } = "";
     public string? ParamPrefix { get; init; }
+    /// <summary>Tiền tố của các thư viện đã <c>INCLUDE</c>: tham số bắt đầu bằng tiền tố này cũng hợp lệ.</summary>
+    public IReadOnlyList<string> ExtraParamPrefixes { get; internal set; } = new List<string>();
+    public bool HasAllowedPrefix(string name)
+    {
+        if (string.IsNullOrEmpty(ParamPrefix)) return true;
+        if (name.StartsWith(ParamPrefix, System.StringComparison.Ordinal)) return true;
+        foreach (var p in ExtraParamPrefixes)
+            if (name.StartsWith(p, System.StringComparison.Ordinal)) return true;
+        return false;
+    }
     public string Target { get; init; } = "PART";
     public IReadOnlyList<GeaStmt> Form { get; init; } = new List<GeaStmt>();
     public bool HasForm { get; init; }

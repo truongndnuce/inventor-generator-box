@@ -334,7 +334,7 @@ public sealed class GeaChecker
 
     private void DeclareParam(string name, GeaType type, GeaStmt decl)
     {
-        if (_p.ParamPrefix is { Length: > 0 } prefix && !name.StartsWith(prefix, StringComparison.Ordinal))
+        if (_p.ParamPrefix is { Length: > 0 } prefix && !_p.HasAllowedPrefix(name))
             Error("GEA2030", decl.Line, decl.Col, $"Thông số '{name}' phải bắt đầu bằng tiền tố {prefix} (PARAM_PREFIX).");
         if (_params.Any(p => p.Name == name))
         {
@@ -390,7 +390,7 @@ public sealed class GeaChecker
         var sym = _scope.Find(name);
         if (sym is { Kind: SymKind.Param })
             Error("GEA2002", line, col, $"'{name}' là thông số FORM, được đồng bộ tự động vào Inventor; không đặt lại bằng SET_PARAM.");
-        if (_p.ParamPrefix is { Length: > 0 } prefix && !name.StartsWith(prefix, StringComparison.Ordinal))
+        if (_p.ParamPrefix is { Length: > 0 } prefix && !_p.HasAllowedPrefix(name))
             Error("GEA2030", line, col, $"Parameter '{name}' phải bắt đầu bằng tiền tố {prefix}.");
     }
 

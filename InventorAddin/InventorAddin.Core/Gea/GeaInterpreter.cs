@@ -61,29 +61,50 @@ public sealed class GeaRunResult
 /// <summary>File .gea đã biên dịch: cây cú pháp, danh sách thông số và chẩn đoán.</summary>
 public sealed class GeaScript
 {
-    private GeaScript(GeaProgram program, IReadOnlyList<GeaParamInfo> parameters, IReadOnlyList<GeaDiagnostic> diagnostics, string text)
+    private GeaScript(GeaProgram program, IReadOnlyList<GeaParamInfo> parameters, IReadOnlyList<GeaDiagnostic> diagnostics, string text, string expandedText)
     {
         Program = program;
         Parameters = parameters;
         Diagnostics = diagnostics;
         Text = text;
+        ExpandedText = expandedText;
     }
 
     public GeaProgram Program { get; }
     public IReadOnlyList<GeaParamInfo> Parameters { get; }
     public IReadOnlyList<GeaDiagnostic> Diagnostics { get; }
+    /// <summary>Văn bản gốc người dùng đưa vào (có thể còn dòng <c>INCLUDE</c>).</summary>
     public string Text { get; }
+    /// <summary>Văn bản sau khi mở rộng <c>INCLUDE lib:</c>; bằng <see cref="Text"/> khi script không có INCLUDE. Đây là bản để lưu và gửi cho worker.</summary>
+    public string ExpandedText { get; }
     public bool HasErrors => Diagnostics.Any(d => d.Severity == GeaSeverity.Error);
 
-    /// <summary>Lexer, parser và kiểm tra ngữ nghĩa. Lỗi GEA1xxx/GEA2xxx được liệt kê hết một lần.</summary>
-    public static GeaScript Compile(string text)
+    /// <summary>
+    /// Mở rộng <c>INCLUDE lib:</c> (nếu có), rồi lexer, parser và kiểm tra ngữ nghĩa. Lỗi GEA1xxx/GEA2xxx được liệt kê hết một lần.
+    /// <paramref name="resolveLib"/> trả nội dung thư viện theo tên (null nếu không có). Chẩn đoán luôn dùng số dòng của file gốc;
+    /// lỗi nằm trong thư viện có thêm tiền tố tên file vào thông báo.
+    /// </summary>
+    public static GeaScript Compile(string text, Func<string, string?>? resolveLib = null, string fileName = "script")
     {
+        text ??= "";
+        var expansion = GeaIncludes.Expand(text, resolveLib, fileName);
         var diags = new List<GeaDiagnostic>();
-        var program = GeaParser.Parse(text ?? "", diags);
+        var program = GeaParser.Parse(expansion.Text, diags);
+        program.ExtraParamPrefixes = expansion.LibPrefixes;
         // Parser đã tự phục hồi sau lỗi cú pháp nên vẫn kiểm tra ngữ nghĩa, để liệt kê hết lỗi một lần
         var pars = GeaChecker.Check(program, diags);
+
+        // Chẩn đoán của parser/checker dùng dòng của văn bản đã mở rộng: đổi về (file, dòng) gốc.
+        for (var i = 0; i < diags.Count; i++)
+        {
+            var d = diags[i];
+            if (d.Line < 1 || d.Line > expansion.Lines.Count) continue;
+            var src = expansion.Lines[d.Line - 1];
+            diags[i] = d with { Line = src.Line, Message = src.File == fileName ? d.Message : $"{src.File}: {d.Message}" };
+        }
+        diags.AddRange(expansion.Diagnostics);
         diags.Sort((a, b) => a.Line != b.Line ? a.Line.CompareTo(b.Line) : a.Column.CompareTo(b.Column));
-        return new GeaScript(program, pars, diags, text ?? "");
+        return new GeaScript(program, pars, diags, text, expansion.Text);
     }
 
     public GeaFormResult EvaluateForm(IReadOnlyDictionary<string, object?>? inputs) => new GeaInterpreter(this).EvaluateForm(inputs);
