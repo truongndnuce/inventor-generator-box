@@ -1,100 +1,100 @@
-# Kế hoạch: thư viện ảnh, bản vẽ 2D (PDF) và ghi kích thước mặt cắt
+# Plan: image gallery, 2D drawing (PDF) and section dimensions
 
 ## Context
-Hiện job chỉ trả 1 ảnh iso + .ipt + .stp (`InventorAddin/InventorAddin/Web/InventorJobExecutor.cs`, hàm `Run`, `TryCapturePicture`). Cần: (1) cho user xem nhiều ảnh sau khi build, (2) xuất bản vẽ 2D, (3) tự ghi kích thước (dim) trên các mặt cắt. Đã chốt với user: PDF, bố cục chuẩn (trước/trên/cạnh + iso + mặt cắt chính), dim tự động theo từng sản phẩm, thư viện nhiều ảnh.
+Today a job returns only 1 iso image + .ipt + .stp (`InventorAddin/InventorAddin/Web/InventorJobExecutor.cs`, the `Run` method, `TryCapturePicture`). Needed: (1) let the user see several images after the build, (2) export a 2D drawing, (3) write the dimensions (dim) on the sections automatically. Agreed with the user: PDF, a standard layout (front/top/side + iso + a main section), automatic dims per product, a multi-image gallery.
 
-**Bước cuối khi thực thi:** chép bản kế hoạch này thành `docs/drawing-and-views-plan.md` (user yêu cầu thêm vào `docs/`; đang ở plan mode nên chưa ghi được), và thêm 1 dòng tham chiếu trong README.
+**Last step when executing:** copy this plan into `docs/drawing-and-views-plan.md` (the user asked for it in `docs/`; we were in plan mode so it could not be written yet), and add 1 reference line in the README.
 
-## Thiết kế
+## Design
 
-### 1. Ảnh nhiều góc (rẻ nhất, làm trước)
-- `InventorJobExecutor`: tách `TryCapturePicture(path, orientation)`; chụp các góc iso, front, top, right → `ID_iso.png`, `ID_front.png`, `ID_top.png`, `ID_right.png`. Dùng lại logic Fit + GetExtents/SetExtents (lề 15%).
-- Upload với `kind = "image"`; thêm tên góc vào tên file để web gom nhóm. Không đổi API server (`/artifacts` đã nhận kind tuỳ ý).
-- `fe/app.js` `renderJob`: thay 1 `<img>` bằng thư viện: ảnh lớn + dải thumbnail, bấm để đổi/phóng to (lightbox đơn giản, vẫn dựng DOM bằng `h()`/textContent). Thêm CSS ở `fe/styles.css`.
+### 1. Images from several angles (the cheapest, do it first)
+- `InventorJobExecutor`: split out `TryCapturePicture(path, orientation)`; capture the iso, front, top, right angles → `ID_iso.png`, `ID_front.png`, `ID_top.png`, `ID_right.png`. Reuse the Fit + GetExtents/SetExtents logic (15% margin).
+- Upload with `kind = "image"`; put the angle name in the file name so the web can group them. No change to the server API (`/artifacts` already accepts any kind).
+- `fe/app.js` `renderJob`: replace the single `<img>` with a gallery: a large image + a strip of thumbnails, click to switch/zoom (a simple lightbox, still building the DOM with `h()`/textContent). Add CSS in `fe/styles.css`.
 
-### 2. Bản vẽ 2D → PDF
-- File mới `Services/DrawingBuilder.cs` (cùng phong cách `TransformerBuilder`): nhận part đã lưu `.ipt`, tạo `DrawingDocument` bằng template từ `FileManager.GetTemplateFile(kDrawingDocumentObject, metric)`.
-- Base view (front) rồi `AddProjectedView` cho top/right và 1 iso; chọn tỉ lệ để vừa khổ giấy từ kích thước bao (`RangeBox`), làm tròn về tỉ lệ chuẩn (1:5, 1:10, 1:20…).
-- Xuất PDF qua TranslatorAddIn PDF (GUID `{0AC6FD96-2F4D-42CE-8BE0-8AEA580399E4}`), cùng cách `TryExportStep` đang làm. Không lưu .idw mặc định (user chỉ chọn PDF); `kind = "pdf"`.
-- Gọi trong `Run` sau khi lưu .ipt, khi part vẫn mở; đóng drawing trong `finally` giống `CloseQuietly`. Lỗi bản vẽ chỉ báo progress và đi tiếp (như STEP), không làm hỏng job.
-- Web: card "Drawing" có `<iframe>`/`<embed>` xem PDF + link tải. Server `ContentTypeFor` đã có `.pdf`.
+### 2. 2D drawing → PDF
+- A new file `Services/DrawingBuilder.cs` (the same style as `TransformerBuilder`): takes the part saved as `.ipt`, creates a `DrawingDocument` with the template from `FileManager.GetTemplateFile(kDrawingDocumentObject, metric)`.
+- The base view (front), then `AddProjectedView` for top/right and 1 iso; choose a scale that fits the sheet from the overall size (`RangeBox`), rounded to a standard scale (1:5, 1:10, 1:20…).
+- Export PDF through the PDF TranslatorAddIn (GUID `{0AC6FD96-2F4D-42CE-8BE0-8AEA580399E4}`), the same way `TryExportStep` does it. Do not save the .idw by default (the user chose only PDF); `kind = "pdf"`.
+- Call it in `Run` after saving the .ipt, while the part is still open; close the drawing in a `finally` like `CloseQuietly`. A drawing error only reports progress and carries on (like STEP), it does not fail the job.
+- Web: a "Drawing" card with an `<iframe>`/`<embed>` to view the PDF + a download link. The server `ContentTypeFor` already has `.pdf`.
 
-### 3. Mặt cắt và ghi kích thước tự động
-- Mặt cắt: `DrawingViews.AddSectionView` trên view front (cắt dọc qua tâm) và view top (cắt ngang) cho cả hai sản phẩm; với transformer thêm cắt qua trục sứ/bình dầu nếu cần.
-- Dim: mỗi sản phẩm có một "bộ dim" cố định, khai báo cạnh định nghĩa tham số (cùng file `BoxParams.cs`/`TransformerParams.cs` hoặc lớp `DimensionPlan` riêng) để server và add-in không lệch:
-  - Box: dài/rộng/cao, độ dày thành, khe nắp.
-  - Transformer: dài/rộng/cao thùng, bề dày đế/nắp, khoảng cách cánh tản nhiệt, đường kính + chiều dài sứ, đường kính + độ cao bình dầu.
-- Cách đặt: dùng `DrawingCurve` của view + `sheet.CreateGeometryIntent(curve, point)` rồi `sheet.DrawingDimensions.GeneralDimensions.AddLinear/AddDiameter`; chọn cạnh theo toạ độ bao (so với `RangeBox` của model) thay vì theo thứ tự, để không phụ thuộc số lượng sứ/cánh.
-- **Cần spike trước** (chưa chắc API): chữ ký chính xác của `AddSectionView` (cần sketch đường cắt), việc `DrawingCurve` có lộ cạnh đúng ở view cắt không, và phương án dự phòng `RetrieveDimensions`/dim từ sketch của model. Chạy thử bằng DevRunner (ngoài repo, `...\Temp\devrun`) trên Inventor thật trước khi viết code chính.
-- Tránh dim chồng nhau: đặt dim theo offset tăng dần ngoài khung view.
+### 3. Sections and automatic dimensioning
+- Sections: `DrawingViews.AddSectionView` on the front view (a vertical cut through the center) and the top view (a horizontal cut) for both products; for the transformer add a cut through the bushing/conservator axis if needed.
+- Dims: each product has a fixed "dim set", declared next to the parameter definitions (the same file `BoxParams.cs`/`TransformerParams.cs` or a separate `DimensionPlan` class) so the server and the add-in do not drift:
+    - Box: length/width/height, wall thickness, lid clearance.
+    - Transformer: tank length/width/height, base/cover thickness, radiator spacing, bushing diameter + length, conservator diameter + height.
+- How to place them: use the `DrawingCurve` of the view + `sheet.CreateGeometryIntent(curve, point)`, then `sheet.DrawingDimensions.GeneralDimensions.AddLinear/AddDiameter`; choose the edge by its extent coordinates (against the `RangeBox` of the model) instead of by order, so it does not depend on the number of bushings/fins.
+- **A spike is needed first** (the API is uncertain): the exact signature of `AddSectionView` (it needs a cutting-line sketch), whether `DrawingCurve` exposes the right edge in the section view, and the fallback `RetrieveDimensions`/dims from the sketch of the model. Try it with DevRunner (outside the repo, `...\Temp\devrun`) on a real Inventor before writing the main code.
+- Avoid overlapping dims: place dims with an increasing offset outside the view frame.
 
-### 4. Server / hợp đồng
-- Không cần endpoint mới. Có thể thêm `kind = "pdf"` vào quy ước và tuỳ chọn `summary` (số view, số dim).
-- Tùy chọn (giai đoạn sau): checkbox "Include drawing" trên form (`fe/app.js`) → thêm trường vào request; mặc định bật.
+### 4. Server / contract
+- No new endpoint is needed. We can add `kind = "pdf"` to the convention and an optional `summary` (number of views, number of dims).
+- Optional (a later phase): an "Include drawing" checkbox on the form (`fe/app.js`) → add a field to the request; on by default.
 
-## File sẽ sửa/tạo
-- tạo `InventorAddin/InventorAddin/Services/DrawingBuilder.cs`
-- sửa `InventorAddin/InventorAddin/Web/InventorJobExecutor.cs`
-- sửa `fe/app.js`, `fe/styles.css`
-- sửa `README.md`; tạo `docs/drawing-and-views-plan.md`
+## Files to edit/create
+- create `InventorAddin/InventorAddin/Services/DrawingBuilder.cs`
+- edit `InventorAddin/InventorAddin/Web/InventorJobExecutor.cs`
+- edit `fe/app.js`, `fe/styles.css`
+- edit `README.md`; create `docs/drawing-and-views-plan.md`
 
-## Kiểm chứng
-1. Spike DevRunner: dựng box + transformer, tạo drawing, xuất PDF, mở xem bằng ảnh chụp/Read.
-2. Build add-in (`dotnet build` solution), **khởi động lại Inventor** (DLL bị khoá khi đang chạy).
-3. Đặt đơn box và transformer từ web, xác nhận: succeeded, thư viện ảnh có 4 ảnh không bị cắt, PDF xem được trong trang job, dim đúng giá trị so với tham số, mặt cắt hiện đúng.
-4. Ca biên: số sứ 1 và 8, 6 cánh tản nhiệt, thùng nhỏ nhất/lớn nhất (tỉ lệ bản vẽ vẫn vừa khổ giấy, dim không chồng).
-5. Lỗi bản vẽ không làm job thất bại (kiểm tra bằng cách ép lỗi).
+## Verification
+1. DevRunner spike: build a box + a transformer, create the drawing, export the PDF, open it to look at it with a screenshot/Read.
+2. Build the add-in (`dotnet build` of the solution), **restart Inventor** (the DLL is locked while it runs).
+3. Place a box and a transformer order from the web, confirm: succeeded, the image gallery has 4 images that are not cropped, the PDF can be viewed on the job page, the dims have the right values compared with the parameters, the section shows correctly.
+4. Edge cases: 1 and 8 bushings, 6 radiator fins, the smallest/largest tank (the drawing scale still fits the sheet, dims do not overlap).
+5. A drawing error does not fail the job (check by forcing an error).
 
-## Rủi ro
-- Placement dim tự động là phần khó nhất; có thể cần vài vòng chỉnh trên Inventor thật.
-- Mỗi lần thử add-in cần restart Inventor (~4 phút); dùng DevRunner để lặp nhanh.
+## Risks
+- Automatic dim placement is the hardest part; it may need several rounds of adjustment on a real Inventor.
+- Each add-in trial needs an Inventor restart (~4 minutes); use DevRunner to iterate quickly.
 
 ---
 
-## Kết quả thực hiện (cập nhật sau spike trên Inventor 2027)
+## Results (updated after the spike on Inventor 2027)
 
-### Quy ước bản vẽ áp dụng (tiêu chuẩn cơ khí chung, ISO/TCVN)
-| Hạng mục | Quy ước | Cách thực hiện |
+### Drawing conventions applied (general mechanical standards, ISO/TCVN)
+| Item | Convention | How it is done |
 |---|---|---|
-| Phương pháp chiếu | ISO 128: **chiếu góc thứ nhất** (hình chiếu bằng ở **dưới** hình chiếu đứng, hình chiếu cạnh bên **phải**) | `AddProjectedView` đặt vị trí theo góc thứ nhất; template `ISO.idw` |
-| Khổ giấy | ISO 5457 (A4..A0, nằm ngang) | `DrawingBuilder.ChooseSheet`: khổ nhỏ nhất vừa ở tỉ lệ không nhỏ hơn 1:20, không có thì lên khổ lớn hơn, tối đa A0 |
-| Tỉ lệ | ISO 5455: 5:1, 2:1, 1:1, 1:2, 1:5, 1:10, 1:20, 1:50, 1:100, 1:200, 1:500, 1:1000 | Chọn tỉ lệ lớn nhất vẫn vừa khổ giấy; hình iso dùng nửa tỉ lệ |
-| Nét vẽ, mũi tên, chiều cao chữ, kiểu dim | ISO 128/129 | Do template `ISO.idw` đảm nhiệm, code không ghi đè |
-| Vị trí dim | ISO 129: dim ngoài hình, hàng đầu cách hình ≥ 10 mm, hàng sau cách hàng trước ≥ 8 mm; không ghi kích thước thừa | Offset 15 mm và 26 mm; mỗi kích thước bao chỉ ghi một lần |
-| Đơn vị | mm, không ghi ký hiệu đơn vị | Template mét; dim hiện `2240,00` |
-| Bố cục | Chừa lề đóng gáy 20 mm bên trái, không đè khung tên (góc dưới phải) | `LeftRoom`, `TopRoom`; hình iso ở khoảng trống phía trên khung tên |
-| Mặt cắt | Đường cắt A-A qua tâm, nét gạch chấm, vẽ ký hiệu mũi tên, vạch gạch chéo | `AddSectionView` trên hình chiếu đứng |
+| Projection method | ISO 128: **first-angle projection** (the plan view **below** the front view, the side view on the **right**) | `AddProjectedView` places the views for first angle; template `ISO.idw` |
+| Sheet size | ISO 5457 (A4..A0, landscape) | `DrawingBuilder.ChooseSheet`: the smallest sheet that fits at a scale not smaller than 1:20, otherwise a larger sheet, up to A0 |
+| Scale | ISO 5455: 5:1, 2:1, 1:1, 1:2, 1:5, 1:10, 1:20, 1:50, 1:100, 1:200, 1:500, 1:1000 | Pick the largest scale that still fits the sheet; the iso view uses half the scale |
+| Line types, arrows, text height, dim style | ISO 128/129 | Handled by the template `ISO.idw`, the code does not override them |
+| Dim placement | ISO 129: dims outside the view, the first row ≥ 10 mm from the view, each following row ≥ 8 mm from the previous; no redundant dimensions | Offsets of 15 mm and 26 mm; each overall dimension is written only once |
+| Unit | mm, no unit symbol | A metric template; the dim shows `2240,00` |
+| Layout | Leave a 20 mm binding margin on the left, do not cover the title block (bottom right corner) | `LeftRoom`, `TopRoom`; the iso view in the empty space above the title block |
+| Section | A-A cutting line through the center, a chain line, arrow symbols, hatching | `AddSectionView` on the front view |
 
-Khi có tiêu chuẩn riêng của công ty (ví dụ template của GE Vernova), thay template trong `DrawingBuilder.Build` (`GetTemplateFile`) và các hằng số bố cục ở đầu file; phần còn lại giữ nguyên.
+When the company has its own standard (for example a GE Vernova template), replace the template in `DrawingBuilder.Build` (`GetTemplateFile`) and the layout constants at the top of the file; leave the rest as it is.
 
-### Phát hiện từ spike (API Inventor, dễ sai)
-- `GetTemplateFile(kDrawingDocumentObject, metric)` **không** cho template mét: trả `Standard.idw` (inch, khổ Letter). Phải truyền `DraftingStandardEnum.kISO_DraftingStandard` (file `Metric\ISO.idw`).
-- Template ISO là chiếu góc thứ nhất: hình chiếu đặt phía trên hình đứng sẽ thành hình chiếu **dưới** (bottom view), không phải hình chiếu bằng.
-- Sketch của view (đường cắt) dùng toạ độ **kích thước mô hình (chưa nhân tỉ lệ)**, gốc ở tâm view; sketch phải thêm vào `view.Sketches`, không phải `sheet.Sketches`. Đưa toạ độ theo cm trên giấy thì đường cắt chỉ dài bằng 1/tỉ lệ, mặt cắt chỉ ra một lát mỏng.
-- Mặt cắt luôn căn thẳng hàng với view cha: tham số `Position` chỉ có tác dụng theo phương chiếu.
-- `DrawingCurve.Segments[1]` là `DrawingCurveSegment` (có `StartPoint/EndPoint`), không ép về `LineSegment2d` được.
-- Cạnh nằm ngang của vật thể tròn (sứ, bình dầu) hiện ra là vòng tròn nhìn nghiêng (RangeBox cao gần 0), không phải đoạn thẳng. Chọn cạnh ngoài cùng bằng `Evaluator2D.RangeBox` của mọi loại curve rồi đặt `GeometryIntent` bằng một điểm nằm trên curve.
-- `DrawingView.DrawingCurves` có thể gồm cả sketch của đường cắt (nằm ngoài khung view): phải lọc.
-- Mô hình dựng theo trục Z (hộp) cần hướng nhìn `kBottomViewOrientation` để có hình chiếu đứng đúng; mô hình dựng theo trục Y (máy biến áp) dùng `kFrontViewOrientation`.
-- Tạo drawing làm đổi view đang active: chụp ảnh các góc **trước**, dựng bản vẽ **sau**.
+### Findings from the spike (Inventor API, easy to get wrong)
+- `GetTemplateFile(kDrawingDocumentObject, metric)` does **not** give a metric template: it returns `Standard.idw` (inches, Letter size). You must pass `DraftingStandardEnum.kISO_DraftingStandard` (the file `Metric\ISO.idw`).
+- The ISO template is first-angle projection: a view placed above the front view becomes the **bottom** view, not the plan view.
+- The sketch of the view (the cutting line) uses coordinates in **model size (not yet multiplied by the scale)**, with the origin at the view center; the sketch must be added to `view.Sketches`, not `sheet.Sketches`. If you give coordinates in cm on the paper, the cutting line is only 1/scale long and the section shows only a thin slice.
+- A section is always aligned with its parent view: the `Position` parameter only works along the projection direction.
+- `DrawingCurve.Segments[1]` is a `DrawingCurveSegment` (with `StartPoint/EndPoint`), it cannot be cast to `LineSegment2d`.
+- A horizontal edge of a round object (bushing, conservator) appears as a circle seen at an angle (RangeBox almost 0 high), not as a straight segment. Pick the outermost edge with `Evaluator2D.RangeBox` over every kind of curve, then place the `GeometryIntent` with a point that lies on the curve.
+- `DrawingView.DrawingCurves` may include the sketch of the cutting line (outside the view frame): it must be filtered.
+- A model built along the Z axis (the box) needs the view direction `kBottomViewOrientation` to get a correct front view; a model built along the Y axis (the transformer) uses `kFrontViewOrientation`.
+- Creating a drawing changes the active view: capture the images of the angles **before**, build the drawing **after**.
 
-### Triển khai
-- `Services/DrawingBuilder.cs`: dựng bản vẽ + xuất PDF qua TranslatorAddIn (`{0AC6FD96-2F4D-42CE-8BE0-8AEA580399E4}`).
-- `Web/InventorJobExecutor.cs`: chụp 4 góc (iso, front, top, right) rồi gọi `DrawingBuilder`; lỗi bản vẽ chỉ cảnh báo, job vẫn thành công. Summary thêm `drawingViews`, `drawingDims`, `drawingScaleDenominator`.
-- `fe/app.js`: thư viện ảnh (ảnh lớn + thumbnail) và khung xem PDF. Server trả file inline để trình duyệt hiển thị.
-- Dim chuỗi trên mặt cắt: máy biến áp (đế, thân thùng, nắp); hộp (đáy, chiều cao) — mức hộp chưa kiểm chứng trên Inventor thật.
+### Implementation
+- `Services/DrawingBuilder.cs`: builds the drawing + exports the PDF through the TranslatorAddIn (`{0AC6FD96-2F4D-42CE-8BE0-8AEA580399E4}`).
+- `Web/InventorJobExecutor.cs`: captures 4 angles (iso, front, top, right) then calls `DrawingBuilder`; a drawing error is only a warning, the job still succeeds. The summary gains `drawingViews`, `drawingDims`, `drawingScaleDenominator`.
+- `fe/app.js`: the image gallery (a large image + thumbnails) and the PDF viewer frame. The server returns the file inline so the browser displays it.
+- The dim chain on the section: transformer (base, tank body, cover); box (bottom, height) — the box levels have not been verified on a real Inventor.
 
-### Việc chưa làm / chưa kiểm chứng (cập nhật 2026-11-06)
-- [x] Đã chạy qua luồng web thật (2026-11-06, Inventor 2027.2): đơn máy biến áp và đơn hộp đều succeeded, đủ `.ipt`, `.stp`, 4 ảnh, `.pdf`. Máy biến áp: A3 1:20, 5 view, 7 dim. Hộp: A4 1:2, 5 view, 6 dim; hướng nhìn Z-up đúng.
-- [ ] Thư viện ảnh nhiều góc và khung xem PDF trên web (`fe/app.js`, `fe/styles.css`) mới viết, chưa chạy trong trình duyệt.
-- [ ] **Lỗi nhỏ, bản vẽ hộp**: chuỗi dim trên mặt cắt bị chồng chữ ("2,0038,00") vì đáy chỉ dày 2 mm; cần giãn chữ hoặc bỏ dim quá nhỏ. Nhãn đường cắt hộp (`A / .`) thiếu mã vùng so với bản vẽ máy biến áp, chưa rõ nguyên nhân.
-- [ ] Dim trên mặt cắt mới có chuỗi chiều cao đế/thân/nắp. Chưa có dim đường kính + chiều dài sứ, đường kính bình dầu, khoảng cách cánh tản nhiệt (kế hoạch mục 3).
-- [ ] Mặt cắt chỉ cắt dọc qua tâm hình chiếu đứng; chưa có mặt cắt ngang (trên hình chiếu bằng) hay mặt cắt qua trục sứ/bình dầu.
-- [ ] Máy biến áp là khối đặc nên mặt cắt gạch chéo kín; chưa có vỏ rỗng/chi tiết bên trong.
-- [ ] Chưa áp dụng tiêu chuẩn nội bộ của GE Vernova (không có tài liệu); đang dùng ISO chung. Khi có template `.idw` của họ: đổi `GetTemplateFile` và các hằng số bố cục trong `DrawingBuilder`.
-- [ ] Hình iso đặt ở vị trí cố định (0.72 W, 0.3 H); chưa kiểm tra tránh chồng lên dim/mặt cắt ở mọi cỡ. Ca nhỏ nhất/lớn nhất mới kiểm tra "ra PDF", chưa xem kỹ từng bản vẽ.
-- [ ] Chưa có tuỳ chọn "Include drawing" trên form; chưa lưu `.idw` gốc (chỉ PDF); DWG đã xuất được từ 2026-11-08 (translator `{C24E3AC2-122E-11D5-8E91-0010B541CD80}`, xem `r2-dashboard-gea-roundtrip-plan.md`, mục 4).
-- [ ] Chưa kiểm thử đường lỗi (Inventor treo/hộp thoại) và nhiều worker.
-- [ ] README chưa cập nhật cho sản phẩm máy biến áp, bản vẽ và DevRunner (công cụ thử nằm ngoài repo, `%TEMP%\devrun`).
+### Not done yet / not verified yet (updated 2026-11-06)
+- [x] Run through the real web flow (2026-11-06, Inventor 2027.2): the transformer order and the box order both succeeded, with `.ipt`, `.stp`, 4 images, `.pdf`. Transformer: A3 1:20, 5 views, 7 dims. Box: A4 1:2, 5 views, 6 dims; the Z-up view direction is correct.
+- [ ] The multi-angle image gallery and the PDF viewer frame on the web (`fe/app.js`, `fe/styles.css`) were just written, not yet run in a browser.
+- [ ] **Small bug, the box drawing**: the dim chain on the section has overlapping text ("2,0038,00") because the bottom is only 2 mm thick; the text needs spreading out or the too-small dim dropped. The label of the box cutting line (`A / .`) lacks the zone code compared with the transformer drawing, the cause is not clear.
+- [ ] The dims on the section only have the base/tank/cover height chain. There are no dims yet for bushing diameter + length, conservator diameter, radiator spacing (plan section 3).
+- [ ] The section only cuts vertically through the center of the front view; there is no horizontal section (on the plan view) or a section through the bushing/conservator axis yet.
+- [ ] The transformer is a solid block, so the section is fully hatched; there is no hollow shell/internal detail yet.
+- [ ] GE Vernova's internal standard is not applied (no documents); the general ISO is used. When their `.idw` template is available: change `GetTemplateFile` and the layout constants in `DrawingBuilder`.
+- [ ] The iso view is at a fixed position (0.72 W, 0.3 H); avoiding overlap with the dims/section at every size has not been checked. The smallest/largest cases were only checked to "produce a PDF", each drawing was not studied closely.
+- [ ] There is no "Include drawing" option on the form yet; the original `.idw` is not saved (PDF only); DWG has been exported since 2026-11-08 (translator `{C24E3AC2-122E-11D5-8E91-0010B541CD80}`, see `r2-dashboard-gea-roundtrip-plan.md`, section 4).
+- [ ] The error path (Inventor hanging/a dialog) and several workers have not been tested.
+- [ ] The README is not updated for the transformer product, the drawing and DevRunner (the trial tool lives outside the repo, `%TEMP%\devrun`).
 
-- [ ] Giao diện web (thư viện ảnh, khung PDF) chưa được tự kiểm thử trong trình duyệt; mới xác nhận file tải về đúng.
+- [ ] The web UI (the image gallery, the PDF frame) has not been self-tested in a browser; only the correctness of the downloaded files has been confirmed.
