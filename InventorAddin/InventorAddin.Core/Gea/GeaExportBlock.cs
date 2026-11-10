@@ -6,8 +6,8 @@ using System.Text.Json;
 namespace InventorAddin.Gea;
 
 /// <summary>
-/// Đọc khối giá trị <c>!@</c> mà web (CAD Automation) ghi cuối file .gea khi Export: dòng <c>!@VALUE tên số</c> (số theo đơn vị nội bộ, LENGTH = mm)
-/// và <c>!@TEXT tên "chuỗi JSON"</c>. Với trình thông dịch đó chỉ là chú thích. Định dạng khớp Cadflow.Api\GeaExport.cs.
+/// Reads the <c>!@</c> value block that the web (CAD Automation) writes at the end of a .gea file on Export: lines <c>!@VALUE name number</c> (number in the internal unit, LENGTH = mm)
+/// and <c>!@TEXT name "JSON string"</c>. For the interpreter these are only comments. The format matches Cadflow.Api\GeaExport.cs.
 /// </summary>
 public static class GeaExportBlock
 {
@@ -15,7 +15,7 @@ public static class GeaExportBlock
 
     public sealed record Block(IReadOnlyDictionary<string, double> Values, IReadOnlyDictionary<string, string> Texts);
 
-    /// <summary>Trả null nếu file không có khối (file .gea thường).</summary>
+    /// <summary>Returns null if the file has no block (a plain .gea file).</summary>
     public static Block? Parse(string text)
     {
         var values = new Dictionary<string, double>(StringComparer.Ordinal);
@@ -37,7 +37,7 @@ public static class GeaExportBlock
                 {
                     var afterName = line[(Tag.Length + "TEXT".Length)..].TrimStart()[parts[1].Length..].Trim();
                     try { if (JsonSerializer.Deserialize<string>(afterName) is { } s) texts[parts[1]] = s; }
-                    catch (JsonException) { /* dòng hỏng: giữ giá trị mặc định */ }
+                    catch (JsonException) { /* broken line: keep the default value */ }
                     break;
                 }
             }

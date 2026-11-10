@@ -5,12 +5,12 @@ using System.Linq;
 
 namespace InventorAddin.Gea;
 
-// Lõi ngôn ngữ .gea (gea-language-spec.md): chẩn đoán, kiểu, đơn vị, giá trị và quy tắc phép tính.
-// Không phụ thuộc Inventor hay WPF để test được và dùng lại được ở server.
+// Core of the .gea language (gea-language-spec.md): diagnostics, types, units, values and operator rules.
+// Depends on neither Inventor nor WPF so it can be tested and reused on the server.
 
 public enum GeaSeverity { Error, Warning }
 
-/// <summary>Một chẩn đoán có mã, dòng, cột (mục 13 của đặc tả).</summary>
+/// <summary>A diagnostic with a code, line and column (section 13 of the spec).</summary>
 public sealed record GeaDiagnostic(string Code, GeaSeverity Severity, int Line, int Column, string Message)
 {
     public string Format(string file) =>
@@ -19,7 +19,7 @@ public sealed record GeaDiagnostic(string Code, GeaSeverity Severity, int Line, 
     public override string ToString() => Format("script");
 }
 
-/// <summary>Lỗi khi chạy (GEA3xxx, GEA4xxx, GEA5xxx) kèm vị trí dòng lệnh.</summary>
+/// <summary>A runtime error (GEA3xxx, GEA4xxx, GEA5xxx) with the line position of the statement.</summary>
 public sealed class GeaRuntimeException : Exception
 {
     public GeaRuntimeException(string code, string message, int line = 0, int column = 0, Exception? inner = null)
@@ -48,13 +48,13 @@ public enum GeaType
     Length,
     Angle,
     Reference,
-    /// <summary>Kiểu không xác định (sau một lỗi), dùng để không báo lỗi dây chuyền.</summary>
+    /// <summary>Unknown type (after an error), used to avoid cascading errors.</summary>
     Unknown,
 }
 
 public static class GeaUnits
 {
-    /// <summary>Hệ số đổi về đơn vị nội bộ (mm cho chiều dài, độ cho góc).</summary>
+    /// <summary>Factor that converts to the internal unit (mm for lengths, degrees for angles).</summary>
     public static bool TryGet(string unit, out GeaType type, out double factor)
     {
         switch (unit)
@@ -108,8 +108,8 @@ public static class GeaUnits
 }
 
 /// <summary>
-/// Tham chiếu tới một đối tượng trong model (body, feature...). <see cref="Handle"/> là đối tượng của Host
-/// (COM object ở Inventor, đối tượng ảo ở mô phỏng). <see cref="Props"/> là các giá trị builder ghi lại (kích thước...).
+/// A reference to an object in the model (body, feature...). <see cref="Handle"/> is the object of the Host
+/// (a COM object in Inventor, a virtual object in the simulation). <see cref="Props"/> are the values the builder recorded (dimensions...).
 /// </summary>
 public sealed class GeaRef
 {
@@ -127,7 +127,7 @@ public sealed class GeaRef
     public IReadOnlyDictionary<string, GeaValue> Props { get; }
 }
 
-/// <summary>Giá trị khi chạy. Chiều dài lưu theo mm, góc theo độ.</summary>
+/// <summary>Value at run time. Lengths are stored in mm, angles in degrees.</summary>
 public sealed class GeaValue
 {
     private GeaValue(GeaType type, double num, string? str, bool b, GeaRef? r)
@@ -145,7 +145,7 @@ public sealed class GeaValue
     public bool Bool { get; }
     public GeaRef? Ref { get; }
 
-    /// <summary>Các thông số FORM mà giá trị này được tính từ (để tô đỏ đúng ô khi ASSERT sai). Có thể null.</summary>
+    /// <summary>The FORM parameters this value was computed from (so the right field turns red when an ASSERT fails). May be null.</summary>
     public IReadOnlySet<string>? Deps { get; private init; }
 
     public static GeaValue Int(long v) => new(GeaType.Integer, v, null, false, null);
@@ -180,15 +180,15 @@ public sealed class GeaValue
 
     public bool IsNumeric => Type is GeaType.Integer or GeaType.Double or GeaType.Length or GeaType.Angle;
 
-    /// <summary>Đổi sang kiểu đích khi gán (chỉ nâng INTEGER lên DOUBLE). Gọi sau khi đã kiểm tra tương thích.</summary>
+    /// <summary>Converts to the target type on assignment (only INTEGER is promoted to DOUBLE). Call it after compatibility was checked.</summary>
     public GeaValue CoerceTo(GeaType target)
     {
         if (target == Type || target == GeaType.Unknown) return this;
         if (target == GeaType.Double && Type == GeaType.Integer) return Dbl(Num).WithDeps(Deps);
-        // Số 0 trần được phép gán vào LENGTH/ANGLE
+        // A bare 0 may be assigned to LENGTH/ANGLE
         if (target is GeaType.Length or GeaType.Angle && Type is GeaType.Integer or GeaType.Double && Num == 0)
             return Number(target, 0).WithDeps(Deps);
-        throw new GeaRuntimeException("GEA2002", $"Không gán được {GeaUnits.TypeName(Type)} vào {GeaUnits.TypeName(target)}.");
+        throw new GeaRuntimeException("GEA2002", $"Cannot assign {GeaUnits.TypeName(Type)} to {GeaUnits.TypeName(target)}.");
     }
 
     public string Display()
@@ -202,14 +202,14 @@ public sealed class GeaValue
             GeaType.String => Str ?? "",
             GeaType.Length => Num.ToString("0.###", ci) + " mm",
             GeaType.Angle => Num.ToString("0.###", ci) + " deg",
-            GeaType.Reference => Ref == null ? "<ref chưa gán>" : $"<{Ref.Kind} từ {Ref.Builder}>",
+            GeaType.Reference => Ref == null ? "<unassigned ref>" : $"<{Ref.Kind} from {Ref.Builder}>",
             _ => "?",
         };
     }
 
     public override string ToString() => Display();
 
-    /// <summary>Giá trị thô dùng để lưu (số theo mm/độ, chuỗi, bool).</summary>
+    /// <summary>Raw value used for storage (numbers in mm/degrees, strings, bool).</summary>
     public object? ToPlain() => Type switch
     {
         GeaType.Bool => Bool,
@@ -220,14 +220,14 @@ public sealed class GeaValue
     };
 }
 
-/// <summary>Quy tắc kiểu của phép tính (mục 4.2). Dùng chung cho bước kiểm tra tĩnh và khi chạy.</summary>
+/// <summary>Type rules of the operators (section 4.2). Shared by the static check and by run time.</summary>
 public static class GeaOps
 {
     public static bool IsPlainNumber(GeaType t) => t is GeaType.Integer or GeaType.Double;
 
     public static bool IsDimensioned(GeaType t) => t is GeaType.Length or GeaType.Angle;
 
-    /// <summary>Có gán được giá trị kiểu <paramref name="value"/> vào chỗ kiểu <paramref name="target"/> không.</summary>
+    /// <summary>Whether a value of type <paramref name="value"/> can be assigned to a place of type <paramref name="target"/>.</summary>
     public static bool Assignable(GeaType target, GeaType value, bool valueIsZeroLiteral = false)
     {
         if (target == GeaType.Unknown || value == GeaType.Unknown) return true;
@@ -237,7 +237,7 @@ public static class GeaOps
         return false;
     }
 
-    /// <summary>Kiểu kết quả của phép hai ngôi, hoặc null kèm thông báo lỗi.</summary>
+    /// <summary>Result type of a binary operator, or null with an error message.</summary>
     public static GeaType? Binary(string op, GeaType l, GeaType r, bool lZero, bool rZero, out string? error)
     {
         error = null;
@@ -251,14 +251,14 @@ public static class GeaOps
             case "AND":
             case "OR":
                 if (l == GeaType.Bool && r == GeaType.Bool) return GeaType.Bool;
-                error = $"{op} cần hai giá trị BOOL ({Names()}).";
+                error = $"{op} needs two BOOL values ({Names()}).";
                 return null;
 
             case "+":
                 if (l == GeaType.String && r == GeaType.String) return GeaType.String;
                 if (l == GeaType.String || r == GeaType.String)
                 {
-                    error = $"Không cộng được {Names()}. Dùng STR(x) để đổi số sang chuỗi.";
+                    error = $"Cannot add {Names()}. Use STR(x) to convert a number to a string.";
                     return null;
                 }
                 goto case "-";
@@ -267,7 +267,7 @@ public static class GeaOps
                 if (IsDimensioned(l) && l == r) return l;
                 if (IsDimensioned(l) && IsPlainNumber(r) && rZero) return l;
                 if (IsDimensioned(r) && IsPlainNumber(l) && lZero) return r;
-                error = $"Sai đơn vị: {Names()}.";
+                error = $"Wrong unit: {Names()}.";
                 return null;
 
             case "*":
@@ -275,20 +275,20 @@ public static class GeaOps
                 if (IsDimensioned(l) && IsPlainNumber(r)) return l;
                 if (IsDimensioned(r) && IsPlainNumber(l)) return r;
                 error = IsDimensioned(l) && IsDimensioned(r)
-                    ? $"{Names()}: v1 chưa hỗ trợ diện tích hoặc tích hai đại lượng có đơn vị."
-                    : $"Không nhân được {Names()}.";
+                    ? $"{Names()}: v1 does not support areas or the product of two quantities that have units."
+                    : $"Cannot multiply {Names()}.";
                 return null;
 
             case "/":
                 if (IsPlainNumber(l) && IsPlainNumber(r)) return GeaType.Double;
                 if (IsDimensioned(l) && IsPlainNumber(r)) return l;
                 if (IsDimensioned(l) && l == r) return GeaType.Double;
-                error = $"Không chia được {Names()}.";
+                error = $"Cannot divide {Names()}.";
                 return null;
 
             case "%":
                 if (l == GeaType.Integer && r == GeaType.Integer) return GeaType.Integer;
-                error = "% chỉ dùng cho INTEGER.";
+                error = "% only works on INTEGER.";
                 return null;
 
             case "==":
@@ -305,11 +305,11 @@ public static class GeaOps
                 if (IsDimensioned(r) && IsPlainNumber(l) && lZero) return GeaType.Bool;
                 if (l == GeaType.String && r == GeaType.String) return GeaType.Bool;
                 error = IsDimensioned(l) || IsDimensioned(r)
-                    ? $"So sánh {Names()}: đại lượng có đơn vị chỉ so được với cùng loại (hoặc số 0). Ví dụ viết 5 mm thay cho 5."
-                    : $"Không so sánh được {Names()}.";
+                    ? $"Comparing {Names()}: a quantity with a unit can only be compared with the same kind (or the number 0). For example write 5 mm instead of 5."
+                    : $"Cannot compare {Names()}.";
                 return null;
         }
-        error = $"Toán tử không hỗ trợ: {op}.";
+        error = $"Operator not supported: {op}.";
         return null;
     }
 
@@ -333,7 +333,7 @@ public static class GeaOps
                 result = GeaValue.Number(type, l.Num / r.Num);
                 break;
             case "%":
-                if (r.Num == 0) throw new GeaRuntimeException("GEA5002", "Chia cho 0 (phép %).");
+                if (r.Num == 0) throw new GeaRuntimeException("GEA5002", "Division by 0 (the % operator).");
                 result = GeaValue.Int((long)l.Num % (long)r.Num);
                 break;
             default:
@@ -376,14 +376,14 @@ public static class GeaOps
         return result;
     }
 
-    // ---------------------------------------------------------------- hàm dựng sẵn (mục 10)
+    // ---------------------------------------------------------------- built-in functions (section 10)
 
     public static readonly IReadOnlySet<string> Functions = new HashSet<string>
     {
         "MIN", "MAX", "ABS", "ROUND", "FLOOR", "CEIL", "SQRT", "STR", "NUM", "FIND",
     };
 
-    /// <summary>Kiểu kết quả của hàm, hoặc null kèm lỗi.</summary>
+    /// <summary>Result type of a function, or null with an error.</summary>
     public static GeaType? Function(string name, IReadOnlyList<GeaType> args, out string? error)
     {
         error = null;
@@ -393,7 +393,7 @@ public static class GeaOps
         bool Count(int min, int max)
         {
             if (args.Count >= min && args.Count <= max) return true;
-            countError = min == max ? $"{name} cần {min} đối số." : $"{name} cần {min} đến {max} đối số.";
+            countError = min == max ? $"{name} needs {min} argument(s)." : $"{name} needs {min} to {max} arguments.";
             return false;
         }
 
@@ -415,20 +415,20 @@ public static class GeaOps
                 if (IsPlainNumber(args[0]) && IsPlainNumber(args[1]))
                     return args[0] == GeaType.Integer && args[1] == GeaType.Integer ? GeaType.Integer : GeaType.Double;
                 if (IsDimensioned(args[0]) && args[0] == args[1]) return args[0];
-                error = $"{name}: hai đối số phải cùng loại ({GeaUnits.TypeName(args[0])}, {GeaUnits.TypeName(args[1])}).";
+                error = $"{name}: the two arguments must be of the same kind ({GeaUnits.TypeName(args[0])}, {GeaUnits.TypeName(args[1])}).";
                 return null;
             case "ABS":
                 if (!Count(1, 1)) return null;
                 if (unknown || args[0] is GeaType.Integer or GeaType.Double or GeaType.Length or GeaType.Angle) return args[0];
-                error = "ABS cần một số.";
+                error = "ABS needs a number.";
                 return null;
             case "ROUND":
                 if (!Count(1, 2)) return null;
                 if (unknown) return GeaType.Unknown;
-                if (args.Count == 2 && args[1] != GeaType.Integer) { error = "ROUND: số chữ số thập phân phải là INTEGER."; return null; }
+                if (args.Count == 2 && args[1] != GeaType.Integer) { error = "ROUND: the number of decimal places must be INTEGER."; return null; }
                 if (IsDimensioned(args[0])) return args[0];
                 if (IsPlainNumber(args[0])) return args.Count == 1 ? GeaType.Integer : GeaType.Double;
-                error = "ROUND cần một số.";
+                error = "ROUND needs a number.";
                 return null;
             case "FLOOR":
             case "CEIL":
@@ -436,12 +436,12 @@ public static class GeaOps
                 if (unknown) return GeaType.Unknown;
                 if (IsDimensioned(args[0])) return args[0];
                 if (IsPlainNumber(args[0])) return GeaType.Integer;
-                error = $"{name} cần một số.";
+                error = $"{name} needs a number.";
                 return null;
             case "SQRT":
                 if (!Count(1, 1)) return null;
                 if (unknown || IsPlainNumber(args[0])) return GeaType.Double;
-                error = "SQRT chỉ dùng cho số không đơn vị.";
+                error = "SQRT only works on numbers without a unit.";
                 return null;
             case "STR":
                 if (!Count(1, 1)) return null;
@@ -449,15 +449,15 @@ public static class GeaOps
             case "NUM":
                 if (!Count(1, 1)) return null;
                 if (unknown || args[0] == GeaType.String) return GeaType.Double;
-                error = "NUM cần một chuỗi.";
+                error = "NUM needs a string.";
                 return null;
             case "FIND":
                 if (!Count(2, 2)) return null;
                 if (unknown || args[0] == GeaType.String && args[1] == GeaType.String) return GeaType.Integer;
-                error = "FIND cần hai chuỗi.";
+                error = "FIND needs two strings.";
                 return null;
         }
-        error = $"Hàm không tồn tại: {name}.";
+        error = $"Function does not exist: {name}.";
         return null;
     }
 
@@ -479,17 +479,17 @@ public static class GeaOps
             case "FLOOR": result = GeaValue.Number(type, Math.Floor(args[0].Num + 1e-9)); break;
             case "CEIL": result = GeaValue.Number(type, Math.Ceiling(args[0].Num - 1e-9)); break;
             case "SQRT":
-                if (args[0].Num < 0) throw new GeaRuntimeException("GEA5002", "SQRT của số âm.");
+                if (args[0].Num < 0) throw new GeaRuntimeException("GEA5002", "SQRT of a negative number.");
                 result = GeaValue.Dbl(Math.Sqrt(args[0].Num));
                 break;
             case "STR": result = GeaValue.Text(args[0].Display()); break;
             case "NUM":
                 if (!double.TryParse((args[0].Str ?? "").Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var n))
-                    throw new GeaRuntimeException("GEA5003", $"Không đổi được \"{args[0].Str}\" sang số.");
+                    throw new GeaRuntimeException("GEA5003", $"Cannot convert \"{args[0].Str}\" to a number.");
                 result = GeaValue.Dbl(n);
                 break;
             case "FIND": result = GeaValue.Int((args[0].Str ?? "").IndexOf(args[1].Str ?? "", StringComparison.Ordinal)); break;
-            default: throw new GeaRuntimeException("GEA2001", $"Hàm không tồn tại: {name}.");
+            default: throw new GeaRuntimeException("GEA2001", $"Function does not exist: {name}.");
         }
         return result.WithDeps(deps);
     }

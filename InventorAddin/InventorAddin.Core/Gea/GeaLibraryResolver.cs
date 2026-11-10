@@ -6,9 +6,9 @@ using System.Text.RegularExpressions;
 namespace InventorAddin.Gea;
 
 /// <summary>
-/// Nơi nạp thư viện cho <c>INCLUDE lib:&lt;tên&gt;</c> khi script nằm trên đĩa (add-in Inventor).
-/// Thứ tự tìm: <c>&lt;thư mục file&gt;/lib/&lt;tên&gt;.gea</c>, <c>&lt;thư mục file&gt;/&lt;tên&gt;.gea</c>, rồi thư mục thư viện đi kèm add-in.
-/// Tên không hợp lệ (có đường dẫn, <c>..</c>, ký tự lạ) không bao giờ chạm tới đĩa.
+/// Where libraries for <c>INCLUDE lib:&lt;name&gt;</c> are loaded from when the script is on disk (the Inventor add-in).
+/// Search order: <c>&lt;file folder&gt;/lib/&lt;name&gt;.gea</c>, <c>&lt;file folder&gt;/&lt;name&gt;.gea</c>, then the library folder that ships with the add-in.
+/// An invalid name (with a path, <c>..</c>, odd characters) never touches the disk.
 /// </summary>
 public static class GeaLibraryResolver
 {

@@ -4,12 +4,12 @@ using System.Linq;
 
 namespace InventorAddin.Gea;
 
-/// <summary>Thông số khai báo trong FORM (bằng một lệnh *_PARAM).</summary>
+/// <summary>A parameter declared in FORM (by a *_PARAM statement).</summary>
 public sealed record GeaParamInfo(string Name, GeaType Type, GeaStmt Declaration);
 
 /// <summary>
-/// Phân tích ngữ nghĩa (mục 3, 4, 5, 9.3 của đặc tả): tên chưa khai báo hoặc trùng, kiểu và đơn vị, tiền tố thông số,
-/// lệnh dùng sai chỗ, kiểm tra CREATE_FEATURE theo manifest. Chạy trước khi chạy script, không cần Inventor.
+/// Semantic analysis (sections 3, 4, 5, 9.3 of the spec): undeclared or duplicate names, types and units, parameter prefix,
+/// statements used in the wrong place, CREATE_FEATURE checked against the manifest. Runs before the script runs, no Inventor needed.
 /// </summary>
 public sealed class GeaChecker
 {
@@ -63,7 +63,7 @@ public sealed class GeaChecker
     private void Run()
     {
         if (_p.Target == "ASSEMBLY")
-            Warn("GEA2020", 1, 1, "TARGET ASSEMBLY chưa được Inventor Host hỗ trợ ở phiên bản này; chỉ chạy thử được.");
+            Warn("GEA2020", 1, 1, "TARGET ASSEMBLY is not supported by the Inventor Host in this version yet; it can only be dry-run.");
 
         _block = GeaBlockKind.Form;
         Stmts(_p.Form);
@@ -71,13 +71,13 @@ public sealed class GeaChecker
         var tableNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (var t in _p.Tables)
         {
-            if (!tableNames.Add(t.Name)) Error("GEA2003", t.Line, t.Col, $"Bảng '{t.Name}' khai báo trùng.");
+            if (!tableNames.Add(t.Name)) Error("GEA2003", t.Line, t.Col, $"Table '{t.Name}' is declared twice.");
             var cols = new HashSet<string>(StringComparer.Ordinal);
             foreach (var c in t.Columns)
-                if (!cols.Add(c.Name)) Error("GEA2003", t.Line, t.Col, $"Cột '{c.Name}' trùng trong bảng {t.Name}.");
+                if (!cols.Add(c.Name)) Error("GEA2003", t.Line, t.Col, $"Column '{c.Name}' is duplicated in table {t.Name}.");
         }
 
-        // BUILD thấy mọi thông số FORM (chỉ đọc) và hai biến lỗi có sẵn
+        // BUILD sees every FORM parameter (read-only) and the two built-in error variables
         _block = GeaBlockKind.Build;
         _scope = new Scope();
         foreach (var p in _params) _scope.Add(new Sym(p.Name, p.Type, SymKind.Param));
@@ -86,7 +86,7 @@ public sealed class GeaChecker
         Stmts(_p.Build);
     }
 
-    // ================================================================ lệnh
+    // ================================================================ statements
 
     private void Stmts(IReadOnlyList<GeaStmt> list)
     {
@@ -98,7 +98,7 @@ public sealed class GeaChecker
         switch (s)
         {
             case DeclareVarStmt d:
-                if (d.Init != null) ExpectAssignable(d.Type, d.Init, $"Giá trị đầu của {d.Name}");
+                if (d.Init != null) ExpectAssignable(d.Type, d.Init, $"Initial value of {d.Name}");
                 Declare(d.Name, d.Type, SymKind.Variable, d.Line, d.Col);
                 break;
             case DeclareRefStmt d:
@@ -109,20 +109,20 @@ public sealed class GeaChecker
                 var sym = Writable(a.Name, a.Line, a.Col);
                 var t = TypeOf(a.Value);
                 if (sym != null && !GeaOps.Assignable(sym.Type, t, IsZero(a.Value)))
-                    Error("GEA2002", a.Line, a.Col, $"Không gán được {Name(t)} vào {a.Name} ({Name(sym.Type)}).{Hint(sym.Type, t)}");
+                    Error("GEA2002", a.Line, a.Col, $"Cannot assign {Name(t)} to {a.Name} ({Name(sym.Type)}).{Hint(sym.Type, t)}");
                 break;
             }
             case IncDecStmt i:
             {
                 var sym = Writable(i.Name, i.Line, i.Col);
                 if (sym != null && sym.Type != GeaType.Integer)
-                    Error("GEA2002", i.Line, i.Col, $"++ và -- chỉ dùng cho INTEGER ({i.Name} là {Name(sym.Type)}).");
+                    Error("GEA2002", i.Line, i.Col, $"++ and -- only work on INTEGER ({i.Name} is {Name(sym.Type)}).");
                 break;
             }
             case IfStmt f:
                 foreach (var b in f.Branches)
                 {
-                    ExpectType(GeaType.Bool, b.Condition, "Điều kiện IF");
+                    ExpectType(GeaType.Bool, b.Condition, "IF condition");
                     Stmts(b.Body);
                 }
                 if (f.Else != null) Stmts(f.Else);
@@ -134,10 +134,10 @@ public sealed class GeaChecker
                 if (f.Step != null)
                 {
                     ExpectType(GeaType.Integer, f.Step, "STEP");
-                    if (f.Step is NumberExpr { Value: 0 }) Error("GEA2002", f.Step.Line, f.Step.Col, "STEP phải khác 0.");
+                    if (f.Step is NumberExpr { Value: 0 }) Error("GEA2002", f.Step.Line, f.Step.Col, "STEP must not be 0.");
                 }
                 bool added = false;
-                if (_scope.Find(f.Var) != null) Error("GEA2003", f.Line, f.Col, $"Biến lặp '{f.Var}' trùng với một tên đã khai báo.");
+                if (_scope.Find(f.Var) != null) Error("GEA2003", f.Line, f.Col, $"Loop variable '{f.Var}' clashes with an already declared name.");
                 else
                 {
                     CheckCase(f.Var, f.Line, f.Col);
@@ -151,13 +151,13 @@ public sealed class GeaChecker
                 break;
             }
             case WhileStmt w:
-                ExpectType(GeaType.Bool, w.Condition, "Điều kiện WHILE");
+                ExpectType(GeaType.Bool, w.Condition, "WHILE condition");
                 _loopDepth++;
                 Stmts(w.Body);
                 _loopDepth--;
                 break;
             case BreakStmt or ContinueStmt:
-                if (_loopDepth == 0) Error("GEA2020", s.Line, s.Col, "BREAK và CONTINUE chỉ dùng trong FOR hoặc WHILE.");
+                if (_loopDepth == 0) Error("GEA2020", s.Line, s.Col, "BREAK and CONTINUE only work inside FOR or WHILE.");
                 break;
             case ReturnStmt:
                 break;
@@ -172,12 +172,12 @@ public sealed class GeaChecker
                 break;
             case RadioParamStmt rb:
                 if (rb.Options.Distinct().Count() != rb.Options.Count)
-                    Error("GEA2003", rb.Line, rb.Col, $"{rb.Name}: các lựa chọn bị trùng.");
+                    Error("GEA2003", rb.Line, rb.Col, $"{rb.Name}: the choices are duplicated.");
                 DeclareParam(rb.Name, GeaType.String, rb);
                 break;
             case AssertStmt a:
-                ExpectType(GeaType.Bool, a.Condition, "Điều kiện ASSERT");
-                ExpectType(GeaType.String, a.Message, "Thông báo ASSERT");
+                ExpectType(GeaType.Bool, a.Condition, "ASSERT condition");
+                ExpectType(GeaType.String, a.Message, "ASSERT message");
                 break;
             case PrintStmt pr:
                 TypeOf(pr.Value);
@@ -189,34 +189,34 @@ public sealed class GeaChecker
                 var sym = Writable(lk.Var, lk.Line, lk.Col);
                 if (table == null)
                 {
-                    Error("GEA2001", lk.Line, lk.Col, $"Bảng '{lk.Table}' chưa khai báo trong BEGIN_TABLES.");
+                    Error("GEA2001", lk.Line, lk.Col, $"Table '{lk.Table}' is not declared in BEGIN_TABLES.");
                     break;
                 }
                 var kc = table.Columns.FirstOrDefault(c => c.Name == lk.KeyColumn);
                 var vc = table.Columns.FirstOrDefault(c => c.Name == lk.ValueColumn);
-                if (kc == null) Error("GEA2001", lk.Line, lk.Col, $"Bảng {lk.Table} không có cột '{lk.KeyColumn}'.");
+                if (kc == null) Error("GEA2001", lk.Line, lk.Col, $"Table {lk.Table} has no column '{lk.KeyColumn}'.");
                 else if (!GeaOps.Assignable(kc.Type, keyType) && !(kc.Type == GeaType.Integer && keyType == GeaType.Double))
-                    Error("GEA2002", lk.Key.Line, lk.Key.Col, $"Khóa {Name(keyType)} không so được với cột {kc.Name} ({Name(kc.Type)}).");
-                if (vc == null) Error("GEA2001", lk.Line, lk.Col, $"Bảng {lk.Table} không có cột '{lk.ValueColumn}'.");
+                    Error("GEA2002", lk.Key.Line, lk.Key.Col, $"Key {Name(keyType)} cannot be compared with column {kc.Name} ({Name(kc.Type)}).");
+                if (vc == null) Error("GEA2001", lk.Line, lk.Col, $"Table {lk.Table} has no column '{lk.ValueColumn}'.");
                 else if (sym != null && !GeaOps.Assignable(sym.Type, vc.Type))
-                    Error("GEA2002", lk.Line, lk.Col, $"Cột {vc.Name} ({Name(vc.Type)}) không gán được vào {lk.Var} ({Name(sym.Type)}).");
+                    Error("GEA2002", lk.Line, lk.Col, $"Column {vc.Name} ({Name(vc.Type)}) cannot be assigned to {lk.Var} ({Name(sym.Type)}).");
                 break;
             }
             case SetParamStmt sp:
             {
                 ParamNameForHost(sp.Name, sp.Line, sp.Col);
                 var t = TypeOf(sp.Value);
-                if (t == GeaType.Reference) Error("GEA2002", sp.Line, sp.Col, "SET_PARAM không nhận tham chiếu.");
+                if (t == GeaType.Reference) Error("GEA2002", sp.Line, sp.Col, "SET_PARAM does not accept a reference.");
                 break;
             }
             case SetParamExprStmt se:
                 ParamNameForHost(se.Name, se.Line, se.Col);
-                ExpectType(GeaType.String, se.Expression, "Biểu thức Inventor");
+                ExpectType(GeaType.String, se.Expression, "Inventor expression");
                 break;
             case GetParamStmt gp:
             {
                 var sym = Writable(gp.Var, gp.Line, gp.Col);
-                if (sym != null && sym.Type == GeaType.Reference) Error("GEA2002", gp.Line, gp.Col, "GET_PARAM cần một biến giá trị, không phải tham chiếu.");
+                if (sym != null && sym.Type == GeaType.Reference) Error("GEA2002", gp.Line, gp.Col, "GET_PARAM needs a value variable, not a reference.");
                 break;
             }
             case CreateFeatureStmt cf:
@@ -224,54 +224,54 @@ public sealed class GeaChecker
                 break;
             case SetRefNameStmt rn:
                 RefArg(rn.Ref, rn.Line, rn.Col);
-                ExpectType(GeaType.String, rn.Name, "Tên");
+                ExpectType(GeaType.String, rn.Name, "Name");
                 break;
             case GetRefNameStmt gn:
             {
                 RefArg(gn.Ref, gn.Line, gn.Col);
                 var sym = Writable(gn.Var, gn.Line, gn.Col);
-                if (sym != null && sym.Type != GeaType.String) Error("GEA2002", gn.Line, gn.Col, $"GET_REF_NAME cần biến STRING ({gn.Var} là {Name(sym.Type)}).");
+                if (sym != null && sym.Type != GeaType.String) Error("GEA2002", gn.Line, gn.Col, $"GET_REF_NAME needs a STRING variable ({gn.Var} is {Name(sym.Type)}).");
                 break;
             }
             case SetRefAttrStmt ra:
             {
                 RefArg(ra.Ref, ra.Line, ra.Col);
                 var t = TypeOf(ra.Value);
-                if (t == GeaType.Reference) Error("GEA2002", ra.Line, ra.Col, "Giá trị thuộc tính không được là tham chiếu.");
+                if (t == GeaType.Reference) Error("GEA2002", ra.Line, ra.Col, "An attribute value must not be a reference.");
                 break;
             }
             case GetRefAttrStmt ga:
             {
                 RefArg(ga.Ref, ga.Line, ga.Col);
                 var sym = Writable(ga.Var, ga.Line, ga.Col);
-                if (sym != null && sym.Type == GeaType.Reference) Error("GEA2002", ga.Line, ga.Col, "GET_REF_ATTR cần một biến giá trị.");
+                if (sym != null && sym.Type == GeaType.Reference) Error("GEA2002", ga.Line, ga.Col, "GET_REF_ATTR needs a value variable.");
                 break;
             }
             case SetAppearanceStmt ap:
                 RefArg(ap.Ref, ap.Line, ap.Col);
-                ExpectType(GeaType.String, ap.Appearance, "Tên ngoại hình");
+                ExpectType(GeaType.String, ap.Appearance, "Appearance name");
                 break;
             case RegenStmt or ProcessingEndStmt or ClearCatchStmt:
                 break;
             case ProcessingStartStmt ps:
-                ExpectType(GeaType.String, ps.Title, "Tiêu đề");
+                ExpectType(GeaType.String, ps.Title, "Title");
                 break;
             case ProcessingStateStmt st:
-                ExpectType(GeaType.String, st.Text, "Nội dung bước");
+                ExpectType(GeaType.String, st.Text, "Step text");
                 if (st.Percent != null)
                 {
                     var t = TypeOf(st.Percent);
-                    if (!GeaOps.IsPlainNumber(t) && t != GeaType.Unknown) Error("GEA2002", st.Percent.Line, st.Percent.Col, "Phần trăm phải là số.");
+                    if (!GeaOps.IsPlainNumber(t) && t != GeaType.Unknown) Error("GEA2002", st.Percent.Line, st.Percent.Col, "The percentage must be a number.");
                 }
                 break;
             case CatchStmt c:
                 Stmts(c.Body);
                 break;
             case FailStmt fl:
-                ExpectType(GeaType.String, fl.Message, "Thông báo FAIL");
+                ExpectType(GeaType.String, fl.Message, "FAIL message");
                 break;
             default:
-                Error("GEA1001", s.Line, s.Col, $"Lệnh chưa được hỗ trợ: {s.GetType().Name}.");
+                Error("GEA1001", s.Line, s.Col, $"Statement not supported: {s.GetType().Name}.");
                 break;
         }
     }
@@ -282,50 +282,50 @@ public sealed class GeaChecker
         if (m == null)
         {
             Error("GEA2013", cf.Line, cf.Col,
-                $"Builder '{cf.SourceName}' không tồn tại. Có: {string.Join(", ", GeaBuilderCatalog.All.Select(b => b.Name))}.");
+                $"Builder '{cf.SourceName}' does not exist. Available: {string.Join(", ", GeaBuilderCatalog.All.Select(b => b.Name))}.");
             foreach (var i in cf.Inputs) TypeOf(i.Value);
             return;
         }
         if (cf.OnRef != null) RefArg(cf.OnRef, cf.Line, cf.Col);
-        if (m.Target != _p.Target) Error("GEA2013", cf.Line, cf.Col, $"Builder {m.Name} dùng cho {m.Target}, file có TARGET {_p.Target}.");
+        if (m.Target != _p.Target) Error("GEA2013", cf.Line, cf.Col, $"Builder {m.Name} is for {m.Target}, the file has TARGET {_p.Target}.");
 
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var i in cf.Inputs)
         {
             var t = TypeOf(i.Value);
-            if (!seen.Add(i.Name)) Error("GEA2003", i.Line, i.Col, $"Đầu vào \"{i.Name}\" truyền hai lần.");
+            if (!seen.Add(i.Name)) Error("GEA2003", i.Line, i.Col, $"Input \"{i.Name}\" is passed twice.");
             var port = m.Input(i.Name);
             if (port == null)
             {
-                Error("GEA2010", i.Line, i.Col, $"Builder {m.Name} không có đầu vào \"{i.Name}\". Có: {string.Join(", ", m.Inputs.Select(p => p.Name))}.");
+                Error("GEA2010", i.Line, i.Col, $"Builder {m.Name} has no input \"{i.Name}\". Available: {string.Join(", ", m.Inputs.Select(p => p.Name))}.");
                 continue;
             }
             if (!GeaOps.Assignable(port.Type, t, IsZero(i.Value)))
-                Error("GEA2002", i.Value.Line, i.Value.Col, $"Đầu vào \"{i.Name}\" của {m.Name} cần {Name(port.Type)}, nhận {Name(t)}.{Hint(port.Type, t)}");
+                Error("GEA2002", i.Value.Line, i.Value.Col, $"Input \"{i.Name}\" of {m.Name} needs {Name(port.Type)}, got {Name(t)}.{Hint(port.Type, t)}");
         }
         foreach (var p in m.Inputs.Where(p => p.Required && !seen.Contains(p.Name)))
-            Error("GEA2011", cf.Line, cf.Col, $"Thiếu đầu vào bắt buộc \"{p.Name}\" của builder {m.Name}.");
+            Error("GEA2011", cf.Line, cf.Col, $"Required input \"{p.Name}\" of builder {m.Name} is missing.");
 
         foreach (var o in cf.Outputs)
         {
             var port = m.Output(o.Name);
             if (port == null)
-                Error("GEA2012", o.Line, o.Col, $"Builder {m.Name} không có đầu ra \"{o.Name}\". Có: {string.Join(", ", m.Outputs.Select(p => p.Name))}.");
+                Error("GEA2012", o.Line, o.Col, $"Builder {m.Name} has no output \"{o.Name}\". Available: {string.Join(", ", m.Outputs.Select(p => p.Name))}.");
             var sym = Writable(o.Var, o.Line, o.Col);
             if (sym != null && port != null && sym.Type != port.Type)
-                Error("GEA2002", o.Line, o.Col, $"Đầu ra \"{o.Name}\" là {Name(port.Type)}, biến {o.Var} là {Name(sym.Type)} (khai báo bằng DECLARE_REFERENCE).");
+                Error("GEA2002", o.Line, o.Col, $"Output \"{o.Name}\" is {Name(port.Type)}, variable {o.Var} is {Name(sym.Type)} (declare it with DECLARE_REFERENCE).");
         }
     }
 
-    // ================================================================ khai báo
+    // ================================================================ declarations
 
     private void Declare(string name, GeaType type, SymKind kind, int line, int col)
     {
         var existing = _scope.Find(name);
         if (existing != null)
         {
-            var what = existing.Kind == SymKind.Param ? "thông số" : "biến";
-            Error("GEA2003", line, col, $"'{name}' đã được khai báo (là {what}).");
+            var what = existing.Kind == SymKind.Param ? "parameter" : "variable";
+            Error("GEA2003", line, col, $"'{name}' is already declared (as a {what}).");
             return;
         }
         CheckCase(name, line, col);
@@ -335,10 +335,10 @@ public sealed class GeaChecker
     private void DeclareParam(string name, GeaType type, GeaStmt decl)
     {
         if (_p.ParamPrefix is { Length: > 0 } prefix && !_p.HasAllowedPrefix(name))
-            Error("GEA2030", decl.Line, decl.Col, $"Thông số '{name}' phải bắt đầu bằng tiền tố {prefix} (PARAM_PREFIX).");
+            Error("GEA2030", decl.Line, decl.Col, $"Parameter '{name}' must start with the prefix {prefix} (PARAM_PREFIX).");
         if (_params.Any(p => p.Name == name))
         {
-            Error("GEA2003", decl.Line, decl.Col, $"Thông số '{name}' khai báo hai lần.");
+            Error("GEA2003", decl.Line, decl.Col, $"Parameter '{name}' is declared twice.");
             return;
         }
         Declare(name, type, SymKind.Param, decl.Line, decl.Col);
@@ -349,7 +349,7 @@ public sealed class GeaChecker
     {
         var clash = _scope.CaseClash(name);
         if (clash != null)
-            Error("GEA2003", line, col, $"'{name}' chỉ khác '{clash}' ở chữ hoa thường. Không được dùng hai tên như vậy (Inventor có thể không phân biệt).");
+            Error("GEA2003", line, col, $"'{name}' differs from '{clash}' only in letter case. Two such names are not allowed (Inventor may not tell them apart).");
     }
 
     private Sym? Writable(string name, int line, int col)
@@ -357,22 +357,22 @@ public sealed class GeaChecker
         var sym = _scope.Find(name);
         if (sym == null)
         {
-            Error("GEA2001", line, col, $"'{name}' chưa được khai báo.{DeclareHint(name)}");
+            Error("GEA2001", line, col, $"'{name}' is not declared.{DeclareHint(name)}");
             return null;
         }
         switch (sym.Kind)
         {
             case SymKind.Param when _block == GeaBlockKind.Build:
-                Error("GEA2002", line, col, $"Thông số FORM '{name}' chỉ đọc trong BUILD. Khai báo biến riêng để tính toán.");
+                Error("GEA2002", line, col, $"FORM parameter '{name}' is read-only in BUILD. Declare a variable of your own for calculations.");
                 return null;
             case SymKind.Param:
-                Error("GEA2002", line, col, $"Không gán trực tiếp cho thông số '{name}'; giá trị của nó do người dùng nhập.");
+                Error("GEA2002", line, col, $"Do not assign directly to parameter '{name}'; its value is entered by the user.");
                 return null;
             case SymKind.Builtin:
-                Error("GEA2002", line, col, $"'{name}' là biến có sẵn, chỉ đọc.");
+                Error("GEA2002", line, col, $"'{name}' is a built-in variable, read-only.");
                 return null;
             case SymKind.LoopVar:
-                Error("GEA2002", line, col, $"Không gán cho biến lặp '{name}'.");
+                Error("GEA2002", line, col, $"Do not assign to loop variable '{name}'.");
                 return null;
         }
         return sym;
@@ -381,20 +381,20 @@ public sealed class GeaChecker
     private void RefArg(string name, int line, int col)
     {
         var sym = _scope.Find(name);
-        if (sym == null) Error("GEA2001", line, col, $"Tham chiếu '{name}' chưa được khai báo (dùng DECLARE_REFERENCE).");
-        else if (sym.Type != GeaType.Reference) Error("GEA2002", line, col, $"'{name}' không phải tham chiếu (là {Name(sym.Type)}).");
+        if (sym == null) Error("GEA2001", line, col, $"Reference '{name}' is not declared (use DECLARE_REFERENCE).");
+        else if (sym.Type != GeaType.Reference) Error("GEA2002", line, col, $"'{name}' is not a reference (it is {Name(sym.Type)}).");
     }
 
     private void ParamNameForHost(string name, int line, int col)
     {
         var sym = _scope.Find(name);
         if (sym is { Kind: SymKind.Param })
-            Error("GEA2002", line, col, $"'{name}' là thông số FORM, được đồng bộ tự động vào Inventor; không đặt lại bằng SET_PARAM.");
+            Error("GEA2002", line, col, $"'{name}' is a FORM parameter, synchronized into Inventor automatically; do not set it again with SET_PARAM.");
         if (_p.ParamPrefix is { Length: > 0 } prefix && !_p.HasAllowedPrefix(name))
-            Error("GEA2030", line, col, $"Parameter '{name}' phải bắt đầu bằng tiền tố {prefix}.");
+            Error("GEA2030", line, col, $"Parameter '{name}' must start with the prefix {prefix}.");
     }
 
-    // ================================================================ biểu thức
+    // ================================================================ expressions
 
     private GeaType TypeOf(GeaExpr e)
     {
@@ -408,13 +408,13 @@ public sealed class GeaChecker
                 var sym = _scope.Find(n.Name);
                 if (sym == null)
                 {
-                    Error("GEA2001", n.Line, n.Col, $"'{n.Name}' chưa được khai báo.{DeclareHint(n.Name)}");
+                    Error("GEA2001", n.Line, n.Col, $"'{n.Name}' is not declared.{DeclareHint(n.Name)}");
                     return GeaType.Unknown;
                 }
                 return sym.Type;
             }
             case MemberExpr m:
-                Error("GEA1001", m.Line, m.Col, $"'{m.Target}.{m.Member}' (thành phần của map) chưa hỗ trợ ở GEA_VERSION 1.");
+                Error("GEA1001", m.Line, m.Col, $"'{m.Target}.{m.Member}' (a member of a map) is not supported in GEA_VERSION 1.");
                 return GeaType.Unknown;
             case UnaryExpr u:
             {
@@ -422,11 +422,11 @@ public sealed class GeaChecker
                 if (t == GeaType.Unknown) return t;
                 if (u.Op == "NOT")
                 {
-                    if (t != GeaType.Bool) Error("GEA2002", u.Line, u.Col, $"NOT cần BOOL, nhận {Name(t)}.");
+                    if (t != GeaType.Bool) Error("GEA2002", u.Line, u.Col, $"NOT needs BOOL, got {Name(t)}.");
                     return GeaType.Bool;
                 }
                 if (t is GeaType.Integer or GeaType.Double or GeaType.Length or GeaType.Angle) return t;
-                Error("GEA2002", u.Line, u.Col, $"Dấu trừ không dùng cho {Name(t)}.");
+                Error("GEA2002", u.Line, u.Col, $"The minus sign does not work on {Name(t)}.");
                 return GeaType.Unknown;
             }
             case BinaryExpr b:
@@ -460,14 +460,14 @@ public sealed class GeaChecker
     {
         var t = TypeOf(e);
         if (!GeaOps.Assignable(expected, t, IsZero(e)))
-            Error("GEA2002", e.Line, e.Col, $"{what} phải là {Name(expected)}, nhận {Name(t)}.{Hint(expected, t)}");
+            Error("GEA2002", e.Line, e.Col, $"{what} must be {Name(expected)}, got {Name(t)}.{Hint(expected, t)}");
     }
 
     private void ExpectAssignable(GeaType target, GeaExpr e, string what)
     {
         var t = TypeOf(e);
         if (!GeaOps.Assignable(target, t, IsZero(e)))
-            Error("GEA2002", e.Line, e.Col, $"{what}: không gán được {Name(t)} vào {Name(target)}.{Hint(target, t)}");
+            Error("GEA2002", e.Line, e.Col, $"{what}: cannot assign {Name(t)} to {Name(target)}.{Hint(target, t)}");
     }
 
     private static bool IsZero(GeaExpr e) => e is NumberExpr { Value: 0 } || e is UnaryExpr { Op: "-", Operand: NumberExpr { Value: 0 } };
@@ -476,18 +476,18 @@ public sealed class GeaChecker
 
     private static string Hint(GeaType target, GeaType value) =>
         GeaOps.IsDimensioned(target) && GeaOps.IsPlainNumber(value)
-            ? $" Nhân với 1 {GeaUnits.DefaultUnit(target)} hoặc viết số kèm đơn vị."
+            ? $" Multiply by 1 {GeaUnits.DefaultUnit(target)} or write the number with a unit."
             : target == GeaType.Integer && value == GeaType.Double
-                ? " Dùng ROUND(x), FLOOR(x) hoặc CEIL(x) để đổi sang INTEGER."
+                ? " Use ROUND(x), FLOOR(x) or CEIL(x) to convert to INTEGER."
                 : target == GeaType.String && value != GeaType.String && value != GeaType.Unknown
-                    ? " Dùng STR(x) để đổi sang chuỗi."
+                    ? " Use STR(x) to convert to a string."
                     : "";
 
     private string DeclareHint(string name)
     {
         if (_block == GeaBlockKind.Build && _p.ParamPrefix is { Length: > 0 } prefix && name.StartsWith(prefix, StringComparison.Ordinal))
-            return " Thông số phải được khai báo trong FORM bằng USER_INPUT_PARAM, CHECKBOX_PARAM hoặc RADIOBUTTON_PARAM.";
-        return " Khai báo bằng DECLARE_VARIABLE hoặc DECLARE_REFERENCE.";
+            return " Parameters must be declared in FORM with USER_INPUT_PARAM, CHECKBOX_PARAM or RADIOBUTTON_PARAM.";
+        return " Declare it with DECLARE_VARIABLE or DECLARE_REFERENCE.";
     }
 
     private void Error(string code, int line, int col, string message) =>

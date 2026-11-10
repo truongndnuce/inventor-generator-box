@@ -4,19 +4,19 @@ using System.Text.RegularExpressions;
 
 namespace InventorAddin.Gea;
 
-/// <summary>Dòng của văn bản đã mở rộng đến từ file nào (tên file, số dòng gốc, tính từ 1).</summary>
+/// <summary>Which file a line of the expanded text came from (file name, original line number, 1-based).</summary>
 public sealed record GeaSourceLine(string File, int Line);
 
 /// <summary>
-/// Kết quả mở rộng <c>INCLUDE lib:</c>. <see cref="Lines"/> có đúng một phần tử cho mỗi dòng của <see cref="Text"/>.
-/// <see cref="Diagnostics"/> đã dùng tọa độ của file gốc (không cần ánh xạ lại).
+/// Result of expanding <c>INCLUDE lib:</c>. <see cref="Lines"/> has exactly one element for each line of <see cref="Text"/>.
+/// <see cref="Diagnostics"/> already use the coordinates of the original file (no need to map them again).
 /// </summary>
 public sealed record GeaExpansion(string Text, IReadOnlyList<GeaSourceLine> Lines, IReadOnlyList<string> LibPrefixes, IReadOnlyList<GeaDiagnostic> Diagnostics);
 
 /// <summary>
-/// Bước tiền xử lý cho <c>INCLUDE lib:&lt;tên&gt;</c> (xem docs/superpowers/specs/2026-11-10-gea-include-design.md): thay dòng
-/// INCLUDE bên trong <c>BEGIN_FORM</c> hoặc <c>BEGIN_BUILD</c> bằng thân khối cùng loại của thư viện, trước khi lexer chạy.
-/// Thư viện dùng chung biến với script cha. Chỉ xử lý theo dòng (không hiểu chú thích khối <c>/* */</c> trải nhiều dòng).
+/// Preprocessing step for <c>INCLUDE lib:&lt;name&gt;</c> (see docs/superpowers/specs/2026-11-10-gea-include-design.md): replaces the
+/// INCLUDE line inside <c>BEGIN_FORM</c> or <c>BEGIN_BUILD</c> with the body of the library block of the same kind, before the lexer runs.
+/// The library shares variables with the parent script. It works line by line only (it does not understand multi-line <c>/* */</c> block comments).
 /// </summary>
 public static class GeaIncludes
 {
@@ -34,7 +34,7 @@ public static class GeaIncludes
         var src = Split(text ?? "");
         if (!HasInclude(src))
         {
-            // Không có INCLUDE: trả nguyên văn (kể cả ký tự xuống dòng), chỉ dựng bảng ánh xạ.
+            // No INCLUDE: return the text unchanged (line break characters included), only build the mapping table.
             for (var i = 0; i < src.Count; i++) run.Lines.Add(new GeaSourceLine(fileName, i + 1));
             return new GeaExpansion(text ?? "", run.Lines, run.Prefixes, run.Diags);
         }
@@ -79,11 +79,11 @@ public static class GeaIncludes
         public readonly List<GeaSourceLine> Lines = new();
         public readonly List<string> Prefixes = new();
         public readonly List<GeaDiagnostic> Diags = new();
-        private readonly HashSet<string> _included = new(StringComparer.Ordinal); // "<tên>|<loại khối>"
+        private readonly HashSet<string> _included = new(StringComparer.Ordinal); // "<name>|<block kind>"
 
         private string _top = "";
 
-        // Lỗi ở file gốc giữ nguyên câu; lỗi trong thư viện thêm tên file để biết sửa ở đâu.
+        // An error in the original file keeps its sentence; an error in a library gets the file name so you know where to fix it.
         private void Error(string code, string file, int line, string message) =>
             Diags.Add(new GeaDiagnostic(code, GeaSeverity.Error, line, 1, file == _top ? message : $"{file}: {message}"));
 
@@ -95,7 +95,7 @@ public static class GeaIncludes
                 var line = src[i];
                 if (depth == 0)
                 {
-                    // Chỉ file gốc (và thân thư viện đã được cắt sẵn) mới có BEGIN/END; theo dõi khối hiện tại.
+                    // Only the original file (and the already trimmed library body) has BEGIN/END; track the current block.
                     var open = OpenBlock(line);
                     if (open != Block.None) block = open;
                     else if (block != Block.None && IsCloser(line, block)) { Emit(line, file, i + 1); block = Block.None; continue; }
@@ -108,8 +108,8 @@ public static class GeaIncludes
         }
 
         /// <summary>
-        /// Bản đã mở rộng phải tự hợp lệ khi biên dịch lại (job lưu bản này): thêm tiền tố của các thư viện vào dòng
-        /// PARAM_PREFIX của file gốc (<c>PARAM_PREFIX GT_ TR_</c>). File gốc không có PARAM_PREFIX thì không cần.
+        /// The expanded copy must be valid on its own when compiled again (the job stores this copy): add the prefixes of the libraries to the
+        /// PARAM_PREFIX line of the original file (<c>PARAM_PREFIX GT_ TR_</c>). If the original has no PARAM_PREFIX, nothing is needed.
         /// </summary>
         public void DeclareLibPrefixes(string topFile)
         {
@@ -134,14 +134,14 @@ public static class GeaIncludes
 
         private void Include(string name, string file, int line, Block block, List<string> stack, int depth)
         {
-            if (block == Block.None) { Error("GEA1010", file, line, "INCLUDE phải nằm trong BEGIN_FORM hoặc BEGIN_BUILD."); return; }
-            if (!NamePattern.IsMatch(name)) { Error("GEA1011", file, line, $"Tên thư viện '{name}' không hợp lệ (chỉ chữ, số, _ và -, tối đa 64 ký tự)."); return; }
-            if (depth + 1 > MaxDepth) { Error("GEA1013", file, line, $"INCLUDE lồng quá {MaxDepth} tầng."); return; }
-            if (stack.Contains(name)) { Error("GEA1014", file, line, $"INCLUDE vòng lặp: {string.Join(" -> ", stack)} -> {name}."); return; }
+            if (block == Block.None) { Error("GEA1010", file, line, "INCLUDE must be inside BEGIN_FORM or BEGIN_BUILD."); return; }
+            if (!NamePattern.IsMatch(name)) { Error("GEA1011", file, line, $"Library name '{name}' is not valid (letters, digits, _ and - only, at most 64 characters)."); return; }
+            if (depth + 1 > MaxDepth) { Error("GEA1013", file, line, $"INCLUDE is nested more than {MaxDepth} levels deep."); return; }
+            if (stack.Contains(name)) { Error("GEA1014", file, line, $"Circular INCLUDE: {string.Join(" -> ", stack)} -> {name}."); return; }
             var key = name + "|" + block;
-            if (!_included.Add(key)) { Error("GEA1015", file, line, $"Thư viện '{name}' đã được INCLUDE trong khối này."); return; }
+            if (!_included.Add(key)) { Error("GEA1015", file, line, $"Library '{name}' was already INCLUDEd in this block."); return; }
             var lib = resolve?.Invoke(name);
-            if (lib == null) { Error("GEA1012", file, line, resolve == null ? $"Không có nơi nạp thư viện để INCLUDE '{name}'." : $"Không tìm thấy thư viện '{name}'."); return; }
+            if (lib == null) { Error("GEA1012", file, line, resolve == null ? $"There is no library loader to INCLUDE '{name}'." : $"Library '{name}' was not found."); return; }
 
             var libLines = Split(lib);
             foreach (var l in libLines)
@@ -152,7 +152,7 @@ public static class GeaIncludes
                     if (!Prefixes.Contains(p)) Prefixes.Add(p);
             }
 
-            // Cắt thân khối cùng loại, giữ số dòng gốc của thư viện.
+            // Cut the body of the block of the same kind, keeping the original line numbers of the library.
             var body = new List<string>();
             var numbers = new List<int>();
             var inside = false;
@@ -166,7 +166,7 @@ public static class GeaIncludes
 
             var libFile = name + ".gea";
             stack.Add(name);
-            // Thân đã nằm trong khối `block` của cha nên INCLUDE lồng nhau dùng cùng loại khối.
+            // The body is already inside the block `block` of the parent, so nested INCLUDEs use the same kind of block.
             for (var i = 0; i < body.Count; i++)
             {
                 var m = IncludeLine.Match(body[i]);
