@@ -1,3 +1,5 @@
+> **Cập nhật:** metadata job đã chuyển từ `jobs.json` sang PostgreSQL, xem `database.md`. Các đoạn nhắc `jobs.json` dưới đây là bối cảnh lúc lập kế hoạch.
+
 # Kế hoạch: kho tài liệu Cloudflare R2, tải DWG, 3 trang web và `.gea` hai chiều
 
 Tài liệu này bổ sung cho `cadflow-order-to-model-plan.md` (mục 3.1, 7, 8, 15), `drawing-and-views-plan.md` (phần xuất bản vẽ) và `smartassembly-to-inventor-mapping.md` (mục 11, an toàn script).

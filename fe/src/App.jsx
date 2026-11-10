@@ -7,9 +7,11 @@ import Orders from './pages/Orders.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Job from './pages/Job.jsx';
 import Config from './pages/Config.jsx';
+import Chat from './pages/Chat.jsx';
 
 const NAV = [
   { key: 'configurator', href: '#/', label: 'New order' },
+  { key: 'chat', href: '#/chat', label: 'Chat' },
   { key: 'orders', href: '#/orders', label: 'Ordered' },
   { key: 'dashboard', href: '#/dashboard', label: 'Dashboard' },
   { key: 'config', href: '#/config', label: 'Config' },
@@ -38,7 +40,8 @@ export default function App() {
   // Trang job tự đặt mục nav theo trạng thái job (qua onNav): đang chờ/chạy thuộc Ordered, đã xong thuộc Dashboard.
   const [jobNav, setJobNav] = useState('orders');
 
-  const active = hash.startsWith('#/orders') ? 'orders'
+  const active = hash.startsWith('#/chat') ? 'chat'
+    : hash.startsWith('#/orders') ? 'orders'
     : hash.startsWith('#/dashboard') ? 'dashboard'
     : hash.startsWith('#/config') ? 'config'
     : hash.startsWith('#/jobs') ? jobNav
@@ -48,6 +51,7 @@ export default function App() {
   if (hash.startsWith('#/jobs/')) page = <Job key={hash} id={decodeURIComponent(hash.slice(7))} onNav={setJobNav} />;
   else if (hash.startsWith('#/import/')) page = <ScriptOrder key={hash} scriptId={decodeURIComponent(hash.slice(9))} />;
   else if (hash.startsWith('#/config')) page = <Config key={hash} code={hash.startsWith('#/config/') ? decodeURIComponent(hash.slice(9).split('?')[0]) : undefined} />;
+  else if (hash.startsWith('#/chat')) page = <Chat />;
   else if (hash.startsWith('#/orders')) page = <Orders />;
   else if (hash.startsWith('#/dashboard')) page = <Dashboard />;
   else {

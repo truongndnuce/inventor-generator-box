@@ -1,6 +1,9 @@
 ﻿using System.Text.Json;
 using System.Text.RegularExpressions;
 using Cadflow.Api;
+using Cadflow.Api.Chat;
+using Cadflow.Api.Mcp;
+using System.Threading.RateLimiting;
 using InventorAddin.Gea;
 using InventorAddin.Models;
 using Microsoft.AspNetCore.Http.Json;
@@ -8,13 +11,40 @@ using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// .env cạnh server (bị git bỏ qua): KEY__SUB=value -> cấu hình KEY:SUB. Biến môi trường thật vẫn thắng.
+var envFile = Path.Combine(builder.Environment.ContentRootPath, ".env");
+if (File.Exists(envFile))
+{
+    var fromEnvFile = File.ReadAllLines(envFile)
+        .Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith('#') && l.Contains('='))
+        .Select(l => (Key: l[..l.IndexOf('=')].Trim().Replace("__", ":"), Value: l[(l.IndexOf('=') + 1)..].Trim()))
+        .Where(kv => kv.Key.Length > 0 && kv.Value.Length > 0 && Environment.GetEnvironmentVariable(kv.Key.Replace(":", "__")) == null)
+        .ToDictionary(kv => kv.Key, kv => (string?)kv.Value);
+    builder.Configuration.AddInMemoryCollection(fromEnvFile);
+}
+
 var dataDir = Path.GetFullPath(builder.Configuration["DataDir"] ?? Path.Combine(builder.Environment.ContentRootPath, "data"));
 var workerKey = builder.Configuration["Worker:Key"] ?? "dev-worker-key";
 var frontendDir = Path.GetFullPath(builder.Configuration["Frontend:Path"] ?? Path.Combine(builder.Environment.ContentRootPath, "..", "..", "fe", "dist")); // front-end React: chạy `npm run build` trong fe/
 
-builder.Services.AddSingleton(new JobStore(dataDir));
+var dbConn = builder.Configuration.GetConnectionString("Cadflow")
+    ?? throw new InvalidOperationException("Missing ConnectionStrings:Cadflow (PostgreSQL). Set it in appsettings.json or .env (ConnectionStrings__Cadflow).");
+builder.Services.AddSingleton(new JobStore(dataDir, dbConn));
 builder.Services.AddSingleton(new ScriptStore(dataDir));
 builder.Services.AddSingleton(new ConfigStore(dataDir));
+builder.Services.AddSingleton<JobService>();
+builder.Services.AddSingleton<DraftStore>();
+builder.Services.AddSingleton<CadTools>();
+// MCP server (/mcp): cùng bộ công cụ CadTools với chat.
+builder.Services.AddMcpServer().WithHttpTransport().WithTools<CadTools>();
+// Giới hạn tần suất cho chat (tốn tiền LLM): theo IP.
+builder.Services.AddRateLimiter(o =>
+{
+    o.RejectionStatusCode = 429;
+    o.AddPolicy("chat", ctx => RateLimitPartition.GetFixedWindowLimiter(
+        ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1) }));
+});
 builder.Services.AddSingleton(new R2Store(builder.Configuration.GetSection("R2").Get<R2Options>() ?? new R2Options()));
 builder.Services.AddHostedService<StaleJobReaper>();
 builder.Services.AddHostedService<RetentionService>();
@@ -24,6 +54,21 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(p => p.AllowAnyOrigin().AllowAn
 
 var app = builder.Build();
 app.UseCors();
+app.UseRateLimiter();
+
+// /mcp: khóa trong header X-Api-Key (Mcp:Key). Chưa cấu hình khóa thì chỉ cho phép gọi từ máy chủ (loopback).
+var mcpKey = app.Configuration["Mcp:Key"];
+app.Use(async (ctx, next) =>
+{
+    if (ctx.Request.Path.StartsWithSegments("/mcp"))
+    {
+        var ok = string.IsNullOrEmpty(mcpKey)
+            ? System.Net.IPAddress.IsLoopback(ctx.Connection.RemoteIpAddress ?? System.Net.IPAddress.None)
+            : ctx.Request.Headers["X-Api-Key"] == mcpKey;
+        if (!ok) { ctx.Response.StatusCode = 401; return; }
+    }
+    await next();
+});
 
 if (Directory.Exists(frontendDir))
 {
@@ -42,7 +87,6 @@ var configs = app.Services.GetRequiredService<ConfigStore>();
 var r2 = app.Services.GetRequiredService<R2Store>();
 app.Logger.LogInformation("Artifact storage: {Mode}", r2.IsConfigured ? "Cloudflare R2" : "local disk (R2 not configured)");
 var safeName = new Regex(@"^[A-Za-z0-9][A-Za-z0-9._\- ]{0,119}$", RegexOptions.Compiled);
-const string ImportedProduct = "imported"; // mã sản phẩm của job đặt từ script .gea do người dùng import
 
 // ================================================================= sản phẩm
 
@@ -92,105 +136,24 @@ app.MapDelete("/api/products/{code}/configs/{id}", (string code, string id) =>
 // Import: nhận nội dung file .gea (có thể kèm khối giá trị !@ do CADFlow export), biên dịch, lưu theo mã băm và trả form.
 // Form của script có thể ẩn/hiện ô theo giá trị, nên giao diện gọi lại /form mỗi khi giá trị đổi.
 
-app.MapPost("/api/gea/import", (GeaTextRequest req) =>
+app.MapPost("/api/gea/import", (GeaTextRequest req, JobService jobs) =>
 {
-    var text = req.Text ?? "";
-    if (text.Trim().Length == 0) return Results.BadRequest(new { error = "The file is empty." });
-    if (System.Text.Encoding.UTF8.GetByteCount(text) > GeaForms.MaxScriptBytes)
-        return Results.BadRequest(new { error = $"The file is larger than {GeaForms.MaxScriptBytes / 1024} KB." });
-
-    var block = GeaExport.ParseBlock(text);
-    var clean = GeaExport.StripBlock(text); // lưu bản không có khối giá trị: cùng script thì cùng mã băm
-    var script = GeaScript.Compile(clean);
-    if (GeaForms.Reject(script) is { } why)
-        return Results.BadRequest(new { error = why, diagnostics = GeaForms.Diagnostics(script) });
-
-    var names = GeaForms.FieldNames(script).ToHashSet(StringComparer.Ordinal);
-    var values = block?.Values.Where(kv => names.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value) ?? new Dictionary<string, double>();
-    var texts = block?.Texts.Where(kv => names.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value) ?? new Dictionary<string, string>();
-    var ignored = (block?.Values.Keys.Concat(block.Texts.Keys) ?? Enumerable.Empty<string>()).Where(k => !names.Contains(k)).OrderBy(k => k, StringComparer.Ordinal).ToArray();
-
-    var warnings = new List<string>();
-    if (block?.ScriptSha256 is { } exportedSha && exportedSha != ScriptStore.Sha256(clean))
-        warnings.Add("The script was modified after this file was exported; the values may no longer fit it.");
-    if (ignored.Length > 0)
-        warnings.Add($"{ignored.Length} value(s) in the file do not match any parameter of the script and were ignored: {string.Join(", ", ignored.Take(5))}{(ignored.Length > 5 ? ", ..." : "")}.");
-
-    var id = scripts.Save(clean);
-    return Results.Ok(new
-    {
-        scriptId = id,
-        name = script.Program.ProductName,
-        hasValues = block != null,
-        values,
-        texts,
-        ignored,
-        warnings,
-        diagnostics = GeaForms.Diagnostics(script),
-        form = GeaForms.Describe(GeaForms.Evaluate(script, values, texts)),
-    });
+    var r = jobs.Import(req.Text);
+    return Results.Json(r.Body, statusCode: r.Status);
 });
 
-app.MapPost("/api/gea/{id}/form", (string id, GeaFormRequest req) =>
+app.MapPost("/api/gea/{id}/form", (string id, GeaFormRequest req, JobService jobs) =>
 {
-    if (scripts.Get(id) is not { } text) return Results.NotFound(new { error = "Unknown script. Import the .gea file again." });
-    var script = GeaScript.Compile(text);
-    if (GeaForms.Reject(script) is { } why) return Results.BadRequest(new { error = why });
-    return Results.Ok(new { scriptId = id, name = script.Program.ProductName, form = GeaForms.Describe(GeaForms.Evaluate(script, req.Values, req.Texts)) });
+    var r = jobs.ScriptForm(id, req.Values, req.Texts);
+    return Results.Json(r.Body, statusCode: r.Status);
 });
 
 // ================================================================= đơn hàng / job
 
-app.MapPost("/api/jobs", (CreateJobRequest req) =>
+app.MapPost("/api/jobs", (CreateJobRequest req, JobService jobs) =>
 {
-    var requestedByName = string.IsNullOrWhiteSpace(req.RequestedBy) ? "anonymous" : req.RequestedBy.Trim();
-    if (requestedByName.Length > 80) requestedByName = requestedByName[..80];
-
-    // Đặt hàng từ script .gea đã import: server biên dịch lại và tính FORM lần cuối (không tin trình duyệt).
-    if (!string.IsNullOrWhiteSpace(req.ScriptId))
-    {
-        if (scripts.Get(req.ScriptId) is not { } scriptSource)
-            return Results.NotFound(new { error = "Unknown script. Import the .gea file again." });
-        var script = GeaScript.Compile(scriptSource);
-        if (GeaForms.Reject(script) is { } why)
-            return Results.BadRequest(new { error = why, diagnostics = GeaForms.Diagnostics(script, errorsOnly: true) });
-        var form = GeaForms.Evaluate(script, req.Inputs, req.TextInputs);
-        if (!form.Ok)
-            return Results.BadRequest(new { error = "The order violates the script's rules.", issues = form.Errors.Select(e => new { message = e.Message, @params = e.Params }) });
-
-        var name = string.IsNullOrWhiteSpace(script.Program.ProductName) ? "imported.gea" : script.Program.ProductName;
-        var (numbers, texts) = GeaForms.Complete(form);
-        var scriptJob = store.Create(ImportedProduct, numbers, requestedByName, name, req.ScriptId, "imported", texts);
-        return Results.Created($"/api/jobs/{scriptJob.Id}", scriptJob);
-    }
-
-    var product = Products.Find(string.IsNullOrWhiteSpace(req.ProductCode) ? "box" : req.ProductCode);
-    if (product == null) return Results.NotFound(new { error = $"Unknown product '{req.ProductCode}'." });
-
-    // Server luôn kiểm tra lại lần cuối (là bản chuẩn), không tin form ở trình duyệt.
-    ProductConfig? chosen = null;
-    if (!string.IsNullOrWhiteSpace(req.ConfigId))
-    {
-        chosen = configs.Get(product, req.ConfigId);
-        if (chosen == null) return Results.NotFound(new { error = "Unknown configuration." });
-        if (chosen.Status != "active") return Results.BadRequest(new { error = $"Configuration '{chosen.Name}' is {chosen.Status}; only active configurations can be ordered." });
-    }
-    var values = configs.Effective(product, req.Inputs, chosen); // thông số đơn không nêu thì lấy từ Configuration đã chọn (hoặc mặc định)
-    var issues = product.Validate(values);
-    if (issues.Count > 0)
-        return Results.BadRequest(new { error = "The order violates product rules.", issues });
-
-    // Ghi lại đúng bản script .gea dùng cho job này (để export sau này khớp với những gì đã chạy).
-    string? scriptSha = null;
-    if (product.ScriptFile != null)
-    {
-        if (ScriptStore.ReadBundled(product.ScriptFile) is { } scriptText) scriptSha = scripts.Save(scriptText);
-        else app.Logger.LogWarning("Bundled script {File} for product {Product} was not found; the job will have no .gea export.", product.ScriptFile, product.Code);
-    }
-
-    var job = store.Create(product.Code, values, requestedByName,
-        scriptSha == null ? null : product.ScriptFile, scriptSha, scriptSha == null ? null : "bundled");
-    return Results.Created($"/api/jobs/{job.Id}", job);
+    var r = jobs.Create(req);
+    return r.Ok ? Results.Created($"/api/jobs/{r.Job!.Id}", r.Job) : Results.Json(r.Error, statusCode: r.Status);
 });
 
 // Danh sách có lọc: ?status=queued,running &product=box &requestedBy=ten &from=2026-11-01 &to=2026-11-08 &limit=100
@@ -388,6 +351,10 @@ worker.MapPost("/jobs/{id}/fail", (string id, string worker, FailRequest req) =>
     store.Fail(id, worker, string.IsNullOrWhiteSpace(req.Error) ? "Unknown error." : req.Error!, req.Retryable)
         ? Results.NoContent()
         : Results.Conflict(new { error = "The job is not running on this worker." }));
+
+app.MapMcp("/mcp");
+app.MapChat(app.Configuration["Anthropic:ApiKey"] ?? Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY"),
+    app.Configuration["Anthropic:Model"] ?? "claude-sonnet-5-5", app.Configuration["Anthropic:BaseUrl"], app.Configuration.GetValue("Chat:AutoCreate", true));
 
 app.Run();
 

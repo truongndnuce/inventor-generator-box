@@ -14,13 +14,14 @@ fe/  (web tĩnh)  ──►  be/Cadflow.Api (ASP.NET Core, hàng đợi job)  �
 
 ## Chạy
 
-1. **Server + web** (cần .NET 10 SDK và Node.js 20+; web là React + Radix UI Themes, build bằng Vite):
+1. **Server + web** (cần .NET 10 SDK, Node.js 20+ và **PostgreSQL 15+**; web là React + Radix UI Themes, build bằng Vite):
    ```
+   createdb cadflow                           # lần đầu; bảng tự tạo khi server khởi động (xem docs/database.md)
    cd fe && npm install && npm run build      # tạo fe/dist, server phục vụ thư mục này
    cd .. && dotnet run --project be/Cadflow.Api
    ```
    Sửa giao diện: `cd fe && npm run dev` (http://localhost:5173, tự chuyển tiếp `/api` sang server :18080).
-   Mở http://localhost:18080. Dữ liệu job nằm ở `be/Cadflow.Api/data/` (đổi bằng cấu hình `DataDir`).
+   Mở http://localhost:18080. Job nằm trong PostgreSQL (`ConnectionStrings:Cadflow`); file kết quả, script và cấu hình sản phẩm nằm ở `be/Cadflow.Api/data/` (đổi bằng cấu hình `DataDir`). Test: `dotnet test be/Cadflow.Api.Tests` (cần PostgreSQL, xem `docs/database.md`).
 2. **Add-in**: build `InventorAddin/InventorAddin.sln` (mỗi add-in tự ghi file `.addin` của mình vào `%AppData%\Autodesk\Inventor 2027\Addins`), mở Inventor 2027. Khi nạp, mỗi add-in tự kết nối server và chỉ nhận job của sản phẩm mình. Tiêu đề cửa sổ add-in hiện `web: connected`.
 3. Đặt đơn trên web: job chuyển `queued → running → succeeded`, trang job có ảnh, STEP, `.ipt`.
 
@@ -57,7 +58,7 @@ Builder có sẵn cho `CREATE_FEATURE builder:<Tên>`: `Tank`, `Cover`, `Block`,
 - **Add-in**: `%AppData%\InventorBoxAddin\worker.json` (tự tạo lần đầu): `enabled`, `serverUrl`, `workerKey`, `workerName`, `pollSeconds`. Tên worker trên server là `<workerName>-<add-in>` (ví dụ `PC01-generator`). Log ở `%AppData%\InventorBoxAddin\logs`.
 - **R2 (tùy chọn)**: `dotnet user-secrets set "R2:AccountId" ... --project be/Cadflow.Api` cho `R2:AccountId`, `R2:Bucket`, `R2:AccessKeyId`, `R2:SecretAccessKey` (hoặc biến môi trường `R2__AccountId`...; thêm `R2:Endpoint` nếu dùng jurisdiction EU). Có đủ thì worker tải kết quả thẳng lên bucket R2 (private) và web tải qua URL ký sẵn; không có thì lưu ở `data/artifacts` như cũ. Log khởi động ghi chế độ đang dùng.
 - **Lưu giữ file**: `Retention:Days` (mặc định 0 = giữ mãi) xóa file kết quả của job đã xong quá số ngày đó; thông tin job vẫn còn.
-- **Server**: `be/Cadflow.Api/appsettings.json`: `Urls`, `Worker:Key`. **Đổi `Worker:Key` mặc định `dev-worker-key` trước khi mở ra ngoài localhost.**
+- **Server**: `be/Cadflow.Api/appsettings.json`: `Urls`, `Worker:Key`, `ConnectionStrings:Cadflow`. **Đổi `Worker:Key` mặc định `dev-worker-key` trước khi mở ra ngoài localhost.**
 - Muốn Inventor ở máy khác: đặt `Urls` thành `http://0.0.0.0:18080` và `serverUrl` của add-in trỏ tới máy chủ (nên đặt sau VPN/mạng riêng, xem mục 10 của kế hoạch).
 
 ## API worker (add-in gọi, header `X-Worker-Key`)

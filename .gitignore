@@ -11,3 +11,8 @@ be/Cadflow.Api/data/
 # front-end (Vite)
 fe/node_modules/
 fe/dist/
+
+# secrets (API keys): never commit
+.env
+.env.*
+!.env.example
