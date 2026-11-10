@@ -10,7 +10,7 @@ Thiết kế: `docs/superpowers/specs/2026-11-10-gea-include-design.md`. Mỗi t
    - Mở rộng trong `BEGIN_FORM` chèn thân FORM của thư viện; trong `BEGIN_BUILD` chèn thân BUILD; thư viện thiếu khối đó thì chèn rỗng.
    - Header thư viện (`GEA_VERSION`, `PRODUCT_NAME`, `TARGET`, `PARAM_PREFIX`) không vào kết quả; `PARAM_PREFIX` đi vào `LibPrefixes`.
    - `Lines[i]` ánh xạ đúng `(File, Line)` cho dòng của cha và dòng của thư viện.
-   - Lỗi (mỗi lỗi một test, `Diagnostics` có `GEA3001`...): `INCLUDE` ngoài khối; thiếu thư viện; tên có `/`, `\`, `..` hoặc ngoài `^[A-Za-z0-9_-]{1,64}$`; vòng lặp A↔B; include lần hai cùng loại khối; độ sâu > 8; resolver null.
+   - Lỗi (mỗi lỗi một test, `Diagnostics` có `GEA1012`...): `INCLUDE` ngoài khối; thiếu thư viện; tên có `/`, `\`, `..` hoặc ngoài `^[A-Za-z0-9_-]{1,64}$`; vòng lặp A↔B; include lần hai cùng loại khối; độ sâu > 8; resolver null.
 2. Cài đặt:
    ```csharp
    public sealed record GeaSourceLine(string File, int Line);
@@ -22,7 +22,7 @@ Thiết kế: `docs/superpowers/specs/2026-11-10-gea-include-design.md`. Mỗi t
        public static GeaExpansion Expand(string text, Func<string, string?>? resolveLib, string fileName = "script");
    }
    ```
-   Quét từng dòng, theo dõi khối hiện tại bằng dòng `BEGIN_FORM`/`BEGIN_BUILD` và `END_*` (bỏ qua chú thích `!` và dòng trong chuỗi). Dòng `INCLUDE lib:<tên>` (không phân biệt hoa thường, cho phép chú thích đuôi) được thay bằng thân khối cùng loại của thư viện, đệ quy với tập thư viện đang mở (để bắt vòng) và độ sâu. Thân khối = các dòng giữa `BEGIN_x` và `END_x` của thư viện (không lấy chính hai dòng đó). Mã lỗi `GEA3001`+ cho nhóm include, vị trí = dòng của `INCLUDE` trong file chứa nó.
+   Quét từng dòng, theo dõi khối hiện tại bằng dòng `BEGIN_FORM`/`BEGIN_BUILD` và `END_*` (bỏ qua chú thích `!` và dòng trong chuỗi). Dòng `INCLUDE lib:<tên>` (không phân biệt hoa thường, cho phép chú thích đuôi) được thay bằng thân khối cùng loại của thư viện, đệ quy với tập thư viện đang mở (để bắt vòng) và độ sâu. Thân khối = các dòng giữa `BEGIN_x` và `END_x` của thư viện (không lấy chính hai dòng đó). Mã lỗi `GEA1010`-`GEA1015` cho nhóm include, vị trí = dòng của `INCLUDE` trong file chứa nó.
 3. Chạy test xanh, commit `Add GeaIncludes expander`.
 
 ## Task 2: Compile mở rộng + tiền tố + ánh xạ dòng
@@ -33,7 +33,7 @@ Thiết kế: `docs/superpowers/specs/2026-11-10-gea-include-design.md`. Mỗi t
    - Script cha `PARAM_PREFIX GT_` + `INCLUDE` thư viện `PARAM_PREFIX TR_` (một tham số `TR_X`, một `GT_Y`): `Compile` không lỗi, `Parameters` có cả hai.
    - Tham số lạ (`ZZ_Q`) vẫn bị `GEA2030`.
    - Lỗi trong thư viện có `Message` bắt đầu bằng `tank-lib.gea:` và `Line` là dòng trong thư viện; lỗi ở cha sau chỗ chèn báo đúng dòng gốc của cha.
-   - Không truyền resolver và có `INCLUDE` → lỗi `GEA3001`, không ném ngoại lệ.
+   - Không truyền resolver và có `INCLUDE` → lỗi `GEA1012`, không ném ngoại lệ.
    - Script không có `INCLUDE` cho kết quả y hệt trước (hồi quy: chạy lại các test Gea hiện có nếu có, và test số tham số của `transformer.gea`).
 2. Cài đặt:
    - `GeaProgram` thêm `IReadOnlyList<string> ExtraParamPrefixes { get; init; }` (mặc định rỗng); parser giữ nguyên, `Compile` dùng `with`/gán lại sau khi parse (đổi `init` thành `set` nếu cần).
@@ -74,7 +74,7 @@ Thiết kế: `docs/superpowers/specs/2026-11-10-gea-include-design.md`. Mỗi t
 
 ## Task 6: Tài liệu
 
-- `sa-docs/gea-language-spec.md`: thêm mục `INCLUDE lib:` (cú pháp trong khối, biến dùng chung, tiền tố thư viện, lỗi `GEA3xxx`, giới hạn), cập nhật bảng P1 và đánh dấu Q1 đã chốt (dùng chung biến).
+- `sa-docs/gea-language-spec.md`: thêm mục `INCLUDE lib:` (cú pháp trong khối, biến dùng chung, tiền tố thư viện, lỗi `GEA1010-1015`, giới hạn), cập nhật bảng P1 và đánh dấu Q1 đã chốt (dùng chung biến).
 - `sa-docs/smartassembly-to-inventor-mapping.md` và `docs/smartassembly-to-inventor-mapping.md`: D6 đã chốt.
 - `README.md`: một dòng về `Scripts/lib` và cách thêm thư viện.
 - Commit `Document INCLUDE`.

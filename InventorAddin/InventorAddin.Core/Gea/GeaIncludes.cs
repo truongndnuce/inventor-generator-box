@@ -114,14 +114,14 @@ public static class GeaIncludes
 
         private void Include(string name, string file, int line, Block block, List<string> stack, int depth)
         {
-            if (block == Block.None) { Error("GEA1010", file, line, "INCLUDE phải nằm trong BEGIN_FORM hoặc BEGIN_BUILD." ); return; }
-            if (!NamePattern.IsMatch(name)) { Error("GEA1011", file, line, $"Tên thư viện '{name}' không hợp lệ (chỉ chữ, số, _ và -, tối đa 64 ký tự)." ); return; }
-            if (depth + 1 > MaxDepth) { Error("GEA1013", file, line, $"INCLUDE lồng quá {MaxDepth} tầng." ); return; }
-            if (stack.Contains(name)) { Error("GEA1014", file, line, $"INCLUDE vòng lặp: {string.Join(" -> ", stack)} -> {name}." ); return; }
+            if (block == Block.None) { Error("GEA1010", file, line, "INCLUDE phải nằm trong BEGIN_FORM hoặc BEGIN_BUILD."); return; }
+            if (!NamePattern.IsMatch(name)) { Error("GEA1011", file, line, $"Tên thư viện '{name}' không hợp lệ (chỉ chữ, số, _ và -, tối đa 64 ký tự)."); return; }
+            if (depth + 1 > MaxDepth) { Error("GEA1013", file, line, $"INCLUDE lồng quá {MaxDepth} tầng."); return; }
+            if (stack.Contains(name)) { Error("GEA1014", file, line, $"INCLUDE vòng lặp: {string.Join(" -> ", stack)} -> {name}."); return; }
             var key = name + "|" + block;
-            if (!_included.Add(key)) { Error("GEA1015", file, line, $"Thư viện '{name}' đã được INCLUDE trong khối này." ); return; }
+            if (!_included.Add(key)) { Error("GEA1015", file, line, $"Thư viện '{name}' đã được INCLUDE trong khối này."); return; }
             var lib = resolve?.Invoke(name);
-            if (lib == null) { Error("GEA1012", file, line, resolve == null ? $"Không có nơi nạp thư viện để INCLUDE '{name}'." : $"Không tìm thấy thư viện '{name}'." ); return; }
+            if (lib == null) { Error("GEA1012", file, line, resolve == null ? $"Không có nơi nạp thư viện để INCLUDE '{name}'." : $"Không tìm thấy thư viện '{name}'."); return; }
 
             var libLines = Split(lib);
             foreach (var l in libLines)
