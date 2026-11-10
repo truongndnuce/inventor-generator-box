@@ -4,7 +4,7 @@ using InventorAddin.ViewModels;
 
 namespace InventorAddin.Views;
 
-/// <summary>View của tab Script (.gea): chỉ binding vào <see cref="ScriptViewModel"/>; code-behind chỉ nhảy tới dòng lỗi.</summary>
+/// <summary>View of the Script (.gea) tab: it only binds to <see cref="ScriptViewModel"/>; the code-behind only jumps to the error line.</summary>
 public partial class ScriptPanel : UserControl
 {
     public ScriptPanel()

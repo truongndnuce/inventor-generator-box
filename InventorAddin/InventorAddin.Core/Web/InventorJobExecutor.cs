@@ -11,7 +11,7 @@ using Inv = Inventor;
 
 namespace InventorAddin.Web;
 
-/// <summary>File sinh ra cho một job (đường dẫn trong thư mục làm việc) và loại của nó.</summary>
+/// <summary>A file produced for a job (a path in the working folder) and its kind.</summary>
 public sealed record OutputFile(string Path, string Kind);
 
 public sealed record JobResult(
@@ -25,14 +25,14 @@ public sealed record JobResult(
 }
 
 /// <summary>
-/// Dựng một job do web gửi tới: mở Part mới, dựng hộp bằng chính <see cref="InventorBoxGateway"/> của add-in
-/// (cùng Transaction, cùng kiểm tra lỗi feature), rồi xuất .ipt, STEP và ảnh.
-/// Chỉ được gọi trên UI thread của Inventor.
+/// Builds one job sent by the web: opens a new Part, builds the box with the add-in's own <see cref="InventorBoxGateway"/>
+/// (same Transaction, same feature error checks), then exports .ipt, STEP and images.
+/// May only be called on the Inventor UI thread.
 /// </summary>
 internal sealed class InventorJobExecutor
 {
     private const string StepTranslatorId = "{90AF7F40-0C01-11D5-8E83-0010B541CD80}";
-    private const string ImportedProduct = "imported"; // khớp hằng cùng tên ở be/Cadflow.Api/Program.cs
+    private const string ImportedProduct = "imported"; // matches the constant of the same name in be/Cadflow.Api/Program.cs
 
     private readonly Inv.Application _app;
     private readonly InventorBoxGateway _gateway;
@@ -51,16 +51,16 @@ internal sealed class InventorJobExecutor
 
     public JobResult Run(WorkItem job, string workDir, Action<string, string?> progress)
     {
-        // Server đã kiểm tra, nhưng worker kiểm tra lại: sai thì dừng mà chưa đụng tới Inventor.
+        // The server already checked, but the worker checks again: if wrong, stop before touching Inventor.
         bool isBox = job.ProductCode == "box";
-        var scripted = ScriptedProduct.Find(job.ProductCode); // máy biến áp, turbine khí, máy phát...
-        bool isImported = job.ProductCode == ImportedProduct; // script .gea do người dùng import trên web
+        var scripted = ScriptedProduct.Find(job.ProductCode); // transformer, gas turbine, generator...
+        bool isImported = job.ProductCode == ImportedProduct; // a .gea script imported by the user on the web
         if (!isBox && scripted == null && !isImported)
             return JobResult.Fail($"Unknown product '{job.ProductCode}'.", retryable: false);
         if (isImported && string.IsNullOrEmpty(job.ScriptText))
             return JobResult.Fail("The job has no script text.", retryable: false);
 
-        // Script nhập vào được kiểm tra bằng chính khối FORM của nó (bên dưới); sản phẩm có sẵn dùng luật C# dùng chung.
+        // An imported script is checked with its own FORM block (below); built-in products use the shared C# rules.
         var values = isImported ? new Dictionary<string, double>(job.Inputs)
             : isBox ? BoxParams.Complete(job.Inputs) : scripted!.Complete(job.Inputs);
         if (!isImported)
@@ -77,8 +77,8 @@ internal sealed class InventorJobExecutor
             progress("Creating Part", "Creating a new Part document.");
             doc = NewPart();
 
-            // Box dựng bằng script box.gea khi server gửi kèm script (để export/import .gea khớp với những gì đã dựng);
-            // server cũ không gửi script thì dùng cổng C# như trước.
+            // Box is built by the box.gea script when the server sends the script along (so export/import of .gea matches what was built);
+            // an old server that does not send the script uses the C# gateway as before.
             bool useScript = !isBox || !string.IsNullOrEmpty(job.ScriptText);
 
             OperationResult created;
@@ -89,9 +89,9 @@ internal sealed class InventorJobExecutor
             }
             else
             {
-                // Dựng bằng script .gea: cùng script đó mở được trong add-in để sửa và Apply lại,
-                // vì script và giá trị được lưu kèm trong .ipt.
-                // Ưu tiên bản script server gửi kèm (đúng bản đã ghi cho job, để export khớp); không có thì dùng bản đi kèm add-in.
+                // Build with the .gea script: the same script can be opened in the add-in to edit and Apply again,
+                // because the script and values are stored in the .ipt.
+                // Prefer the script copy the server sends (exactly the one recorded for the job, so export matches); if none, use the one that ships with the add-in.
                 string scriptName, scriptText;
                 string? scriptPath = null;
                 if (!string.IsNullOrEmpty(job.ScriptText))
@@ -101,7 +101,7 @@ internal sealed class InventorJobExecutor
                 }
                 else
                 {
-                    // Server không gửi script (server cũ): dùng bản đi kèm add-in. (Box không vào nhánh này.)
+                    // The server sent no script (old server): use the one that ships with the add-in. (Box does not take this branch.)
                     scriptName = scripted!.ScriptFile;
                     scriptPath = GeaScriptLibrary.BundledPath(scriptName);
                     if (!File.Exists(scriptPath))
@@ -109,7 +109,7 @@ internal sealed class InventorJobExecutor
                     scriptText = File.ReadAllText(scriptPath);
                 }
 
-                var script = GeaScript.Compile(scriptText, GeaScriptLibrary.LibraryResolver(scriptPath), scriptName); // job từ server cũ có thể còn INCLUDE
+                var script = GeaScript.Compile(scriptText, GeaScriptLibrary.LibraryResolver(scriptPath), scriptName); // a job from an old server may still contain INCLUDE
                 if (script.HasErrors)
                     return JobResult.Fail($"{scriptName} has errors: " + script.Diagnostics.First(d => d.Severity == GeaSeverity.Error).Format(scriptName), retryable: false);
                 if (script.Program.Target != "PART")
@@ -134,7 +134,7 @@ internal sealed class InventorJobExecutor
             try
             {
                 var def = doc.ComponentDefinition;
-                // Máy biến áp là mô hình hình khối đặc (vỏ bao), khối lượng tính từ thể tích sẽ sai nên không báo.
+                // The transformer is a solid block model (an envelope), so a mass computed from the volume would be wrong; do not report it.
                 if (isBox) summary["massKg"] = Math.Round(Convert.ToDouble(def.MassProperties.Mass), 4);
                 summary["volumeCm3"] = Math.Round(Convert.ToDouble(def.MassProperties.Volume), 3);
                 summary["bodies"] = def.SurfaceBodies.Count;
@@ -154,7 +154,7 @@ internal sealed class InventorJobExecutor
             if (TryExportStep((Inv._Document)doc, stepPath)) files.Add(new OutputFile(stepPath, "step"));
             else progress("Exporting", "STEP export failed (see add-in log); continuing.");
 
-            // Nhiều góc nhìn để web hiển thị thư viện ảnh. Góc iso giữ tên cũ (<id>.png) cho tương thích.
+            // Several views so the web can show an image gallery. The iso view keeps the old name (<id>.png) for compatibility.
             foreach (var (suffix, orientation) in PictureViews)
             {
                 var pngPath = Path.Combine(workDir, job.Id + suffix + ".png");
@@ -162,16 +162,16 @@ internal sealed class InventorJobExecutor
                 else progress("Exporting", $"Picture '{(suffix.Length == 0 ? "iso" : suffix.TrimStart('_'))}' failed (see add-in log); continuing.");
             }
 
-            // Bản vẽ 2D (PDF). Dựng sau ảnh vì tạo drawing làm đổi view đang active. Lỗi bản vẽ không làm hỏng job.
+            // 2D drawing (PDF). Built after the images because creating a drawing changes the active view. A drawing error does not fail the job.
             progress("Drawing", "Creating the 2D drawing (views, section, dimensions).");
             var pdfPath = Path.Combine(workDir, job.Id + ".pdf");
-            // Mức cao để ghi chuỗi dim trên mặt cắt: chỉ biết với hai sản phẩm có sẵn. Script nhập vào thì bỏ chuỗi dim này.
+            // Level heights to write the dimension string on the section: only known for the two built-in products. An imported script drops this dimension string.
             var levels = isImported ? Array.Empty<double>()
                 : isBox
                     ? new[] { 0, values[BoxParams.Bottom], values[BoxParams.Height] }
                     : scripted!.Levels(values);
             var dwgPath = Path.Combine(workDir, job.Id + ".dwg");
-            var drawing = new DrawingBuilder(_app).Build(doc, zUp: isBox && !useScript, levels, pdfPath, dwgPath); // box dựng bằng C# có trục đứng Z; dựng bằng builder .gea thì trục đứng là Y
+            var drawing = new DrawingBuilder(_app).Build(doc, zUp: isBox && !useScript, levels, pdfPath, dwgPath); // a box built in C# has a vertical Z axis; built with the .gea builders the vertical axis is Y
             if (drawing.Ok)
             {
                 files.Add(new OutputFile(pdfPath, "pdf"));
@@ -189,7 +189,7 @@ internal sealed class InventorJobExecutor
         catch (Exception ex)
         {
             Log.Error($"Job {job.Id} failed in Inventor", ex);
-            // Lỗi từ Inventor/COM (hộp thoại, tài liệu, giấy phép...) có thể là tạm thời: cho phép thử lại.
+            // An error from Inventor/COM (dialog, document, license...) may be temporary: allow a retry.
             return JobResult.Fail(ex.Message, retryable: true);
         }
         finally
@@ -205,7 +205,7 @@ internal sealed class InventorJobExecutor
         var template = _app.FileManager.GetTemplateFile(
             Inv.DocumentTypeEnum.kPartDocumentObject, Inv.SystemOfMeasureEnum.kMetricSystemOfMeasure);
         var doc = (Inv.PartDocument)_app.Documents.Add(Inv.DocumentTypeEnum.kPartDocumentObject, template, true);
-        doc.Activate(); // gateway làm việc trên document đang active
+        doc.Activate(); // the gateway works on the active document
         return doc;
     }
 
@@ -251,12 +251,12 @@ internal sealed class InventorJobExecutor
             camera.ViewOrientationType = orientation;
             camera.Fit();
             camera.Apply();
-            // Chừa lề 15% quanh mô hình để không bị cắt mép.
+            // Leave a 15% margin around the model so edges are not cut off.
             camera.GetExtents(out double extW, out double extH);
             camera.SetExtents(extW * 1.15, extH * 1.15);
             camera.Apply();
 
-            // Ảnh cùng tỷ lệ với khung nhìn, nếu không phần ngoài tỷ lệ sẽ bị cắt.
+            // The image has the same aspect ratio as the viewport, otherwise the part outside the ratio would be cropped.
             const int height = 960;
             int width = view.Height > 0 ? (int)Math.Round(height * (double)view.Width / view.Height) : 1280;
             view.SaveAsBitmap(path, Math.Clamp(width, 480, 2400), height);
@@ -271,7 +271,7 @@ internal sealed class InventorJobExecutor
 
     private static void CloseQuietly(Inv.PartDocument? doc)
     {
-        try { doc?.Close(true); } // true = bỏ qua việc hỏi lưu (đã lưu bản .ipt ở trên)
+        try { doc?.Close(true); } // true = do not ask to save (the .ipt was saved above)
         catch (Exception ex) { Log.Warn("Could not close the job document: " + ex.Message); }
     }
 }

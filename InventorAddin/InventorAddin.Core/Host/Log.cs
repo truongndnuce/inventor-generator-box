@@ -3,7 +3,7 @@ using System.IO;
 
 namespace InventorAddin.Host;
 
-/// <summary>Log ra file %AppData%\InventorBoxAddin\logs\addin-yyyyMMdd.log. Không bao giờ ném lỗi.</summary>
+/// <summary>Logs to the file %AppData%\InventorBoxAddin\logs\addin-yyyyMMdd.log. It never throws.</summary>
 public static class Log
 {
     private static readonly object Gate = new();
@@ -33,7 +33,7 @@ public static class Log
         }
         catch
         {
-            // Log lỗi thì bỏ qua, không được làm hỏng add-in.
+            // Ignore errors while logging; they must not break the add-in.
         }
     }
 }

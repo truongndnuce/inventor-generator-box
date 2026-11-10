@@ -5,8 +5,8 @@ using System.Globalization;
 namespace InventorAddin.Models;
 
 /// <summary>
-/// Tính hình cho canvas: nhận bộ thông số, trả về danh sách hình và nhãn. Không gọi Inventor/WPF nên test được.
-/// Đây chỉ là sơ đồ minh họa, vẽ đúng tỷ lệ giữa các kích thước.
+/// Computes the shapes for the canvas: takes a parameter set, returns a list of shapes and labels. It calls neither Inventor nor WPF, so it can be tested.
+/// This is only an illustrative diagram, drawn to the correct proportions between the dimensions.
 /// </summary>
 public static class PreviewBuilder
 {
@@ -15,7 +15,7 @@ public static class PreviewBuilder
     private static double V(IReadOnlyDictionary<string, double> v, string name) =>
         v.TryGetValue(name, out var x) ? x : BoxParams.Get(name).Default;
 
-    /// <summary>Đường kích thước nằm ngang hoặc đứng có hai vạch đầu mút.</summary>
+    /// <summary>A horizontal or vertical dimension line with two end ticks.</summary>
     private static void Dimension(List<Shape> s, double x1, double y1, double x2, double y2, double tick, string param)
     {
         s.Add(new LineShape(x1, y1, x2, y2, ShapeStyle.Dim, param));
@@ -24,14 +24,14 @@ public static class PreviewBuilder
             s.Add(new LineShape(x1, y1 - tick, x1, y1 + tick, ShapeStyle.Dim, param));
             s.Add(new LineShape(x2, y2 - tick, x2, y2 + tick, ShapeStyle.Dim, param));
         }
-        else // đứng
+        else // vertical
         {
             s.Add(new LineShape(x1 - tick, y1, x1 + tick, y1, ShapeStyle.Dim, param));
             s.Add(new LineShape(x2 - tick, y2, x2 + tick, y2, ShapeStyle.Dim, param));
         }
     }
 
-    /// <summary>Khung nhìn mặt bằng (từ trên xuống).</summary>
+    /// <summary>Plan view (from the top down).</summary>
     public static Scene Plan(IReadOnlyDictionary<string, double> v)
     {
         double len = V(v, BoxParams.Length), wid = V(v, BoxParams.Width);
@@ -46,7 +46,7 @@ public static class PreviewBuilder
         double lip = wall + clr;
         s.Add(new RectShape(lip, lip, len - 2 * lip, wid - 2 * lip, Math.Max(r - lip, 0), ShapeStyle.Gap, BoxParams.LidClearance));
 
-        // Nổi bật khi focus
+        // Highlight on focus
         s.Add(new RectShape(0, 0, len, wall, 0, ShapeStyle.Overlay, BoxParams.Wall));
         s.Add(new RectShape(0, wid - wall, len, wall, 0, ShapeStyle.Overlay, BoxParams.Wall));
         s.Add(new RectShape(0, 0, r, r, 0, ShapeStyle.Overlay, BoxParams.CornerRadius));
@@ -64,7 +64,7 @@ public static class PreviewBuilder
         return new Scene(-m * 0.3, -m * 0.3, len + m * 1.9, wid + m * 1.0, s);
     }
 
-    /// <summary>Khung nhìn mặt cắt dọc qua tâm hộp, thân phía dưới, nắp phía trên.</summary>
+    /// <summary>Vertical section view through the center of the box, the body at the bottom, the lid at the top.</summary>
     public static Scene Section(IReadOnlyDictionary<string, double> v)
     {
         double len = V(v, BoxParams.Length), hgt = V(v, BoxParams.Height);
@@ -74,7 +74,7 @@ public static class PreviewBuilder
         double tick = m * 0.08;
         var s = new List<Shape>();
 
-        // y hướng xuống: nắp từ y=0..lt, thân từ y=lt..lt+hgt (khớp mặt trên thân với đáy nắp)
+        // y points down: lid from y=0..lt, body from y=lt..lt+hgt (so the top of the body matches the bottom of the lid)
         double yTopBody = lt, yBottom = lt + hgt;
 
         var body = new (double, double)[]
@@ -93,18 +93,18 @@ public static class PreviewBuilder
         s.Add(new PolyShape(lid, ShapeStyle.LidFill));
         s.Add(new PolyShape(lid, ShapeStyle.Outline));
 
-        // Khe hở giữa gờ và thành trong (vẽ ở lớp vẽ với độ dày tối thiểu vài pixel)
+        // Clearance between the lip and the inner wall (drawn on the drawing layer with a minimum thickness of a few pixels)
         s.Add(new RectShape(wall, yTopBody, clr, lip, 0, ShapeStyle.Gap, BoxParams.LidClearance));
         s.Add(new RectShape(lx1, yTopBody, clr, lip, 0, ShapeStyle.Gap, BoxParams.LidClearance));
 
-        // Nổi bật khi focus
+        // Highlight on focus
         s.Add(new RectShape(0, yTopBody, wall, hgt, 0, ShapeStyle.Overlay, BoxParams.Wall));
         s.Add(new RectShape(len - wall, yTopBody, wall, hgt, 0, ShapeStyle.Overlay, BoxParams.Wall));
         s.Add(new RectShape(wall, yBottom - bottom, len - 2 * wall, bottom, 0, ShapeStyle.Overlay, BoxParams.Bottom));
         s.Add(new RectShape(0, 0, len, lt, 0, ShapeStyle.Overlay, BoxParams.LidThickness));
         s.Add(new RectShape(lx0, lt, lx1 - lx0, lip, 0, ShapeStyle.Overlay, BoxParams.LidLip));
 
-        // Kích thước
+        // Dimensions
         double xLeft = -m * 0.35, xRight = len + m * 0.35;
         Dimension(s, xLeft, yTopBody, xLeft, yBottom, tick, BoxParams.Height);
         s.Add(new LabelShape(xLeft - tick, (yTopBody + yBottom) / 2, $"Height {F(hgt)}", BoxParams.Height, LabelAnchor.Right, 0));

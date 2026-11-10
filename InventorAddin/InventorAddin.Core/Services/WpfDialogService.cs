@@ -3,7 +3,7 @@ using System.Windows.Controls;
 
 namespace InventorAddin.Services;
 
-/// <summary>Cài đặt <see cref="IDialogService"/> bằng MessageBox và một cửa sổ nhập tên nhỏ dựng bằng code.</summary>
+/// <summary>Implements <see cref="IDialogService"/> with MessageBox and a small name-input window built in code.</summary>
 public sealed class WpfDialogService : IDialogService
 {
     private const string Caption = "Box Generator";

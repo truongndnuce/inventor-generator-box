@@ -1,11 +1,11 @@
 ! ============================================================================
-! Hộp có nắp: thân rỗng mở nắp (bo góc đứng, thành dày Wall, đáy dày Bottom) và nắp phẳng có gờ lồng vào lòng hộp.
+! Box with a lid: an open-top hollow body (vertical rounded corners, wall thickness Wall, bottom thickness Bottom) and a flat lid with a lip that fits into the box.
 !
-! Thông số, giá trị mặc định, MIN/MAX và luật kiểm tra khớp BoxParams.cs (server và add-in dùng bản C# đó):
-! hai nơi phải luôn đồng nhất, nếu sửa một nơi thì sửa nơi kia.
+! The parameters, default values, MIN/MAX and validation rules match BoxParams.cs (the server and the add-in use that C# copy):
+! the two places must always stay identical; if you change one, change the other.
 !
-! Dựng bằng builder Tank + Cover (cùng bộ builder với máy biến áp). Hệ tọa độ của builder: tâm hộp ở X = 0, D = 0,
-! chiều cao theo trục Y của Inventor, đáy hộp ở cao độ 0, nắp đặt ngay trên miệng hộp.
+! Built with the Tank + Cover builders (the same builders as the transformer). Coordinate system of the builders: box center at X = 0, D = 0,
+! height along the Y axis of Inventor, box bottom at elevation 0, the lid sits right on the box opening.
 ! ============================================================================
 GEA_VERSION 1
 PRODUCT_NAME "Box with lid"
@@ -29,7 +29,7 @@ BEGIN_FORM
     USER_INPUT_PARAM BX_LidClearance LENGTH 0.3 mm MIN 0 MAX 1  LABEL "Lid lip clearance"
   END_GROUP
 
-  ! --- Luật kiểm tra: giống BoxParams.Validate ---
+  ! --- Validation rules: same as BoxParams.Validate ---
   DECLARE_VARIABLE LENGTH shortSide
   DECLARE_VARIABLE LENGTH innerHeight
   shortSide   = MIN(BX_Length, BX_Width)
@@ -55,7 +55,7 @@ BEGIN_BUILD
 
   PROCESSING_BOX_START "Building box"
 
-  ! --- Thân ---
+  ! --- Body ---
   PROCESSING_BOX_SET_STATE "Building body" 10
   CREATE_FEATURE builder:Tank
     FEATURE_IN "Length"       BX_Length
@@ -70,7 +70,7 @@ BEGIN_BUILD
   SET_REF_NAME body "BX_Box*"
   SET_REF_ATTR body "ROLE" "BODY"
 
-  ! --- Nắp ---
+  ! --- Lid ---
   PROCESSING_BOX_SET_STATE "Building lid" 55
   BEGIN_CATCH_ERROR
     CREATE_FEATURE builder:Cover

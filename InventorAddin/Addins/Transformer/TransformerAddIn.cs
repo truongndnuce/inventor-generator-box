@@ -6,8 +6,8 @@ using InventorAddin.Host;
 namespace InventorAddin.Addins.Transformer;
 
 /// <summary>
-/// Add-in Transformer: cửa sổ Script (.gea) chỉ có mẫu của sản phẩm này, và web worker dựng job "transformer" do web đặt.
-/// Mọi thứ khác (ribbon dùng chung tab Cadflow, cửa sổ, worker) do <see cref="CadflowAddIn"/> lo.
+/// The Transformer add-in: the Script (.gea) window has only the templates of this product, and the web worker builds the "transformer" jobs placed on the web.
+/// Everything else (the ribbon sharing the Cadflow tab, the window, the worker) is handled by <see cref="CadflowAddIn"/>.
 /// </summary>
 [ComVisible(true)]
 [Guid(ClientId)]

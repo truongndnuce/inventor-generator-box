@@ -5,9 +5,9 @@ using System.Linq;
 namespace InventorAddin.Models;
 
 /// <summary>
-/// Máy biến áp lực đơn giản hóa (thùng + đế + nắp, cánh tản nhiệt, sứ xuyên, bình dầu phụ), mô hình hình khối theo ảnh tham chiếu.
-/// Một nơi định nghĩa duy nhất: server (form, kiểm tra luật) và add-in (dựng) đều đọc từ đây. Đơn vị: mm.
-/// Hệ tọa độ: tâm thùng ở gốc XY, đế nằm trên z = 0, trục dài thùng là X, cánh tản nhiệt ở phía +Y, bình dầu ở đầu -X.
+/// A simplified power transformer (tank + base + cover, radiators, bushings, conservator), a block model following the reference picture.
+/// A single place of definition: the server (form, rule checks) and the add-in (build) both read from here. Unit: mm.
+/// Coordinate system: tank center at the XY origin, base sitting on z = 0, the long axis of the tank is X, radiators on the +Y side, conservator at the -X end.
 /// </summary>
 public static class TransformerParams
 {
@@ -43,16 +43,16 @@ public static class TransformerParams
     public const string GroupBushing = "Bushings";
     public const string GroupConservator = "Conservator";
 
-    // Hằng số hình học dùng chung giữa luật kiểm tra và bộ dựng (để hai bên không lệch nhau).
+    // Geometry constants shared between the validation rules and the builder (so the two never drift apart).
     public const double RadiatorClearanceFromTank = 30;
     public const double RadiatorBottomOffset = 150;
     public const double BushingEdgeMargin = 100;
-    public const double BushingRowFraction = 0.22; // hàng sứ đặt tại y = ±0.22 * bề rộng thùng
-    public const double TurretFactor = 0.6;        // bán kính chân sứ = 0.6 * đường kính sứ
+    public const double BushingRowFraction = 0.22; // the bushing rows are placed at y = ±0.22 * tank width
+    public const double TurretFactor = 0.6;        // turret radius = 0.6 * bushing diameter
 
     public static double TurretRadius(double bushingDiameter) => TurretFactor * bushingDiameter;
 
-    /// <summary>Số sứ mỗi hàng: hai hàng khi có từ 2 sứ trở lên.</summary>
+    /// <summary>Bushings per row: two rows when there are 2 or more bushings.</summary>
     public static int BushingRows(double count) => count >= 2 ? 2 : 1;
 
     public static int BushingsPerRow(double count) => (int)Math.Ceiling(count / BushingRows(count));
@@ -88,7 +88,7 @@ public static class TransformerParams
 
     public static Dictionary<string, double> Defaults() => All.ToDictionary(d => d.Name, d => d.Default);
 
-    /// <summary>Lấy các giá trị có trong <paramref name="partial"/>, thiếu thì dùng mặc định; khóa lạ bị bỏ.</summary>
+    /// <summary>Takes the values present in <paramref name="partial"/>, uses the default for missing ones; unknown keys are dropped.</summary>
     public static Dictionary<string, double> Complete(IReadOnlyDictionary<string, double>? partial)
     {
         var result = Defaults();
@@ -99,7 +99,7 @@ public static class TransformerParams
         return result;
     }
 
-    /// <summary>Kiểm tra khoảng giá trị, số nguyên và các ràng buộc hình học. Rỗng nghĩa là hợp lệ.</summary>
+    /// <summary>Checks value ranges, integers and the geometric constraints. Empty means valid.</summary>
     public static IReadOnlyList<ValidationIssue> Validate(IReadOnlyDictionary<string, double> values)
     {
         var issues = new List<ValidationIssue>();
@@ -122,7 +122,7 @@ public static class TransformerParams
                 issues.Add(new ValidationIssue($"{d.Label} must be a whole number.", new[] { d.Name }));
             }
         }
-        if (!rangeOk) return issues; // các luật dưới đây chỉ có nghĩa khi từng giá trị đã nằm trong khoảng
+        if (!rangeOk) return issues; // the rules below only make sense once every value is within its range
 
         double len = V(TankLength), wid = V(TankWidth), hgt = V(TankHeight);
         double radN = V(RadiatorCount), radW = V(RadiatorWidth), radH = V(RadiatorHeight), radG = V(RadiatorGap);

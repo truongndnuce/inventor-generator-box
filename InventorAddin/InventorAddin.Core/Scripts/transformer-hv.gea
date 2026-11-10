@@ -1,17 +1,17 @@
 ﻿! ============================================================================
-! Máy biến áp lực ngoài trời (chi tiết hơn transformer.gea), dựng theo ảnh mẫu:
-!   - đế hai lớp, thùng bo góc có gân tăng cứng, vành mép trên và nắp tràn ra ngoài
-!   - các cụm cánh tản nhiệt dạng lá (builder:Radiator) nối vào thành sau bằng ống góp trên và dưới
-!   - bình dầu phụ nằm ngang ở đầu X âm: nắp chỏm hai đầu, mắt thăm dầu, giá đỡ chạy dọc thành đầu thùng
-!   - ống dầu chạy dọc nắp từ bình dầu, hai hàng sứ xuyên (cao áp phía trước, hạ áp phía sau)
-!     có chân sứ vát côn (body riêng, màu thùng) và nắp đầu cực
-!   - van xả dầu và biển cảnh báo ở thành trước
+! Outdoor power transformer (more detailed than transformer.gea), built from a sample picture:
+!   - a two-layer base, a tank with rounded corners and stiffening ribs, a top rim and an overhanging cover
+!   - fin-type radiator banks (builder:Radiator) joined to the rear wall by upper and lower headers
+!   - a horizontal conservator at the negative X end: domed end caps, an oil sight glass, a support running along the end wall of the tank
+!   - an oil pipe running along the cover from the conservator, two rows of bushings (high voltage in front, low voltage behind)
+!     with tapered turrets (separate body, tank color) and terminal caps
+!   - a drain valve and a warning plate on the front wall
 !
-! Hệ tọa độ của builder: X dọc thùng (tâm thùng ở 0), D theo chiều sâu (D âm là mặt trước),
-! Elevation là cao độ (mặt đất là 0). Mỗi bộ phận là một solid body có tên trong cùng một Part.
+! Coordinate system of the builders: X along the tank (tank center at 0), D along the depth (negative D is the front face),
+! Elevation is the height (the ground is 0). Each part is a named solid body in the same Part.
 !
-! Sửa file này rồi bấm Apply (hoặc bật "Apply automatically...") trong tab Script: model dựng lại
-! trong một Transaction, Ctrl+Z hoàn tác một lần.
+! Edit this file, then press Apply (or turn on "Apply automatically...") in the Script tab: the model is rebuilt
+! in one Transaction, Ctrl+Z undoes it in one step.
 ! ============================================================================
 GEA_VERSION 1
 PRODUCT_NAME "Outdoor power transformer (HV/LV bushings)"
@@ -83,7 +83,7 @@ BEGIN_FORM
     RADIOBUTTON_PARAM TX_Paint "Green" "Grey" "LightGrey" "White" LABEL "Tank colour"
   END_GROUP
 
-  ! --- Luật kiểm tra ---
+  ! --- Validation rules ---
   DECLARE_VARIABLE LENGTH span
   DECLARE_VARIABLE LENGTH xs
   DECLARE_VARIABLE LENGTH xe
@@ -105,7 +105,7 @@ BEGIN_FORM
   ASSERT TX_ConservatorLength <= TX_TankWidth + 600 mm "Conservator length must be at most tank width + 600 mm."
   ASSERT TX_PipeDiameter <= TX_ConservatorDiameter / 3 "Oil pipe diameter must be at most one third of the conservator diameter."
 
-  ! Hai hàng sứ nằm giữa đầu bình dầu và đầu kia của thùng; ống dầu chạy giữa hai hàng.
+  ! The two bushing rows sit between the conservator end and the other end of the tank; the oil pipe runs between the two rows.
   xs = -TX_TankLength / 2 + 0.85 * TX_ConservatorDiameter + 150 mm
   xe = TX_TankLength / 2 - 150 mm
   rowD = 0.24 * TX_TankWidth
@@ -175,7 +175,7 @@ BEGIN_BUILD
 
   PROCESSING_BOX_START "Building the transformer"
 
-  ! ------------------------------------------------------------------ đế hai lớp
+  ! ------------------------------------------------------------------ two-layer base
   PROCESSING_BOX_SET_STATE "Base" 5
   CREATE_FEATURE builder:Block
     FEATURE_IN "SizeX"  TX_TankLength + 2 * TX_BaseOverhang
@@ -198,7 +198,7 @@ BEGIN_BUILD
   SET_REF_ATTR body "ROLE" "BASE"
   SET_APPEARANCE body finish
 
-  ! ------------------------------------------------------------------ thùng, vành mép, nắp
+  ! ------------------------------------------------------------------ tank, rim, cover
   PROCESSING_BOX_SET_STATE "Tank and cover" 12
   CREATE_FEATURE builder:Block
     FEATURE_IN "Elevation"    hTank
@@ -235,7 +235,7 @@ BEGIN_BUILD
   SET_REF_ATTR body "ROLE" "COVER"
   SET_APPEARANCE body finish
 
-  ! ------------------------------------------------------------------ gân tăng cứng ở thành trước và hai đầu
+  ! ------------------------------------------------------------------ stiffening ribs on the front wall and the two ends
   PROCESSING_BOX_SET_STATE "Stiffeners" 20
   pitch = TX_TankLength / (TX_StiffenerCount + 1)
   FOR i FROM 1 TO TX_StiffenerCount
@@ -267,7 +267,7 @@ BEGIN_BUILD
     SET_APPEARANCE body finish
   END_FOR
 
-  ! ------------------------------------------------------------------ cánh tản nhiệt ở thành sau
+  ! ------------------------------------------------------------------ radiators on the rear wall
   PROCESSING_BOX_SET_STATE "Radiators" 30
   IF TX_RadiatorCount > 0
     span = TX_RadiatorCount * TX_RadiatorWidth + (TX_RadiatorCount - 1) * TX_RadiatorGap
@@ -290,7 +290,7 @@ BEGIN_BUILD
       SET_REF_ATTR body "ROLE" "RADIATOR"
       SET_APPEARANCE body finish
 
-      ! Ống góp trên và dưới nối cánh tản nhiệt vào thành thùng (lồng 20 mm vào hai đầu)
+      ! Upper and lower headers join the radiators to the tank wall (sunk 20 mm into the two ends)
       FOR k FROM 0 TO 1
         CREATE_FEATURE builder:Cylinder
           FEATURE_IN "Axis"      "D"
@@ -307,7 +307,7 @@ BEGIN_BUILD
     END_FOR
   END_IF
 
-  ! ------------------------------------------------------------------ bình dầu phụ và giá đỡ
+  ! ------------------------------------------------------------------ conservator and supports
   PROCESSING_BOX_SET_STATE "Conservator" 50
   consR = TX_ConservatorDiameter / 2
   consX = -TX_TankLength / 2 + 0.35 * TX_ConservatorDiameter
@@ -324,7 +324,7 @@ BEGIN_BUILD
   SET_REF_ATTR body "ROLE" "CONSERVATOR"
   SET_APPEARANCE body finish
 
-  ! Nắp chỏm hai đầu và mắt thăm dầu ở đầu trước
+  ! Domed end caps and the oil sight glass at the front end
   FOR k FROM 0 TO 1
     CREATE_FEATURE builder:Cylinder
       FEATURE_IN "Axis"      "D"
@@ -351,7 +351,7 @@ BEGIN_BUILD
   SET_REF_NAME body "TX_OilGauge"
   SET_APPEARANCE body "White"
 
-  ! Hai chân đỡ chạy dọc thành đầu thùng (từ giữa thân lên tới đáy bình dầu), có yên đỡ và thanh giằng
+  ! Two supports running along the end wall of the tank (from mid-body up to the conservator bottom), with a saddle and a brace
   legX = -TX_TankLength / 2 - TX_CoverOverhang - 50 mm
   legBottom = hTank + 0.4 * TX_TankHeight
   FOR k FROM 0 TO 1
@@ -381,7 +381,7 @@ BEGIN_BUILD
     SET_REF_NAME body "TX_ConservatorSaddle_" + STR(k + 1)
     SET_APPEARANCE body finish
 
-    ! Tay đỡ nằm ngang bắt chân vào vành mép thùng
+    ! A horizontal arm fixes the support to the tank rim
     CREATE_FEATURE builder:Block
       FEATURE_IN "CenterX"   legX + 50 mm + (TX_CoverOverhang + 50 mm) / 2
       FEATURE_IN "CenterD"   legD
@@ -406,7 +406,7 @@ BEGIN_BUILD
   SET_REF_NAME body "TX_ConservatorBrace"
   SET_APPEARANCE body finish
 
-  ! ------------------------------------------------------------------ ống dầu: từ bình dầu xuống rồi chạy dọc nắp giữa hai hàng sứ
+  ! ------------------------------------------------------------------ oil pipe: from the conservator down, then along the cover between the two bushing rows
   PROCESSING_BOX_SET_STATE "Oil pipe" 60
   pipeH = hTop + 0.55 * TX_ConservatorLift
   CREATE_FEATURE builder:Cylinder
@@ -444,7 +444,7 @@ BEGIN_BUILD
   SET_REF_NAME body "TX_PipeDrop"
   SET_APPEARANCE body finish
 
-  ! ------------------------------------------------------------------ sứ xuyên: HV hàng trước, LV hàng sau
+  ! ------------------------------------------------------------------ bushings: HV front row, LV rear row
   PROCESSING_BOX_SET_STATE "Bushings" 70
   xs = -TX_TankLength / 2 + 0.85 * TX_ConservatorDiameter + 150 mm
   rowD = 0.24 * TX_TankWidth
@@ -509,7 +509,7 @@ BEGIN_BUILD
     SET_APPEARANCE body "Porcelain"
   END_FOR
 
-  ! ------------------------------------------------------------------ van xả dầu và biển cảnh báo ở thành trước
+  ! ------------------------------------------------------------------ drain valve and warning plate on the front wall
   PROCESSING_BOX_SET_STATE "Fittings" 90
   IF TX_Valve
     x = -TX_TankLength / 2 + 0.5 * pitch

@@ -5,14 +5,14 @@ using Inv = Inventor;
 namespace InventorAddin.Services.Gea;
 
 /// <summary>
-/// Các khối hình học cơ bản cho builder của .gea, dựng trong một Part (thừa hưởng từ TransformerBuilder cũ).
+/// Basic geometry blocks for the .gea builders, built in a Part (inherited from the old TransformerBuilder).
 ///
-/// Hệ tọa độ: Inventor mặc định trục đứng là Y (mặt đất là mặt XZ). Dùng ba tọa độ (x, h, d):
-/// x = dọc (X), h = cao độ (Y), d = chiều sâu (Z). Mọi vị trí đều đi qua <see cref="Model"/> và ModelToSketchSpace
-/// nên không phụ thuộc chiều trục của sketch. Đơn vị vào là mm; API dùng cm.
+/// Coordinate system: in Inventor the vertical axis is Y by default (the ground is the XZ plane). Three coordinates (x, h, d) are used:
+/// x = along (X), h = elevation (Y), d = depth (Z). Every position goes through <see cref="Model"/> and ModelToSketchSpace
+/// so it does not depend on the axis direction of the sketch. Input units are mm; the API uses cm.
 ///
-/// Mọi sketch, feature, work plane tạo ra đều được báo qua <see cref="_track"/> để Host gắn dấu sở hữu,
-/// nhờ đó lần Apply sau xóa đúng phần do script tạo rồi dựng lại.
+/// Every sketch, feature and work plane created is reported through <see cref="_track"/> so the Host can attach the ownership mark,
+/// so the next Apply deletes exactly what the script created and rebuilds it.
 /// </summary>
 internal sealed class PartGeometry
 {
@@ -34,10 +34,10 @@ internal sealed class PartGeometry
 
     public static double Cm(double mm) => mm / 10.0;
 
-    /// <summary>Điểm 3D (cm) từ tọa độ (x, h, d) tính bằng mm.</summary>
+    /// <summary>A 3D point (cm) from coordinates (x, h, d) in mm.</summary>
     public Inv.Point Model(double x, double h, double d) => _tg.CreatePoint(Cm(x), Cm(h), Cm(d));
 
-    /// <summary>Kết quả của một thao tác dựng: body và các đối tượng đã tạo (để đổi tên theo body).</summary>
+    /// <summary>Result of one build operation: the body and the objects created (so they can be renamed after the body).</summary>
     public sealed class Built
     {
         public Built(Inv.SurfaceBody body) => Body = body;
@@ -46,9 +46,9 @@ internal sealed class PartGeometry
         public List<(object Item, string Role)> Items { get; } = new();
     }
 
-    // ------------------------------------------------------------ khối lăng trụ đứng
+    // ------------------------------------------------------------ vertical prisms
 
-    /// <summary>Lăng trụ đứng (hình chữ nhật bo góc) thành body mới: tâm (cx, cd), đáy ở cao độ h0, cao <paramref name="height"/>.</summary>
+    /// <summary>A vertical prism (rectangle with rounded corners) as a new body: center (cx, cd), bottom at elevation h0, height <paramref name="height"/>.</summary>
     public Built Prism(string tag, double cx, double cd, double h0, double sx, double sd, double radius, double height)
     {
         var sk = NewSketch(PlaneAt(2, h0), tag + "_Sketch");
@@ -60,7 +60,7 @@ internal sealed class PartGeometry
         return built;
     }
 
-    /// <summary>Khoét hốc từ mặt phẳng ngang ở cao độ <paramref name="hTop"/> xuống sâu <paramref name="depth"/>, chỉ trên body đích.</summary>
+    /// <summary>Cuts a pocket from a horizontal plane at elevation <paramref name="hTop"/> down by <paramref name="depth"/>, on the target body only.</summary>
     public void Pocket(Built target, string tag, double cx, double cd, double hTop, double sx, double sd, double radius, double depth)
     {
         var sk = NewSketch(PlaneAt(2, hTop), tag + "_Sketch");
@@ -72,9 +72,9 @@ internal sealed class PartGeometry
     }
 
     /// <summary>
-    /// Nối thêm một lăng trụ (có thể rỗng ở giữa) vào body đích: vẽ trên mặt phẳng ngang ở cao độ <paramref name="h0"/>,
-    /// kéo lên (<paramref name="up"/>) hoặc xuống một đoạn <paramref name="height"/>.
-    /// Nếu có kích thước lỗ (holeSx, holeSd &gt; 0) thì profile là vành giữa hai đường bao.
+    /// Joins a prism (it may be hollow in the middle) to the target body: sketched on a horizontal plane at elevation <paramref name="h0"/>,
+    /// extruded up (<paramref name="up"/>) or down by <paramref name="height"/>.
+    /// If hole dimensions are given (holeSx, holeSd &gt; 0) the profile is the ring between the two outlines.
     /// </summary>
     public void JoinPrism(Built target, string tag, double cx, double cd, double h0, double sx, double sd, double radius,
         double height, bool up, double holeSx = 0, double holeSd = 0, double holeRadius = 0)
@@ -88,11 +88,11 @@ internal sealed class PartGeometry
         RefreshBody(target, ext);
     }
 
-    // ------------------------------------------------------------ trụ
+    // ------------------------------------------------------------ cylinders
 
     /// <summary>
-    /// Trụ tròn thành body mới. axis "D": trục theo chiều sâu, đối xứng quanh cd; "X": trục theo X, đối xứng quanh cx;
-    /// "H": trục đứng, đáy ở h. Với trụ nằm ngang, h là cao độ của trục.
+    /// A round cylinder as a new body. axis "D": axis along the depth, symmetric about cd; "X": axis along X, symmetric about cx;
+    /// "H": vertical axis, bottom at h. For a horizontal cylinder, h is the elevation of the axis.
     /// </summary>
     public Built Cylinder(string tag, string axis, double cx, double cd, double h, double diameter, double length)
     {
@@ -116,7 +116,7 @@ internal sealed class PartGeometry
                 ext = ExtrudeSymmetric(sk, length, tag + "_Extrude");
                 break;
             default:
-                throw new ArgumentException($"Axis phải là \"D\", \"X\" hoặc \"H\" (nhận \"{axis}\").");
+                throw new ArgumentException($"Axis must be \"D\", \"X\" or \"H\" (got \"{axis}\").");
         }
         var built = new Built(ext.SurfaceBodies[1]);
         built.Items.Add((sk, "Sketch"));
@@ -124,32 +124,32 @@ internal sealed class PartGeometry
         return built;
     }
 
-    // ------------------------------------------------------------ sứ xuyên
+    // ------------------------------------------------------------ bushings
 
     /// <summary>
-    /// Sứ xuyên: một solid tròn xoay gồm chân sứ hình trụ và thân sứ có các tán (sheds) thu nhỏ dần lên trên.
-    /// Hồ sơ vẽ trên mặt phẳng song song mặt trước (cách gốc d), trục quay là đường thẳng đứng đi qua tâm sứ.
+    /// Bushing: one solid of revolution made of a cylindrical turret and an insulator body whose sheds shrink going up.
+    /// The profile is drawn on a plane parallel to the front plane (at distance d from the origin); the axis of revolution is the vertical line through the bushing center.
     /// </summary>
     /// <remarks>
-    /// Khi <paramref name="separateTurret"/> thì chân sứ là một body riêng (để tô màu kim loại khác thân sứ);
-    /// khi không tách, <c>Turret</c> trỏ cùng body với <c>Porcelain</c>.
+    /// When <paramref name="separateTurret"/> is set, the turret is a separate body (so it can get a different metal color from the insulator);
+    /// when not separated, <c>Turret</c> points to the same body as <c>Porcelain</c>.
     /// </remarks>
     public (Built Porcelain, Built Turret) Bushing(string tag, double x, double d, double hBase, double dia, double length,
         double turretH, int sheds, double turretDia, double turretTaper, double capHeight, bool separateTurret)
     {
-        if (sheds < 1) throw new ArgumentException("ShedCount phải lớn hơn 0.");
+        if (sheds < 1) throw new ArgumentException("ShedCount must be greater than 0.");
         double rTurret = turretDia > Eps ? turretDia / 2 : 0.6 * dia;
         double rCore = 0.2 * dia, rShed = 0.5 * dia;
-        if (rTurret <= rCore + Eps) throw new ArgumentException("TurretDiameter phải lớn hơn 0.4 x Diameter (lõi sứ).");
+        if (rTurret <= rCore + Eps) throw new ArgumentException("TurretDiameter must be greater than 0.4 x Diameter (the porcelain core).");
         turretTaper = Math.Clamp(turretTaper, 0, 0.9 * turretH);
         double hTurretTop = hBase + turretH;
         double pitch = length / sheds;
 
-        // Chân sứ: (r, h) theo X từ trục sứ
+        // Turret: (r, h) along X from the bushing axis
         var turret = new List<(double r, double h)> { (0, hBase), (rTurret, hBase) };
         if (turretTaper > Eps)
         {
-            // Đỉnh chân sứ vát côn (giống vòm), thu về gần lõi sứ
+            // The top of the turret is tapered (like a dome), narrowing toward the porcelain core
             double rNeck = Math.Max(rCore * 1.4, rTurret * 0.4);
             turret.Add((rTurret, hTurretTop - turretTaper));
             turret.Add((rNeck, hTurretTop));
@@ -162,7 +162,7 @@ internal sealed class PartGeometry
         {
             turret.Add((0, hTurretTop));
             turretBuilt = Revolve(tag + "_Turret", x, d, turret);
-            // Thân sứ lồng 1 mm vào chân sứ để hai body chạm nhau, không hở
+            // The insulator body is sunk 1 mm into the turret so the two bodies touch, with no gap
             pts = new List<(double r, double h)> { (0, hTurretTop - 1), (rCore, hTurretTop - 1) };
         }
         else
@@ -174,16 +174,16 @@ internal sealed class PartGeometry
         {
             double h = hTurretTop + i * pitch;
             double tip = rShed * (1 - (sheds > 1 ? 0.3 * i / (sheds - 1) : 0));
-            pts.Add((rCore, h + 0.15 * pitch));   // mặt dưới tán gặp lõi
-            pts.Add((tip, h + 0.15 * pitch));     // mặt dưới tán đi ra mép
-            pts.Add((tip, h + 0.25 * pitch));     // dày mép tán
-            pts.Add((rCore, h + 0.60 * pitch));   // mặt trên tán dốc vào lõi
+            pts.Add((rCore, h + 0.15 * pitch));   // underside of the shed meets the core
+            pts.Add((tip, h + 0.15 * pitch));     // underside of the shed goes out to the edge
+            pts.Add((tip, h + 0.25 * pitch));     // thickness of the shed edge
+            pts.Add((rCore, h + 0.60 * pitch));   // upper side of the shed slopes back to the core
         }
         double hTop = hTurretTop + length;
         pts.Add((rCore, hTop));
         if (capHeight > Eps)
         {
-            // Nắp đầu cực: một đĩa rộng hơn lõi, vát nhọn lên tâm
+            // Terminal cap: a disc wider than the core, tapering up to the center
             double rCap = 0.32 * dia;
             pts.Add((rCap, hTop));
             pts.Add((rCap, hTop + capHeight * 0.5));
@@ -197,8 +197,8 @@ internal sealed class PartGeometry
     }
 
     /// <summary>
-    /// Solid tròn xoay quanh trục đứng qua (x, d): hồ sơ là đường gấp khúc (r, h) bắt đầu và kết thúc trên trục (r = 0);
-    /// cạnh khép kín chạy dọc trục và là trục quay. Vẽ trên mặt phẳng song song mặt trước ở chiều sâu d.
+    /// A solid of revolution about the vertical axis through (x, d): the profile is a polyline (r, h) that starts and ends on the axis (r = 0);
+    /// the closing edge runs along the axis and is the axis of revolution. Drawn on a plane parallel to the front plane at depth d.
     /// </summary>
     private Built Revolve(string tag, double x, double d, List<(double r, double h)> pts)
     {
@@ -223,16 +223,16 @@ internal sealed class PartGeometry
         return built;
     }
 
-    // ------------------------------------------------------------ cánh tản nhiệt
+    // ------------------------------------------------------------ radiators
 
     /// <summary>
-    /// Cánh tản nhiệt dạng tấm: hộp góp dưới (body mới), các lá đứng và hai tấm bịt đầu (một sketch nhiều vòng, nối vào),
-    /// hộp góp trên (nối). Lá dày theo X, trải hết chiều sâu (trừ một chút cho mép hộp góp), chia đều giữa hai tấm bịt.
+    /// Plate-type radiator: the lower header (new body), the vertical fins and two end plates (one sketch with several loops, joined),
+    /// the upper header (joined). The fins are thick along X, span the whole depth (less a little for the header edge), and are spaced evenly between the two end plates.
     /// </summary>
     public Built Radiator(string tag, double cx, double cd, double h0, double sx, double sd, double height,
         int fins, double finT, double headerH, double endT)
     {
-        // Hộp góp hẹp hơn lá theo chiều sâu, nằm giữa
+        // The header is narrower than the fins along the depth, sitting in the middle
         double headerSd = Math.Max(sd * 0.35, Math.Min(sd, 2 * headerH));
         var built = Prism(tag, cx, cd, h0, sx, headerSd, 0, headerH);
 
@@ -260,19 +260,19 @@ internal sealed class PartGeometry
         return built;
     }
 
-    // ------------------------------------------------------------ tiện ích
+    // ------------------------------------------------------------ utilities
 
     /// <summary>
-    /// Hình chữ nhật bo góc trên sketch nằm ngang ở cao độ h: 4 đoạn thẳng nối 4 cung (cung qua 3 điểm nên không phụ thuộc
-    /// chiều của sketch). Bán kính 0 thì là hình chữ nhật thường.
+    /// A rounded rectangle on a horizontal sketch at elevation h: 4 straight segments joined by 4 arcs (arcs through 3 points so they do not depend on
+    /// the direction of the sketch). A radius of 0 gives a plain rectangle.
     /// </summary>
     private void RoundedRect(Inv.PlanarSketch sk, double cx, double cd, double h, double sx, double sd, double r)
     {
-        if (sx <= Eps || sd <= Eps) throw new ArgumentException($"Kích thước hình chữ nhật phải dương ({sx} x {sd} mm).");
+        if (sx <= Eps || sd <= Eps) throw new ArgumentException($"The rectangle size must be positive ({sx} x {sd} mm).");
         Inv.Point2d S(double x, double d) => sk.ModelToSketchSpace(Model(x, h, d));
         double x1 = cx - sx / 2, x2 = cx + sx / 2, d1 = cd - sd / 2, d2 = cd + sd / 2;
 
-        // Bán kính bằng nửa cạnh làm đoạn thẳng dài 0: giữ một đoạn tối thiểu
+        // A radius equal to half the side makes a straight segment of length 0: keep a minimum segment
         r = Math.Min(Math.Max(r, 0), Math.Min(sx, sd) / 2 - 0.01);
         if (r <= 0.001)
         {
@@ -286,7 +286,7 @@ internal sealed class PartGeometry
         var top = lines.AddByTwoPoints(S(x2 - r, d2), S(x1 + r, d2));
         var left = lines.AddByTwoPoints(S(x1, d2 - r), S(x1, d1 + r));
 
-        double k = r * (1 - 1 / Math.Sqrt(2)); // từ góc vuông tới điểm giữa cung
+        double k = r * (1 - 1 / Math.Sqrt(2)); // from the right-angle corner to the middle of the arc
         var arcs = sk.SketchArcs;
         arcs.AddByThreePoints(bottom.EndSketchPoint, S(x2 - k, d1 + k), right.StartSketchPoint);
         arcs.AddByThreePoints(right.EndSketchPoint, S(x2 - k, d2 - k), top.StartSketchPoint);
@@ -305,7 +305,7 @@ internal sealed class PartGeometry
         Inv.SurfaceBody? affected, string name)
     {
         var ed = _def.Features.ExtrudeFeatures.CreateExtrudeDefinition(sk.Profiles.AddForSolid(), op);
-        // Pháp tuyến mặt phẳng có thể hướng xuống: chọn chiều theo pháp tuyến thật để "lên" là +Y.
+        // The plane normal may point down: choose the direction from the real normal so that "up" is +Y.
         var normalUp = ((Inv.Plane)((Inv.WorkPlane)sk.PlanarEntity).Plane).Normal.Y >= 0;
         var dir = normalUp == up
             ? Inv.PartFeatureExtentDirectionEnum.kPositiveExtentDirection
@@ -331,14 +331,14 @@ internal sealed class PartGeometry
         return ext;
     }
 
-    /// <summary>Sau khi nối hoặc khoét, body đích có thể là đối tượng mới: lấy lại từ feature.</summary>
+    /// <summary>After joining or cutting, the target body may be a new object: take it again from the feature.</summary>
     private static void RefreshBody(Built target, Inv.ExtrudeFeature ext)
     {
         try
         {
             if (ext.SurfaceBodies.Count > 0) target.Body = ext.SurfaceBodies[1];
         }
-        catch { /* giữ body cũ */ }
+        catch { /* keep the old body */ }
     }
 
     private void Track(object item, string name)
@@ -352,14 +352,14 @@ internal sealed class PartGeometry
                 case Inv.WorkPlane w: w.Name = name; break;
             }
         }
-        catch { /* trùng tên: để tên do Inventor đặt */ }
+        catch { /* duplicate name: keep the name Inventor chose */ }
         _track(item);
     }
 
     /// <summary>
-    /// Mặt phẳng song song một mặt phẳng gốc (axis: 1 = YZ ở x, 2 = mặt đất XZ ở cao độ h, 3 = mặt trước XY ở chiều sâu d)
-    /// và nằm đúng ở <paramref name="value"/> mm. Chiều dương của offset phụ thuộc pháp tuyến nên kiểm tra bằng hình học thật
-    /// và đảo dấu nếu lệch.
+    /// A plane parallel to a base plane (axis: 1 = YZ at x, 2 = ground XZ at elevation h, 3 = front XY at depth d)
+    /// and located exactly at <paramref name="value"/> mm. The positive direction of the offset depends on the normal, so it is checked with the real geometry
+    /// and the sign is flipped if it is off.
     /// </summary>
     public Inv.WorkPlane PlaneAt(int axis, double value)
     {
@@ -384,7 +384,7 @@ internal sealed class PartGeometry
         return plane;
     }
 
-    /// <summary>Tọa độ của mặt phẳng dọc theo trục pháp tuyến của nó (X, Y hoặc Z).</summary>
+    /// <summary>Coordinate of the plane along its normal axis (X, Y or Z).</summary>
     private static double Coord(Inv.WorkPlane plane, int axis)
     {
         var p = ((Inv.Plane)plane.Plane).RootPoint;

@@ -1,6 +1,6 @@
 <Project>
 
-    <!-- Thiết lập chung cho Core và mọi add-in của bộ Cadflow. -->
+    <!-- Shared settings for Core and every add-in of the Cadflow suite. -->
     <PropertyGroup>
         <TargetFramework>net10.0-windows</TargetFramework>
         <UseWPF>true</UseWPF>
@@ -13,12 +13,12 @@
         <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
         <Version>0.2.0</Version>
 
-        <!-- Thư mục cài Inventor 2027. Ghi đè bằng -p:InventorDir=... nếu cài ở nơi khác. -->
+        <!-- The Inventor 2027 install folder. Override with -p:InventorDir=... if it is installed elsewhere. -->
         <InventorDir Condition="'$(InventorDir)' == ''">C:\Program Files\Autodesk\Inventor 2027\</InventorDir>
     </PropertyGroup>
 
     <ItemGroup>
-        <!-- Private=false: dùng bản Interop do Inventor đã nạp, không copy vào thư mục output. -->
+        <!-- Private=false: use the Interop that Inventor has already loaded, do not copy it into the output folder. -->
         <Reference Include="Autodesk.Inventor.Interop">
             <HintPath>$(InventorDir)Bin\Public Assemblies\Autodesk.Inventor.Interop.dll</HintPath>
             <Private>False</Private>

@@ -15,38 +15,38 @@ public enum ScriptDocKind
     NoDocument,
     NotPart,
     EmptyPart,
-    ForeignContent, // Part có hình học hoặc Parameter khác
-    ScriptPart,     // Part đã được dựng bởi một script .gea (có script lưu kèm)
+    ForeignContent, // a Part with other geometry or Parameters
+    ScriptPart,     // a Part already built by a .gea script (with the script stored in it)
 }
 
-/// <summary>Script đã lưu trong Part ở lần Apply gần nhất: nội dung, đường dẫn file nguồn, giá trị form.</summary>
+/// <summary>The script stored in the Part at the latest Apply: content, source file path, form values.</summary>
 public sealed record StoredScript(string Text, string? Path, string Product, IReadOnlyDictionary<string, object?> Values, string? AppliedAt);
 
 public sealed record ScriptDocState(ScriptDocKind Kind, string Message, string? DocKey, StoredScript? Stored);
 
-/// <summary>Cổng của ViewModel Script tới Inventor. Mọi lời gọi chạy trên UI thread của Inventor.</summary>
+/// <summary>The gateway from the Script ViewModel to Inventor. Every call runs on the Inventor UI thread.</summary>
 public interface IScriptGateway
 {
     ScriptDocState GetState();
 
-    /// <summary>Dựng lại model theo script và giá trị form trong một Transaction (xem <see cref="GeaDocumentService"/>).</summary>
+    /// <summary>Rebuilds the model from the script and the form values in one Transaction (see <see cref="GeaDocumentService"/>).</summary>
     OperationResult Apply(GeaScript script, GeaFormResult form, string? sourcePath, Action<string>? progress, bool allowForeignContent);
 
-    /// <summary>Xóa mọi đối tượng do script tạo và bỏ liên kết script khỏi Part.</summary>
+    /// <summary>Deletes every object the script created and removes the script link from the Part.</summary>
     OperationResult Remove();
 }
 
 /// <summary>
-/// Áp dụng script .gea lên Part theo cách của SmartAssembly: mỗi lần Apply chạy lại toàn bộ BUILD.
+/// Applies a .gea script to a Part the SmartAssembly way: every Apply runs the whole BUILD again.
 /// <list type="number">
-/// <item>Mở một Transaction (Ctrl+Z hoàn tác cả lần Apply).</item>
-/// <item>Xóa mọi feature, sketch, work plane mang dấu sở hữu của script trong Part (lần dựng trước).</item>
-/// <item>Đồng bộ thông số FORM thành User Parameter, chạy BUILD trên <see cref="InventorGeaHost"/>.</item>
-/// <item>Xóa Parameter của script không còn khai báo; lưu script, đường dẫn và giá trị vào Part.</item>
-/// <item>Cập nhật model; lỗi ở bất kỳ bước nào thì hủy Transaction, model trở về như trước khi Apply.</item>
+/// <item>Open a Transaction (Ctrl+Z undoes the whole Apply).</item>
+/// <item>Delete every feature, sketch and work plane that carries the ownership mark of the script in the Part (from the previous build).</item>
+/// <item>Synchronize the FORM parameters as User Parameters, run BUILD on <see cref="InventorGeaHost"/>.</item>
+/// <item>Delete the Parameters of the script that are no longer declared; store the script, path and values in the Part.</item>
+/// <item>Update the model; an error at any step cancels the Transaction and the model returns to how it was before Apply.</item>
 /// </list>
-/// Nhờ vậy sửa script (thêm, bớt, đổi bộ phận) rồi Apply thì model đổi theo đúng script mới,
-/// còn đối tượng người dùng tự vẽ (không mang dấu sở hữu) được giữ nguyên.
+/// This way, editing the script (adding, removing or changing parts) and pressing Apply makes the model follow the new script exactly,
+/// while objects the user drew themselves (without the ownership mark) are left alone.
 /// </summary>
 internal sealed class GeaDocumentService : IScriptGateway
 {
@@ -56,13 +56,13 @@ internal sealed class GeaDocumentService : IScriptGateway
 
     public GeaDocumentService(Inv.Application app) => _app = app;
 
-    // ---------------------------------------------------------------- trạng thái
+    // ---------------------------------------------------------------- state
 
     private Inv.PartDocument? ActivePart(out ScriptDocState? early)
     {
         early = null;
         Inv._Document? doc = null;
-        try { doc = _app.ActiveDocument; } catch { /* không có document */ }
+        try { doc = _app.ActiveDocument; } catch { /* no document */ }
         if (doc == null)
         {
             early = new ScriptDocState(ScriptDocKind.NoDocument, "No document is open. Open or create a Part.", null, null);
@@ -141,7 +141,7 @@ internal sealed class GeaDocumentService : IScriptGateway
         }
     }
 
-    // ---------------------------------------------------------------- áp dụng
+    // ---------------------------------------------------------------- apply
 
     public OperationResult Apply(GeaScript script, GeaFormResult form, string? sourcePath, Action<string>? progress, bool allowForeignContent)
     {
@@ -154,7 +154,7 @@ internal sealed class GeaDocumentService : IScriptGateway
         return Apply(part, script, form, sourcePath, progress);
     }
 
-    /// <summary>Áp dụng script lên một Part cụ thể (dùng cho web worker với Part mới tạo).</summary>
+    /// <summary>Applies the script to a specific Part (used by the web worker with a newly created Part).</summary>
     public OperationResult Apply(Inv.PartDocument part, GeaScript script, GeaFormResult form, string? sourcePath, Action<string>? progress)
     {
         if (script.HasErrors)
@@ -221,7 +221,7 @@ internal sealed class GeaDocumentService : IScriptGateway
         }, "Script model removed.");
     }
 
-    // ---------------------------------------------------------------- tiện ích
+    // ---------------------------------------------------------------- utilities
 
     private static string Short(string s) => s.Length <= 60 ? s : s.Substring(0, 57) + "...";
 
@@ -240,7 +240,7 @@ internal sealed class GeaDocumentService : IScriptGateway
     {
         var set = part.AttributeSets.NameIsUsed[ScriptSet] ? part.AttributeSets[ScriptSet] : part.AttributeSets.Add(ScriptSet);
 
-        // Giá trị form theo đơn vị hiển thị, chỉ các ô đang hiện (ô ẩn lấy lại mặc định khi nạp)
+        // Form values in the display unit, only the fields that are shown (hidden fields get their default back when loaded)
         var values = new Dictionary<string, object?>(StringComparer.Ordinal);
         foreach (var f in form.Fields.Where(f => f.Visible))
             values[f.Name] = f.Kind switch
@@ -265,8 +265,8 @@ internal sealed class GeaDocumentService : IScriptGateway
     }
 
     /// <summary>
-    /// Xóa feature (từ sau ra trước), sketch và work plane mang dấu sở hữu. Feature của người dùng phụ thuộc vào chúng
-    /// được giữ lại (sẽ báo lỗi khi cập nhật và làm Apply bị hủy, không mất dữ liệu).
+    /// Deletes features (from last to first), sketches and work planes that carry the ownership mark. User features that depend on them
+    /// are kept (they will report an error on update and make Apply cancel, so no data is lost).
     /// </summary>
     private static int DeleteOwnedGeometry(Inv.PartDocument part, string binding)
     {

@@ -7,7 +7,7 @@ using Inv = Inventor;
 
 namespace InventorAddin.Services.Gea;
 
-/// <summary>Dấu sở hữu: mọi đối tượng do một script .gea tạo trong Part mang AttributeSet "GEA_Owner" với mã ràng buộc của Part.</summary>
+/// <summary>Ownership mark: every object a .gea script creates in the Part carries the AttributeSet "GEA_Owner" with the binding id of the Part.</summary>
 internal static class GeaOwnership
 {
     public const string OwnerSet = "GEA_Owner";
@@ -52,8 +52,8 @@ internal static class GeaOwnership
 }
 
 /// <summary>
-/// Inventor Host của .gea: đồng bộ User Parameter, chạy builder C# bằng Inventor API, đặt tên, gắn thuộc tính, ngoại hình.
-/// Chạy bên trong Transaction do <see cref="GeaDocumentService"/> mở; mọi đối tượng tạo ra đều gắn dấu sở hữu.
+/// The Inventor Host of .gea: synchronizes User Parameters, runs the C# builders with the Inventor API, sets names, attaches attributes and appearances.
+/// Runs inside the Transaction opened by <see cref="GeaDocumentService"/>; every object it creates gets the ownership mark.
 /// </summary>
 internal sealed class InventorGeaHost : IGeaHost
 {
@@ -82,7 +82,7 @@ internal sealed class InventorGeaHost : IGeaHost
 
     public List<string> Warnings { get; } = new();
 
-    // ================================================================ thông số
+    // ================================================================ parameters
 
     public void SyncParameters(IReadOnlyList<KeyValuePair<string, GeaValue>> values)
     {
@@ -110,14 +110,14 @@ internal sealed class InventorGeaHost : IGeaHost
             }
             catch (Exception ex) { last = ex; }
         }
-        throw new GeaRuntimeException("GEA4099", $"Không tạo được Parameter {name} = \"{expression}\": {last?.Message}");
+        throw new GeaRuntimeException("GEA4099", $"Could not create Parameter {name} = \"{expression}\": {last?.Message}");
     }
 
     public GeaValue GetParam(string name, GeaType type)
     {
         Inv.Parameter p;
         try { p = _def.Parameters[name]; }
-        catch { throw new GeaRuntimeException("GEA4099", $"Parameter '{name}' không tồn tại trong Part."); }
+        catch { throw new GeaRuntimeException("GEA4099", $"Parameter '{name}' does not exist in the Part."); }
 
         object value = p.Value;
         switch (type)
@@ -132,10 +132,10 @@ internal sealed class InventorGeaHost : IGeaHost
             case GeaType.String:
                 return GeaValue.Text(value is string s ? s : Convert.ToString(value, CultureInfo.InvariantCulture) ?? "");
         }
-        throw new GeaRuntimeException("GEA2002", $"Parameter '{name}' không đọc được thành {GeaUnits.TypeName(type)}.");
+        throw new GeaRuntimeException("GEA2002", $"Parameter '{name}' cannot be read as {GeaUnits.TypeName(type)}.");
     }
 
-    /// <summary>Tạo hoặc cập nhật User Parameter theo kiểu của giá trị. Parameter trùng tên mà không do script này tạo: GEA4010.</summary>
+    /// <summary>Creates or updates a User Parameter according to the type of the value. A Parameter with the same name that this script did not create: GEA4010.</summary>
     private void WriteParam(string name, GeaValue value)
     {
         var p = OwnedOrNewParam(name);
@@ -152,11 +152,11 @@ internal sealed class InventorGeaHost : IGeaHost
             }
             catch
             {
-                // Kiểu thông số đổi (ví dụ từ LENGTH sang STRING): xóa rồi tạo lại
+                // The parameter type changed (for example from LENGTH to STRING): delete it and create it again
                 try { p.Delete(); }
                 catch (Exception ex)
                 {
-                    throw new GeaRuntimeException("GEA4099", $"Parameter {name} đổi kiểu nhưng không xóa được để tạo lại: {ex.Message}");
+                    throw new GeaRuntimeException("GEA4099", $"Parameter {name} changed type but could not be deleted to recreate it: {ex.Message}");
                 }
             }
         }
@@ -169,16 +169,16 @@ internal sealed class InventorGeaHost : IGeaHost
         {
             if (value.Type is GeaType.Bool or GeaType.String)
             {
-                // Một số phiên bản không có Parameter kiểu chữ/logic: không chặn việc dựng
-                Warnings.Add($"Không tạo được Parameter {name} ({GeaUnits.TypeName(value.Type)}): {ex.Message}");
+                // Some versions have no text/boolean Parameter: do not block the build
+                Warnings.Add($"Could not create Parameter {name} ({GeaUnits.TypeName(value.Type)}): {ex.Message}");
                 return;
             }
-            throw new GeaRuntimeException("GEA4099", $"Không tạo được Parameter {name}: {ex.Message}");
+            throw new GeaRuntimeException("GEA4099", $"Could not create Parameter {name}: {ex.Message}");
         }
         GeaOwnership.Own(p, _binding);
     }
 
-    /// <summary>Parameter của script này (nếu có). Null nếu chưa có. Trùng tên với Parameter khác: GEA4010.</summary>
+    /// <summary>The Parameter of this script (if any). Null if there is none. A name clash with another Parameter: GEA4010.</summary>
     private Inv.UserParameter? OwnedOrNewParam(string name)
     {
         _touchedParams.Add(name);
@@ -187,23 +187,23 @@ internal sealed class InventorGeaHost : IGeaHost
         {
             if (p.Name == name) { found = p; break; }
             if (string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))
-                throw new GeaRuntimeException("GEA4010", $"Đã có Parameter '{p.Name}' chỉ khác '{name}' ở chữ hoa thường.");
+                throw new GeaRuntimeException("GEA4010", $"A Parameter '{p.Name}' already exists that differs from '{name}' only in letter case.");
         }
         if (found == null)
         {
-            // Trùng với Parameter của model (d0, d1...) hoặc tham chiếu
+            // Clashes with a model Parameter (d0, d1...) or a reference
             try
             {
                 var any = _def.Parameters[name];
-                if (any != null) throw new GeaRuntimeException("GEA4010", $"Tên '{name}' đã được một Parameter khác trong Part dùng.");
+                if (any != null) throw new GeaRuntimeException("GEA4010", $"The name '{name}' is already used by another Parameter in the Part.");
             }
             catch (GeaRuntimeException) { throw; }
-            catch { /* không có: được phép tạo */ }
+            catch { /* not found: it may be created */ }
             return null;
         }
         if (!GeaOwnership.IsOwned(found, _binding))
             throw new GeaRuntimeException("GEA4010",
-                $"Parameter '{name}' đã có trong Part nhưng không do script này tạo. Không ghi đè; đổi tên thông số hoặc xóa Parameter đó.");
+                $"Parameter '{name}' already exists in the Part but was not created by this script. It is not overwritten; rename the parameter or delete that Parameter.");
         return found;
     }
 
@@ -215,10 +215,10 @@ internal sealed class InventorGeaHost : IGeaHost
         GeaType.Double => (v.Num, Inv.UnitsTypeEnum.kUnitlessUnits, "ul"),
         GeaType.Bool => (v.Bool, Inv.UnitsTypeEnum.kBooleanUnits, null),
         GeaType.String => (v.Str ?? "", Inv.UnitsTypeEnum.kTextUnits, null),
-        _ => throw new GeaRuntimeException("GEA2002", "Không lưu tham chiếu thành Parameter."),
+        _ => throw new GeaRuntimeException("GEA2002", "A reference is not stored as a Parameter."),
     };
 
-    /// <summary>Xóa Parameter do script này tạo ở lần trước mà lần này không còn khai báo.</summary>
+    /// <summary>Deletes the Parameters this script created last time that are no longer declared this time.</summary>
     public void RemoveStaleParameters()
     {
         var stale = new List<Inv.UserParameter>();
@@ -229,7 +229,7 @@ internal sealed class InventorGeaHost : IGeaHost
         {
             var name = p.Name;
             try { p.Delete(); }
-            catch (Exception ex) { Warnings.Add($"Parameter {name} không còn trong script nhưng không xóa được (đang được dùng?): {ex.Message}"); }
+            catch (Exception ex) { Warnings.Add($"Parameter {name} is no longer in the script but could not be deleted (in use?): {ex.Message}"); }
         }
     }
 
@@ -250,11 +250,11 @@ internal sealed class InventorGeaHost : IGeaHost
             {
                 double len = L("Length"), wid = L("Width"), hgt = L("Height"), wall = L("Wall"), bottom = L("Bottom");
                 double cr = L("CornerRadius"), ir = L("InnerRadius"), skirt = L("SkirtHeight");
-                Require(len > 0 && wid > 0 && hgt > 0, "Tank: Length, Width, Height phải dương.");
-                Require(wall > 0 && 2 * wall < Math.Min(len, wid), "Tank: Wall phải dương và nhỏ hơn nửa cạnh ngắn.");
-                Require(bottom > 0 && bottom < hgt, "Tank: Bottom phải dương và nhỏ hơn Height.");
-                Require(cr >= 0 && cr <= Math.Min(len, wid) / 2, "Tank: CornerRadius không vượt quá nửa cạnh ngắn.");
-                Require(skirt >= 0, "Tank: SkirtHeight không âm.");
+                Require(len > 0 && wid > 0 && hgt > 0, "Tank: Length, Width, Height must be positive.");
+                Require(wall > 0 && 2 * wall < Math.Min(len, wid), "Tank: Wall must be positive and smaller than half of the shorter side.");
+                Require(bottom > 0 && bottom < hgt, "Tank: Bottom must be positive and smaller than Height.");
+                Require(cr >= 0 && cr <= Math.Min(len, wid) / 2, "Tank: CornerRadius must not exceed half of the shorter side.");
+                Require(skirt >= 0, "Tank: SkirtHeight must not be negative.");
                 double inSx = len - 2 * wall, inSd = wid - 2 * wall;
                 ir = Math.Min(Math.Max(ir, 0), Math.Min(inSx, inSd) / 2);
 
@@ -270,15 +270,15 @@ internal sealed class InventorGeaHost : IGeaHost
             {
                 var tank = inputs["Tank"].Ref!;
                 if (tank.Builder != "Tank")
-                    throw new GeaRuntimeException("GEA4099", "Cover: đầu vào Tank phải là thùng do builder:Tank tạo.");
+                    throw new GeaRuntimeException("GEA4099", "Cover: the Tank input must be a tank created by builder:Tank.");
                 double TP(string k) => tank.Props.TryGetValue(k, out var v) ? v.Num : 0;
                 double len = TP("Length"), wid = TP("Width"), wall = TP("Wall"), cr = TP("CornerRadius"), ir = TP("InnerRadius");
                 double top = TP("Top");
                 double thick = L("Thickness"), lip = L("Lip"), clr = L("Clearance"), gap = L("Gap");
-                Require(thick > 0, "Cover: Thickness phải dương.");
-                Require(lip >= 0 && clr >= 0 && gap >= 0, "Cover: Lip, Clearance, Gap không âm.");
+                Require(thick > 0, "Cover: Thickness must be positive.");
+                Require(lip >= 0 && clr >= 0 && gap >= 0, "Cover: Lip, Clearance, Gap must not be negative.");
                 double lipSx = len - 2 * wall - 2 * clr, lipSd = wid - 2 * wall - 2 * clr;
-                Require(lip <= Eps || (lipSx > 0 && lipSd > 0), "Cover: khe hở quá lớn, gờ nắp không còn chỗ.");
+                Require(lip <= Eps || (lipSx > 0 && lipSd > 0), "Cover: the clearance is too large, there is no room left for the lid lip.");
 
                 double h0 = top + gap;
                 built = _geo.Prism(tag, 0, 0, h0, len, wid, cr, thick);
@@ -290,14 +290,14 @@ internal sealed class InventorGeaHost : IGeaHost
             case "Block":
             {
                 double sx = L("SizeX"), sd = L("SizeD"), h = L("Height");
-                Require(sx > 0 && sd > 0 && h > 0, "Block: SizeX, SizeD, Height phải dương.");
+                Require(sx > 0 && sd > 0 && h > 0, "Block: SizeX, SizeD, Height must be positive.");
                 built = _geo.Prism(tag, L("CenterX"), L("CenterD"), L("Elevation"), sx, sd, L("CornerRadius"), h);
                 break;
             }
             case "Cylinder":
             {
                 double dia = L("Diameter"), len = L("Length");
-                Require(dia > 0 && len > 0, "Cylinder: Diameter, Length phải dương.");
+                Require(dia > 0 && len > 0, "Cylinder: Diameter, Length must be positive.");
                 var axis = (inputs["Axis"].Str ?? "D").Trim().ToUpperInvariant();
                 try { built = _geo.Cylinder(tag, axis, L("CenterX"), L("CenterD"), L("Elevation"), dia, len); }
                 catch (ArgumentException ex) { throw new GeaRuntimeException("GEA4099", "Cylinder: " + ex.Message); }
@@ -307,10 +307,10 @@ internal sealed class InventorGeaHost : IGeaHost
             {
                 double dia = L("Diameter"), len = L("Length"), turret = L("TurretHeight");
                 int sheds = (int)Math.Round(inputs["ShedCount"].Num);
-                Require(dia > 0 && len > 0 && turret > 0, "Bushing: Diameter, Length, TurretHeight phải dương.");
-                Require(sheds >= 1 && sheds <= 100, "Bushing: ShedCount phải từ 1 đến 100.");
+                Require(dia > 0 && len > 0 && turret > 0, "Bushing: Diameter, Length, TurretHeight must be positive.");
+                Require(sheds >= 1 && sheds <= 100, "Bushing: ShedCount must be from 1 to 100.");
                 Require(L("TurretDiameter") >= 0 && L("TurretTaper") >= 0 && L("CapHeight") >= 0,
-                    "Bushing: TurretDiameter, TurretTaper, CapHeight không âm.");
+                    "Bushing: TurretDiameter, TurretTaper, CapHeight must not be negative.");
                 try
                 {
                     bool separate = inputs["SeparateTurret"].Bool;
@@ -319,7 +319,7 @@ internal sealed class InventorGeaHost : IGeaHost
                     built = porcelain;
                     if (separate)
                     {
-                        try { turretBody.Body.Name = tag + "_Turret"; } catch { /* để tên mặc định */ }
+                        try { turretBody.Body.Name = tag + "_Turret"; } catch { /* keep the default name */ }
                         extra["Turret"] = turretBody;
                     }
                 }
@@ -331,22 +331,22 @@ internal sealed class InventorGeaHost : IGeaHost
                 double sx = L("SizeX"), sd = L("SizeD"), h = L("Height");
                 double fin = L("FinThickness"), header = L("HeaderHeight"), end = L("EndPlate");
                 int fins = (int)Math.Round(inputs["FinCount"].Num);
-                Require(sx > 0 && sd > 0 && h > 0, "Radiator: SizeX, SizeD, Height phải dương.");
-                Require(fins >= 1 && fins <= 500, "Radiator: FinCount phải từ 1 đến 500.");
-                Require(fin > 0 && header > 0 && end > 0, "Radiator: FinThickness, HeaderHeight, EndPlate phải dương.");
-                Require(2 * header < h, "Radiator: hai hộp góp cao hơn cả cánh tản nhiệt.");
+                Require(sx > 0 && sd > 0 && h > 0, "Radiator: SizeX, SizeD, Height must be positive.");
+                Require(fins >= 1 && fins <= 500, "Radiator: FinCount must be from 1 to 500.");
+                Require(fin > 0 && header > 0 && end > 0, "Radiator: FinThickness, HeaderHeight, EndPlate must be positive.");
+                Require(2 * header < h, "Radiator: the two headers are taller than the whole radiator.");
                 double inner = sx - 2 * end;
-                Require(inner > fins * fin * 1.2, $"Radiator: {fins} lá dày {fin} mm không vừa bề rộng trong {inner:0.#} mm (cần khe hở giữa các lá).");
+                Require(inner > fins * fin * 1.2, $"Radiator: {fins} fins of thickness {fin} mm do not fit in the inner width of {inner:0.#} mm (a gap between fins is needed).");
                 built = _geo.Radiator(tag, L("CenterX"), L("CenterD"), L("Elevation"), sx, sd, h, fins, fin, header, end);
                 break;
             }
             default:
-                throw new GeaRuntimeException("GEA2013", $"Inventor Host chưa có builder '{builder.Name}'.");
+                throw new GeaRuntimeException("GEA2013", $"The Inventor Host has no builder '{builder.Name}' yet.");
         }
 
-        try { built.Body.Name = tag; } catch { /* để tên mặc định */ }
+        try { built.Body.Name = tag; } catch { /* keep the default name */ }
         var r = new GeaRef("BODY", built, builder.Name, props);
-        // Đầu ra phụ (ví dụ chân sứ tách riêng) là body khác; đầu ra không có body riêng trỏ về body chính
+        // Secondary outputs (for example a separate turret) are other bodies; an output without its own body points to the main body
         return builder.Outputs.ToDictionary(o => o.Name,
             o => extra.TryGetValue(o.Name, out var b) ? new GeaRef("BODY", b, builder.Name, props) : r);
     }
@@ -357,9 +357,9 @@ internal sealed class InventorGeaHost : IGeaHost
     }
 
     private static PartGeometry.Built Built(GeaRef r) =>
-        r.Handle as PartGeometry.Built ?? throw new GeaRuntimeException("GEA4012", "Tham chiếu không thuộc model Inventor hiện tại.");
+        r.Handle as PartGeometry.Built ?? throw new GeaRuntimeException("GEA4012", "The reference does not belong to the current Inventor model.");
 
-    // ================================================================ tên và thuộc tính
+    // ================================================================ names and attributes
 
     public void SetRefName(GeaRef target, string name)
     {
@@ -372,7 +372,7 @@ internal sealed class InventorGeaHost : IGeaHost
         var resolved = GeaNames.Resolve(name, n => !string.Equals(n, current, StringComparison.OrdinalIgnoreCase) && names.Contains(n));
         body.Name = resolved;
 
-        // Đổi tên sketch, feature đi kèm cho dễ đọc trong cây trình duyệt
+        // Rename the accompanying sketches and features so they are easy to read in the browser tree
         foreach (var (item, role) in built.Items)
         {
             var newName = $"{resolved}_{role}";
@@ -384,7 +384,7 @@ internal sealed class InventorGeaHost : IGeaHost
                     case Inv.PartFeature f: f.Name = newName; break;
                 }
             }
-            catch { /* trùng tên: giữ tên cũ */ }
+            catch { /* duplicate name: keep the old name */ }
         }
     }
 
@@ -392,7 +392,7 @@ internal sealed class InventorGeaHost : IGeaHost
 
     public void SetRefAttr(GeaRef target, string key, GeaValue value)
     {
-        if (string.IsNullOrWhiteSpace(key)) throw new GeaRuntimeException("GEA4099", "Khóa thuộc tính không được rỗng.");
+        if (string.IsNullOrWhiteSpace(key)) throw new GeaRuntimeException("GEA4099", "The attribute key must not be empty.");
         var sets = Built(target).Body.AttributeSets;
         var set = sets.NameIsUsed[GeaOwnership.AttrSet] ? sets[GeaOwnership.AttrSet] : sets.Add(GeaOwnership.AttrSet);
         var (type, v) = value.Type switch
@@ -430,17 +430,17 @@ internal sealed class InventorGeaHost : IGeaHost
         };
     }
 
-    // ================================================================ ngoại hình
+    // ================================================================ appearances
 
-    /// <summary>Tên quen thuộc → mã appearance trong thư viện của Inventor (thử trước khi tạo màu riêng).</summary>
+    /// <summary>Familiar name → appearance id in the Inventor library (tried before creating a color of our own).</summary>
     private static readonly Dictionary<string, string[]> LibraryAliases = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Grey"] = new[] { "Plastic-010" },       // "Smooth - Light Gray"
         ["Gray"] = new[] { "Plastic-010" },
-        ["Porcelain"] = new[] { "Fabric-006" },   // "Dark Brown": nâu sẫm như sứ
+        ["Porcelain"] = new[] { "Fabric-006" },   // "Dark Brown": dark brown like porcelain
     };
 
-    /// <summary>Màu dự phòng (RGB) khi thư viện không có: tạo appearance "Generic" ngay trong Part.</summary>
+    /// <summary>Fallback colors (RGB) when the library has none: creates a "Generic" appearance inside the Part.</summary>
     private static readonly Dictionary<string, (byte r, byte g, byte b)> Colors = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Grey"] = (160, 164, 170), ["Gray"] = (160, 164, 170), ["LightGrey"] = (201, 205, 209), ["LightGray"] = (201, 205, 209), ["Green"] = (64, 128, 80), ["Red"] = (190, 40, 40),
@@ -470,26 +470,26 @@ internal sealed class InventorGeaHost : IGeaHost
                 foreach (Inv.Asset a in _part.AppearanceAssets)
                     if (match(a)) return a;
             }
-            catch { /* bỏ qua */ }
+            catch { /* ignore */ }
             return null;
         }
 
         if (!hasAlias && isColor)
         {
-            // Màu đặt tên hoặc #RRGGBB không có bí danh: luôn dùng màu đục do add-in tạo. Không tìm theo tên trong thư viện,
-            // vì thư viện có appearance trùng tên nhưng khác hẳn (ví dụ "Green" là kính trong suốt).
-            // Inventor bỏ qua tên truyền vào Assets.Add (tự đặt "1:<DisplayName>"), nên nhận ra màu do add-in tạo bằng
-            // tên hiển thị và danh mục rỗng (asset chép từ thư viện luôn có danh mục).
+            // A named color or #RRGGBB with no alias: always use the opaque color created by the add-in. Do not look it up by name in the library,
+            // because the library has appearances with the same name that are completely different (for example "Green" is transparent glass).
+            // Inventor ignores the name passed to Assets.Add (it names it "1:<DisplayName>"), so a color created by the add-in is recognized by
+            // its display name and an empty category (an asset copied from the library always has a category).
             found = InPart(a => (string.Equals(a.DisplayName, name, StringComparison.OrdinalIgnoreCase) && IsOwnColor(a))
                                 || string.Equals(a.DisplayName, name + " (GEA)", StringComparison.OrdinalIgnoreCase));
         }
         else
         {
-            // 1. Đã có trong Part (theo tên hiển thị hoặc mã)
+            // 1. Already in the Part (by display name or id)
             found = InPart(a => string.Equals(a.DisplayName, name, StringComparison.OrdinalIgnoreCase) || string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase));
         }
 
-        // 2. Thư viện của Inventor: theo bí danh hoặc theo mã
+        // 2. The Inventor library: by alias or by id
         if (found == null && (hasAlias || !isColor))
         {
             var ids = hasAlias ? alias!.Append(name) : new[] { name };
@@ -498,7 +498,7 @@ internal sealed class InventorGeaHost : IGeaHost
                 foreach (Inv.AssetLibrary lib in _app.AssetLibraries)
                 {
                     Inv.Asset? a = null;
-                    try { a = lib.AppearanceAssets[id]; } catch { /* thư viện này không có */ }
+                    try { a = lib.AppearanceAssets[id]; } catch { /* this library does not have it */ }
                     if (a == null) continue;
                     try { found = a.CopyTo(doc, true); } catch { found = null; }
                     if (found != null) break;
@@ -507,7 +507,7 @@ internal sealed class InventorGeaHost : IGeaHost
             }
         }
 
-        // 3. Màu đặt tên hoặc #RRGGBB: tạo appearance Generic trong Part
+        // 3. A named color or #RRGGBB: create a Generic appearance in the Part
         if (found == null && isColor)
         {
             try
@@ -516,7 +516,7 @@ internal sealed class InventorGeaHost : IGeaHost
                 try { asset = _part.Assets.Add(Inv.AssetTypeEnum.kAssetTypeAppearance, "Generic", colorId, name); }
                 catch
                 {
-                    // Tên hiển thị đã bị một appearance khác (ví dụ chép từ thư viện) chiếm: dùng tên riêng
+                    // The display name is already taken by another appearance (for example copied from the library): use a name of our own
                     asset = _part.Assets.Add(Inv.AssetTypeEnum.kAssetTypeAppearance, "Generic", colorId, name + " (GEA)");
                 }
                 var diffuse = (Inv.ColorAssetValue)asset["generic_diffuse"];
@@ -525,13 +525,13 @@ internal sealed class InventorGeaHost : IGeaHost
             }
             catch (Exception ex)
             {
-                Warnings.Add($"Không tạo được appearance '{name}': {ex.Message}");
+                Warnings.Add($"Could not create appearance '{name}': {ex.Message}");
             }
         }
 
         if (found == null)
             throw new GeaRuntimeException("GEA4020",
-                $"Không có ngoại hình '{name}'. Dùng tên trong thư viện Inventor, mã #RRGGBB, hoặc một màu: {string.Join(", ", Colors.Keys)}.");
+                $"There is no appearance '{name}'. Use a name from the Inventor library, a #RRGGBB code, or one of the colors: {string.Join(", ", Colors.Keys)}.");
         _assets[name] = found;
         return found;
     }
@@ -559,7 +559,7 @@ internal sealed class InventorGeaHost : IGeaHost
 
     private static string Sanitize(string s) => new(s.Select(ch => char.IsLetterOrDigit(ch) ? ch : '_').ToArray());
 
-    // ================================================================ khác
+    // ================================================================ other
 
     public void Regen() => _part.Update();
 

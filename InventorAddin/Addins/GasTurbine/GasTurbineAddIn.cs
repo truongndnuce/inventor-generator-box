@@ -6,8 +6,8 @@ using InventorAddin.Host;
 namespace InventorAddin.Addins.GasTurbine;
 
 /// <summary>
-/// Add-in Gas Turbine: cửa sổ Script (.gea) chỉ có mẫu của sản phẩm này, và web worker dựng job "gas-turbine" do web đặt.
-/// Mọi thứ khác (ribbon dùng chung tab Cadflow, cửa sổ, worker) do <see cref="CadflowAddIn"/> lo.
+/// The Gas Turbine add-in: the Script (.gea) window has only the templates of this product, and the web worker builds the "gas-turbine" jobs placed on the web.
+/// Everything else (the ribbon sharing the Cadflow tab, the window, the worker) is handled by <see cref="CadflowAddIn"/>.
 /// </summary>
 [ComVisible(true)]
 [Guid(ClientId)]

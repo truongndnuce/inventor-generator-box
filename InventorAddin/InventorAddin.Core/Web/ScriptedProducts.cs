@@ -6,9 +6,9 @@ using InventorAddin.Models;
 namespace InventorAddin.Web;
 
 /// <summary>
-/// Sản phẩm dựng bằng script .gea đi kèm add-in (máy biến áp, turbine khí, máy phát). Mỗi sản phẩm khai báo một lần:
-/// script, luật kiểm tra dùng chung với server, và các cao độ để ghi chuỗi kích thước trên mặt cắt bản vẽ.
-/// Thêm sản phẩm mới = thêm một dòng ở <see cref="All"/> (và một add-in nếu muốn có cửa sổ riêng).
+/// Products built by a .gea script that ships with the add-in (transformer, gas turbine, generator). Each product is declared once:
+/// the script, the validation rules shared with the server, and the elevations used to write the dimension string on the drawing section.
+/// Adding a product = adding one line in <see cref="All"/> (and an add-in if it should have a window of its own).
 /// </summary>
 public sealed record ScriptedProduct(
     string Code,

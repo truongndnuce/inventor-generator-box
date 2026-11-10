@@ -1,16 +1,16 @@
 ! ============================================================================
-! Máy phát điện đồng bộ làm mát bằng nước (water-cooled generator, đơn giản hóa theo ảnh tham chiếu): thân stator dạng hộp
-! có gân đứng hai bên, hộp làm mát nước thò xuống dưới thân kèm ống nước vào/ra, hộp đầu cực và hai quạt trên đỉnh,
-! hai nắp ổ trục có gối đỡ, trục rotor xuyên suốt, tủ kích từ ở đầu trục, bệ máy.
+! Water-cooled synchronous generator (simplified from the reference picture): a box-shaped stator body
+! with vertical ribs on both sides, a water cooler box hanging below the body with inlet/outlet pipes, a terminal box and two fans on top,
+! two bearing end covers with pedestals, a rotor shaft running through, an excitation cabinet at the shaft end, a base frame.
 !
-! Mỗi bộ phận là một solid body có tên trong cùng một Part. Hệ tọa độ của builder:
-!   X  = trục máy (tâm thân ở X = 0, tủ kích từ ở phía âm, đầu trục ra ở phía dương)
-!   D  = chiều ngang (trục máy ở D = 0)
-!   Elevation = cao độ (đáy bệ ở 0, mặt trên bệ ở GN_BaseHeight)
+! Each part is a named solid body in the same Part. Coordinate system of the builders:
+!   X  = machine axis (body center at X = 0, excitation cabinet on the negative side, shaft end out on the positive side)
+!   D  = lateral direction (machine axis at D = 0)
+!   Elevation = height (base bottom at 0, base top at GN_BaseHeight)
 !
-! Mô hình là các khối đặc nên không có phần cắt lộ ruột (rotor, lõi stator, ruột bộ làm mát) như trong ảnh.
-! Luật ở FORM khớp với GeneratorParams.Validate (server dùng bản C# đó); các hằng số 0.55 / 0.8 / 0.6 / 300 mm khớp với
-! hằng số cùng tên ở file C#.
+! The model is made of solid blocks, so there are no cut-away views of the inside (rotor, stator core, cooler internals) as in the picture.
+! The rules in FORM match GeneratorParams.Validate (the server uses that C# copy); the constants 0.55 / 0.8 / 0.6 / 300 mm match
+! the constants of the same name in the C# file.
 ! ============================================================================
 GEA_VERSION 1
 PRODUCT_NAME "Water-cooled generator (simplified)"
@@ -31,7 +31,7 @@ BEGIN_FORM
 
   BEGIN_GROUP "Side ribs"
     USER_INPUT_PARAM GN_RibCount INTEGER 12 MIN 0 MAX 24 LABEL "Rib count (each side)"
-    ! Không có gân thì ẩn các ô kích thước gân (ô ẩn không có giá trị)
+    ! With no ribs, hide the rib size fields (a hidden field has no value)
     IF GN_RibCount > 0
       USER_INPUT_PARAM GN_RibThickness LENGTH 80 mm MIN 30 MAX 200 LABEL "Rib thickness"
       USER_INPUT_PARAM GN_RibExtra     LENGTH 70 mm MIN 20 MAX 200 LABEL "Rib projection"
@@ -57,13 +57,13 @@ BEGIN_FORM
     USER_INPUT_PARAM GN_BaseOverhang LENGTH 200 mm  MIN 0    MAX 800  LABEL "Base overhang beyond the ends"
   END_GROUP
 
-  ! --- Luật kiểm tra ---
+  ! --- Validation rules ---
   ASSERT GN_EndDiameter <= 0.8 * GN_FrameHeight "Bearing housing diameter must be at most 80 % of the frame height."
   ASSERT GN_ShaftDiameter <= GN_EndDiameter - 200 mm "Shaft diameter must be at least 200 mm smaller than the bearing housing diameter."
   ASSERT GN_CoolerLength <= GN_FrameLength - 400 mm "Cooler length must be at least 400 mm shorter than the frame."
   ASSERT GN_CoolerWidth <= GN_FrameWidth "Cooler width must not exceed the frame width."
   ASSERT GN_PipeDiameter <= 0.6 * GN_CoolerDepth "Water pipe diameter must be at most 60 % of the cooler depth."
-  ! Ô của gân bị ẩn khi không có gân (chưa có giá trị), nên các luật dùng chúng nằm trong IF
+  ! The rib fields are hidden when there are no ribs (no value yet), so the rules that use them sit inside an IF
   IF GN_RibCount > 0
     ASSERT GN_RibCount * GN_RibThickness <= GN_FrameLength / 2 \
       "The side ribs take more than half of the frame length (reduce count or thickness)."
@@ -102,7 +102,7 @@ BEGIN_BUILD
 
   PROCESSING_BOX_START "Building the generator"
 
-  ! --- Bệ máy: trải từ tủ kích từ tới đầu trục ---
+  ! --- Base frame: spans from the excitation cabinet to the shaft end ---
   PROCESSING_BOX_SET_STATE "Base frame" 8
   CREATE_FEATURE builder:Block
     FEATURE_IN "CenterX" (xCabLeft + xShaftEnd) / 2
@@ -115,7 +115,7 @@ BEGIN_BUILD
   SET_REF_ATTR body "ROLE" "BASE"
   SET_APPEARANCE body "Grey"
 
-  ! --- Thân stator dạng hộp ---
+  ! --- Box-shaped stator body ---
   PROCESSING_BOX_SET_STATE "Stator frame" 20
   CREATE_FEATURE builder:Block
     FEATURE_IN "CenterX"      0 mm
@@ -130,7 +130,7 @@ BEGIN_BUILD
   SET_REF_ATTR body "ROLE" "STATOR_FRAME"
   SET_APPEARANCE body "Grey"
 
-  ! --- Hộp làm mát nước dưới thân (chui vào thân 300 mm), ống nước vào/ra nhô ra một bên ---
+  ! --- Water cooler box under the body (sinks 300 mm into the body), inlet/outlet pipes stick out to one side ---
   PROCESSING_BOX_SET_STATE "Water cooler" 32
   CREATE_FEATURE builder:Block
     FEATURE_IN "CenterX"      0 mm
@@ -172,7 +172,7 @@ BEGIN_BUILD
     SET_APPEARANCE body "LightGrey"
   END_FOR
 
-  ! --- Gối đỡ hai nắp ổ trục ---
+  ! --- Pedestals of the two bearing covers ---
   PROCESSING_BOX_SET_STATE "Bearing pedestals" 42
   CREATE_FEATURE builder:Block
     FEATURE_IN "CenterX"   xL + GN_EndLength / 2
@@ -196,7 +196,7 @@ BEGIN_BUILD
   SET_REF_NAME body "GN_Pedestal_NDE"
   SET_APPEARANCE body "Grey"
 
-  ! --- Hai nắp ổ trục ---
+  ! --- The two bearing covers ---
   CREATE_FEATURE builder:Cylinder
     FEATURE_IN "Axis"      "X"
     FEATURE_IN "CenterX"   xL + GN_EndLength / 2
@@ -221,7 +221,7 @@ BEGIN_BUILD
   SET_REF_ATTR body "ROLE" "BEARING"
   SET_APPEARANCE body "LightGrey"
 
-  ! --- Gân đứng hai bên thân, chia đều dọc chiều dài ---
+  ! --- Vertical ribs on both sides of the body, spaced evenly along the length ---
   PROCESSING_BOX_SET_STATE "Side ribs" 55
   index = 0
   FOR i FROM 0 TO GN_RibCount - 1
@@ -242,7 +242,7 @@ BEGIN_BUILD
     END_FOR
   END_FOR
 
-  ! --- Hộp đầu cực dài trên đỉnh thân và hai nắp quạt ---
+  ! --- Long terminal box on top of the body and two fan covers ---
   PROCESSING_BOX_SET_STATE "Top box and fans" 65
   CREATE_FEATURE builder:Block
     FEATURE_IN "CenterX"      0 mm
@@ -271,7 +271,7 @@ BEGIN_BUILD
     SET_APPEARANCE body "Grey"
   END_FOR
 
-  ! --- Trục rotor, hai đĩa khớp nối ---
+  ! --- Rotor shaft, two coupling discs ---
   PROCESSING_BOX_SET_STATE "Rotor shaft" 78
   CREATE_FEATURE builder:Cylinder
     FEATURE_IN "Axis"      "X"
@@ -307,7 +307,7 @@ BEGIN_BUILD
   SET_REF_NAME body "GN_Coupling_Exciter"
   SET_APPEARANCE body "Silver"
 
-  ! --- Tủ kích từ ở đầu trục, kèm hộp điều khiển phía trên ---
+  ! --- Excitation cabinet at the shaft end, with a control box on top ---
   PROCESSING_BOX_SET_STATE "Exciter cabinet" 90
   CREATE_FEATURE builder:Block
     FEATURE_IN "CenterX"      xCab

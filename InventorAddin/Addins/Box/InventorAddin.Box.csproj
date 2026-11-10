@@ -5,7 +5,7 @@
         <AddinClassId>7B5E3A62-4C1D-4F0B-9A27-5D8E1C3F6A94</AddinClassId>
         <AddinDisplayName>Box Generator</AddinDisplayName>
         <AddinDescription>Create a box with a lid and edit its parameters on the active Part.</AddinDescription>
-        <!-- Tên file giữ như add-in Box gốc để bản cài cũ bị ghi đè. -->
+        <!-- The file name is kept as in the original Box add-in so an old installation is overwritten. -->
         <AddinFileName>InventorBoxAddin.addin</AddinFileName>
     </PropertyGroup>
 

@@ -4,17 +4,17 @@ using System.Linq;
 
 namespace InventorAddin.Models;
 
-/// <summary>Định nghĩa một thông số (một nơi duy nhất; UI, preset và adapter đều đọc từ đây). Đơn vị: mm.</summary>
+/// <summary>Definition of one parameter (a single place; the UI, presets and adapters all read from here). Unit: mm.</summary>
 public sealed record ParameterDef(string Name, string Label, string Group, double Default, double Min, double Max)
 {
-    /// <summary>Đơn vị hiển thị ("mm", "" cho số đếm).</summary>
+    /// <summary>Display unit ("mm", "" for counts).</summary>
     public string Unit { get; init; } = "mm";
 
-    /// <summary>Số nguyên (số sứ, số cánh tản nhiệt...): form dùng bước 1 và luật từ chối giá trị lẻ.</summary>
+    /// <summary>Integer (number of bushings, radiator fins...): the form uses step 1 and a rule that rejects fractional values.</summary>
     public bool Integer { get; init; }
 }
 
-/// <summary>Một lỗi ràng buộc, kèm danh sách thông số liên quan để UI tô đỏ.</summary>
+/// <summary>One constraint error, with the list of related parameters so the UI can turn them red.</summary>
 public sealed record ValidationIssue(string Message, IReadOnlyList<string> Params);
 
 public static class BoxParams
@@ -50,7 +50,7 @@ public static class BoxParams
 
     public static Dictionary<string, double> Defaults() => All.ToDictionary(d => d.Name, d => d.Default);
 
-    /// <summary>Lấy các giá trị có trong <paramref name="partial"/>, thông số thiếu thì dùng mặc định; khóa lạ bị bỏ.</summary>
+    /// <summary>Takes the values present in <paramref name="partial"/>, uses the default for missing parameters; unknown keys are dropped.</summary>
     public static Dictionary<string, double> Complete(IReadOnlyDictionary<string, double>? partial)
     {
         var result = Defaults();
@@ -61,7 +61,7 @@ public static class BoxParams
         return result;
     }
 
-    /// <summary>Kiểm tra min/max và các ràng buộc hình học (mục 4 của kế hoạch). Rỗng nghĩa là hợp lệ.</summary>
+    /// <summary>Checks min/max and the geometric constraints (section 4 of the plan). Empty means valid.</summary>
     public static IReadOnlyList<ValidationIssue> Validate(IReadOnlyDictionary<string, double> values)
     {
         var issues = new List<ValidationIssue>();

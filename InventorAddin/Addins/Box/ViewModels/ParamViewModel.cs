@@ -5,7 +5,7 @@ using InventorAddin.Models;
 
 namespace InventorAddin.ViewModels;
 
-/// <summary>Một thông số trên form: nhãn, ô nhập, slider. Dựng từ <see cref="ParameterDef"/>, không viết cứng từng ô.</summary>
+/// <summary>One parameter on the form: label, input box, slider. Built from <see cref="ParameterDef"/>, not hand-written field by field.</summary>
 public sealed class ParamViewModel : ObservableObject
 {
     private readonly Action _changed;
@@ -51,7 +51,7 @@ public sealed class ParamViewModel : ObservableObject
         }
     }
 
-    /// <summary>Slider luôn nằm trong [Min, Max]; chỉ ghi ngược về Value khi người dùng thực sự kéo.</summary>
+    /// <summary>The slider always stays within [Min, Max]; it writes back to Value only when the user really drags it.</summary>
     public double SliderValue
     {
         get => Math.Clamp(_value, Min, Max);
@@ -86,7 +86,7 @@ public sealed class ParamViewModel : ObservableObject
         }
     }
 
-    /// <summary>Lỗi của ô nhập (không phải số) hoặc lỗi ràng buộc do <see cref="PanelViewModel"/> gán.</summary>
+    /// <summary>Error of the input box (not a number) or a constraint error assigned by <see cref="PanelViewModel"/>.</summary>
     public string? Error => _parseError ?? _rangeError;
 
     public bool HasError => Error != null;

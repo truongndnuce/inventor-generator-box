@@ -6,8 +6,8 @@ using InventorAddin.Host;
 namespace InventorAddin.Web;
 
 /// <summary>
-/// Cấu hình kết nối tới web server, đọc từ %AppData%\InventorBoxAddin\worker.json (tự tạo bản mặc định nếu chưa có).
-/// Đặt "enabled": false để add-in không nhận job từ web.
+/// Connection settings to the web server, read from %AppData%\InventorBoxAddin\worker.json (a default one is created if missing).
+/// Set "enabled": false so the add-in does not take jobs from the web.
 /// </summary>
 public sealed class WorkerSettings
 {
@@ -19,10 +19,10 @@ public sealed class WorkerSettings
     public string WorkerName { get; set; } = Environment.MachineName;
     public int PollSeconds { get; set; } = 3;
     public int HeartbeatSeconds { get; set; } = 10;
-    /// <summary>Thư mục làm việc riêng cho từng job (file .ipt, .stp, .png trước khi tải lên).</summary>
+    /// <summary>A separate working folder for each job (the .ipt, .stp, .png files before they are uploaded).</summary>
     public string WorkDir { get; set; } = Path.Combine(Log.DataDirectory, "jobs");
 
-    /// <summary>Bản sao dùng cho một add-in: tên worker thêm hậu tố để mỗi add-in là một worker riêng trên server.</summary>
+    /// <summary>A copy for one add-in: the worker name gets a suffix so each add-in is its own worker on the server.</summary>
     public WorkerSettings ForAddin(string addinId) => new()
     {
         Enabled = Enabled, ServerUrl = ServerUrl, WorkerKey = WorkerKey, WorkerName = WorkerName + "-" + addinId,

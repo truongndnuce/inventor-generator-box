@@ -5,8 +5,8 @@ using InventorAddin.ViewModels;
 
 namespace InventorAddin.Views;
 
-/// <summary>View thuần: chỉ binding vào <see cref="PanelViewModel"/> (add-in Box).
-/// Code-behind chỉ chuyển sự kiện focus thành thuộc tính của ViewModel.</summary>
+/// <summary>A pure View: it only binds to <see cref="PanelViewModel"/> (Box add-in).
+/// The code-behind only turns focus events into properties of the ViewModel.</summary>
 public partial class AddInPanel : UserControl
 {
     public AddInPanel(PanelViewModel viewModel)
@@ -18,7 +18,7 @@ public partial class AddInPanel : UserControl
         AddHandler(Keyboard.LostKeyboardFocusEvent, new KeyboardFocusChangedEventHandler(OnLostFocus), true);
         IsVisibleChanged += (_, e) =>
         {
-            // Mỗi lần mở UI đọc lại giá trị từ model, phòng khi người dùng sửa Parameter bằng tay
+            // Every time the UI opens, re-read the values from the model, in case the user edited a Parameter by hand
             if (!(bool)e.NewValue) return;
             viewModel.Refresh();
         };
