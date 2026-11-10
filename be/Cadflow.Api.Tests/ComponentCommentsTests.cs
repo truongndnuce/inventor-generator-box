@@ -13,7 +13,7 @@ public class ComponentCommentsTests
     private static string[] Lines(string name) =>
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Scripts", "lib", name)).Replace("\r\n", "\n").Split('\n');
 
-    private static bool IsComment(string l) => l.TrimStart().StartsWith('!');
+    internal static bool IsComment(string l) => l.TrimStart().StartsWith('!');
 
     [Fact]
     public void There_is_at_least_one_library()
@@ -30,11 +30,9 @@ public class ComponentCommentsTests
         Assert.True(text.Length > 0, $"{file}: thiếu chú thích mô tả ở đầu file.");
     }
 
-    [Theory]
-    [MemberData(nameof(Libraries))]
-    public void Every_statement_paragraph_in_FORM_and_BUILD_has_a_comment(string file)
+    /// <summary>Các đoạn lệnh trong khối FORM/BUILD chưa có chú thích (rỗng nếu đạt quy ước).</summary>
+    public static List<string> UncommentedParagraphs(string file, string[] lines)
     {
-        var lines = Lines(file);
         var problems = new List<string>();
         string? block = null;
         var para = new List<(int No, string Text)>();
@@ -59,7 +57,14 @@ public class ComponentCommentsTests
             if (t.Length == 0) { Flush(); continue; }
             para.Add((i + 1, lines[i]));
         }
+        return problems;
+    }
 
+    [Theory]
+    [MemberData(nameof(Libraries))]
+    public void Every_statement_paragraph_in_FORM_and_BUILD_has_a_comment(string file)
+    {
+        var problems = UncommentedParagraphs(file, Lines(file));
         Assert.True(problems.Count == 0, string.Join("\n", problems));
     }
 }
