@@ -83,6 +83,7 @@ public sealed class GeaParser
     {
         int version = 0;
         string? product = null, prefix = null, target = null;
+        var extraPrefixes = new List<string>();
         bool sawVersion = false;
 
         // Header: các lệnh trước khối đầu tiên
@@ -111,6 +112,8 @@ public sealed class GeaParser
                         break;
                     case "PARAM_PREFIX":
                         prefix = Expect(TokKind.Word, "tiền tố thông số").Text;
+                        // Tiền tố thứ hai trở đi (do INCLUDE lib: thêm vào bản đã mở rộng, hoặc do người viết liệt kê).
+                        while (!AtEnd && Peek().Kind == TokKind.Word) extraPrefixes.Add(Next().Text);
                         break;
                     case "TARGET":
                         var t = Expect(TokKind.Word, "PART hoặc ASSEMBLY");
@@ -171,6 +174,7 @@ public sealed class GeaParser
             Version = version,
             ProductName = product ?? "",
             ParamPrefix = prefix,
+            ExtraParamPrefixes = extraPrefixes,
             Target = target ?? "PART",
             Form = form,
             HasForm = hasForm,

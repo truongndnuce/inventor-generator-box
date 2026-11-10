@@ -24,7 +24,7 @@ public static class GeaIncludes
 
     private static readonly Regex IncludeLine = new(@"^\s*INCLUDE\s+lib:(?<name>[^!]*?)\s*(!.*)?$", RegexOptions.Compiled);
     private static readonly Regex NamePattern = new(@"^[A-Za-z0-9_-]{1,64}$", RegexOptions.Compiled);
-    private static readonly Regex PrefixLine = new(@"^\s*PARAM_PREFIX\s+(?<p>[A-Za-z_][A-Za-z0-9_]*)\s*(!.*)?$", RegexOptions.Compiled);
+    private static readonly Regex PrefixLine = new(@"^(?<lead>\s*PARAM_PREFIX\s+)(?<list>[A-Za-z_][A-Za-z0-9_]*(?:\s+[A-Za-z_][A-Za-z0-9_]*)*)(?<tail>\s*(!.*)?)$", RegexOptions.Compiled);
 
     private enum Block { None, Form, Build }
 
@@ -39,6 +39,7 @@ public static class GeaIncludes
             return new GeaExpansion(text ?? "", run.Lines, run.Prefixes, run.Diags);
         }
         run.Walk(src, fileName, Block.None, new List<string>(), 0);
+        run.DeclareLibPrefixes(fileName);
         return new GeaExpansion(string.Join("\n", run.Out), run.Lines, run.Prefixes, run.Diags);
     }
 
@@ -106,6 +107,25 @@ public static class GeaIncludes
             }
         }
 
+        /// <summary>
+        /// Bản đã mở rộng phải tự hợp lệ khi biên dịch lại (job lưu bản này): thêm tiền tố của các thư viện vào dòng
+        /// PARAM_PREFIX của file gốc (<c>PARAM_PREFIX GT_ TR_</c>). File gốc không có PARAM_PREFIX thì không cần.
+        /// </summary>
+        public void DeclareLibPrefixes(string topFile)
+        {
+            if (Prefixes.Count == 0) return;
+            for (var i = 0; i < Out.Count; i++)
+            {
+                if (Lines[i].File != topFile) continue;
+                var m = PrefixLine.Match(Out[i]);
+                if (!m.Success) continue;
+                var have = new List<string>(m.Groups["list"].Value.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries));
+                foreach (var p in Prefixes) if (!have.Contains(p)) have.Add(p);
+                Out[i] = m.Groups["lead"].Value + string.Join(" ", have) + m.Groups["tail"].Value;
+                return;
+            }
+        }
+
         private void Emit(string line, string file, int n)
         {
             Out.Add(line);
@@ -127,7 +147,9 @@ public static class GeaIncludes
             foreach (var l in libLines)
             {
                 var pm = PrefixLine.Match(l);
-                if (pm.Success && !Prefixes.Contains(pm.Groups["p"].Value)) Prefixes.Add(pm.Groups["p"].Value);
+                if (!pm.Success) continue;
+                foreach (var p in pm.Groups["list"].Value.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries))
+                    if (!Prefixes.Contains(p)) Prefixes.Add(p);
             }
 
             // Cắt thân khối cùng loại, giữ số dòng gốc của thư viện.

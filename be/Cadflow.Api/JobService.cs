@@ -27,7 +27,7 @@ public sealed class JobService(JobStore store, ScriptStore scripts, ConfigStore 
         {
             if (scripts.Get(req.ScriptId) is not { } scriptSource)
                 return new(null, 404, new { error = "Unknown script. Import the .gea file again." });
-            var script = GeaScript.Compile(scriptSource);
+            var script = GeaScript.Compile(scriptSource, GeaLibraries.Resolve);
             if (GeaForms.Reject(script) is { } why)
                 return new(null, 400, new { error = why, diagnostics = GeaForms.Diagnostics(script, errorsOnly: true) });
             var form = GeaForms.Evaluate(script, req.Inputs, req.TextInputs);
@@ -57,7 +57,8 @@ public sealed class JobService(JobStore store, ScriptStore scripts, ConfigStore 
         string? scriptSha = null;
         if (product.ScriptFile != null)
         {
-            if (ScriptStore.ReadBundled(product.ScriptFile) is { } scriptText) scriptSha = scripts.Save(scriptText);
+            if (ScriptStore.ReadBundled(product.ScriptFile) is { } scriptText)
+                scriptSha = scripts.Save(GeaScript.Compile(scriptText, GeaLibraries.Resolve).ExpandedText); // worker nhận bản đã mở rộng INCLUDE
             else log.LogWarning("Bundled script {File} for product {Product} was not found; the job will have no .gea export.", product.ScriptFile, product.Code);
         }
 
@@ -78,7 +79,7 @@ public sealed class JobService(JobStore store, ScriptStore scripts, ConfigStore 
 
         var block = GeaExport.ParseBlock(text);
         var clean = GeaExport.StripBlock(text);
-        var script = GeaScript.Compile(clean);
+        var script = GeaScript.Compile(clean, GeaLibraries.Resolve);
         if (GeaForms.Reject(script) is { } why)
             return new(400, new { error = why, diagnostics = GeaForms.Diagnostics(script) });
 
@@ -93,7 +94,7 @@ public sealed class JobService(JobStore store, ScriptStore scripts, ConfigStore 
         if (ignored.Length > 0)
             warnings.Add($"{ignored.Length} value(s) in the file do not match any parameter of the script and were ignored: {string.Join(", ", ignored.Take(5))}{(ignored.Length > 5 ? ", ..." : "")}.");
 
-        var id = scripts.Save(clean);
+        var id = scripts.Save(script.ExpandedText); // lưu bản đã mở rộng INCLUDE: tự chạy được, worker không cần thư viện
         return new(200, new
         {
             scriptId = id,
@@ -112,7 +113,7 @@ public sealed class JobService(JobStore store, ScriptStore scripts, ConfigStore 
     public Reply ScriptForm(string id, IReadOnlyDictionary<string, double>? values, IReadOnlyDictionary<string, string>? texts)
     {
         if (scripts.Get(id) is not { } text) return new(404, new { error = "Unknown script. Import the .gea file again." });
-        var script = GeaScript.Compile(text);
+        var script = GeaScript.Compile(text, GeaLibraries.Resolve);
         if (GeaForms.Reject(script) is { } why) return new(400, new { error = why });
         return new(200, new { scriptId = id, name = script.Program.ProductName, form = GeaForms.Describe(GeaForms.Evaluate(script, values, texts)) });
     }

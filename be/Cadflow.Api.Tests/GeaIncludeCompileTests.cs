@@ -47,6 +47,25 @@ public class GeaIncludeCompileTests
     }
 
     [Fact]
+    public void Expanded_text_compiles_on_its_own_without_a_resolver()
+    {
+        var expanded = GeaScript.Compile(Host, Libs(("tank", TankLib))).ExpandedText;
+        var again = GeaScript.Compile(expanded);   // đây là bản job lưu và worker nhận
+
+        Assert.False(again.HasErrors, string.Join("\n", again.Diagnostics));
+        Assert.Contains(again.Parameters, p => p.Name == "TR_Len");
+    }
+
+    [Fact]
+    public void Param_prefix_accepts_several_prefixes()
+    {
+        const string host = "GEA_VERSION 1\nPRODUCT_NAME \"P\"\nPARAM_PREFIX GT_ TR_\nTARGET PART\nBEGIN_FORM\n  USER_INPUT_PARAM TR_A INTEGER 1\n  USER_INPUT_PARAM GT_B INTEGER 1\n  USER_INPUT_PARAM ZZ_C INTEGER 1\nEND_FORM\nBEGIN_BUILD\nEND_BUILD\n";
+        var d = Assert.Single(GeaScript.Compile(host).Diagnostics);
+        Assert.Equal("GEA2030", d.Code);
+        Assert.Contains("ZZ_C", d.Message);
+    }
+
+    [Fact]
     public void Included_parameters_show_up_in_the_form_with_their_defaults()
     {
         var script = GeaScript.Compile(Host, Libs(("tank", TankLib)));

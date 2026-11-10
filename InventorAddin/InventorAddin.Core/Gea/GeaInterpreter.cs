@@ -90,7 +90,7 @@ public sealed class GeaScript
         var expansion = GeaIncludes.Expand(text, resolveLib, fileName);
         var diags = new List<GeaDiagnostic>();
         var program = GeaParser.Parse(expansion.Text, diags);
-        program.ExtraParamPrefixes = expansion.LibPrefixes;
+        program.ExtraParamPrefixes = program.ExtraParamPrefixes.Union(expansion.LibPrefixes).ToList();
         // Parser đã tự phục hồi sau lỗi cú pháp nên vẫn kiểm tra ngữ nghĩa, để liệt kê hết lỗi một lần
         var pars = GeaChecker.Check(program, diags);
 

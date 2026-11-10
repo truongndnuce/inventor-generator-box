@@ -1,17 +1,35 @@
 import { useEffect, useRef, useState } from 'react';
-import { Badge, Button, Callout, Card, Flex, Text, TextArea } from '@radix-ui/themes';
+import { Badge, Button, Callout, Card, Flex, Text } from '@radix-ui/themes';
 import { API, go, postJson } from '../lib.js';
 
-const KEY = 'cadflow.chat';
+const KEY = 'cadflow.chats';
+const ACTIVE = 'cadflow.chat.active';
 const EXAMPLES = [
   'Tạo một gas turbine có 8 can, ống xả dài 1.5 m',
   'Box 300 x 200 x 120 mm, thành dày 3 mm',
   'Transformer mặc định, tank dài 2 m',
 ];
 
-const load = () => {
-  try { return JSON.parse(sessionStorage.getItem(KEY)) || []; } catch { return []; }
+const loadChats = () => {
+  try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; }
 };
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const titleOf = (items) => {
+  const t = (items.find((i) => i.role === 'user')?.text || '').replace(/\s+/g, ' ').trim();
+  return t.length > 40 ? t.slice(0, 40) + '…' : t || 'New chat';
+};
+
+/** Gom hội thoại theo mốc thời gian như Claude: Today / Yesterday / Previous 7 days / Older. */
+function groupChats(chats) {
+  const day = 86400000;
+  const start = new Date().setHours(0, 0, 0, 0);
+  const groups = [['Today', []], ['Yesterday', []], ['Previous 7 days', []], ['Older', []]];
+  for (const c of [...chats].sort((a, b) => b.updatedAt - a.updatedAt)) {
+    const g = c.updatedAt >= start ? 0 : c.updatedAt >= start - day ? 1 : c.updatedAt >= start - 7 * day ? 2 : 3;
+    groups[g][1].push(c);
+  }
+  return groups.filter(([, l]) => l.length);
+}
 
 /** Đọc luồng SSE (data: {...}\n\n) từ POST /api/chat và gọi onEvent cho từng sự kiện. */
 async function streamChat(body, onEvent, signal) {
@@ -107,88 +125,178 @@ function Created({ item }) {
   );
 }
 
+function Sidebar({ chats, activeId, onSelect, onNew, onDelete, onRename, open }) {
+  const [q, setQ] = useState('');
+  const [editing, setEditing] = useState(null);
+  const shown = q.trim() ? chats.filter((c) => c.title.toLowerCase().includes(q.trim().toLowerCase())) : chats;
+  const groups = groupChats(shown);
+  const commit = (c, v) => { setEditing(null); if (v.trim() && v.trim() !== c.title) onRename(c.id, v.trim()); };
+
+  return (
+    <aside className={`chat-side${open ? ' open' : ''}`}>
+      <button className="chat-new" onClick={onNew}><span>＋</span> New chat</button>
+      <input className="chat-search" placeholder="Search chats" value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="chat-history">
+        {groups.length === 0 && <div className="chat-empty-hist">{q ? 'No matching chats' : 'No chats yet'}</div>}
+        {groups.map(([label, list]) => (
+          <div key={label}>
+            <div className="chat-group">{label}</div>
+            {list.map((c) => (
+              <div key={c.id} className={`chat-item${c.id === activeId ? ' active' : ''}`} onClick={() => onSelect(c.id)}
+                onDoubleClick={() => setEditing(c.id)} title={c.title}>
+                {editing === c.id ? (
+                  <input autoFocus defaultValue={c.title} onClick={(e) => e.stopPropagation()}
+                    onBlur={(e) => commit(c, e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') commit(c, e.target.value); if (e.key === 'Escape') setEditing(null); }} />
+                ) : <span className="chat-item-title">{c.title}</span>}
+                <button className="chat-del" aria-label="Delete chat" title="Delete chat"
+                  onClick={(e) => { e.stopPropagation(); onDelete(c.id); }}>🗑</button>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
 export default function Chat() {
   // item: { role: 'user'|'assistant', text } | { role: 'proposal', ... } | { role: 'tool', name }
-  const [items, setItems] = useState(load);
+  const [chats, setChats] = useState(loadChats);
+  const [activeId, setActiveId] = useState(() => { try { return localStorage.getItem(ACTIVE) || null; } catch { return null; } });
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [sideOpen, setSideOpen] = useState(false);
   const [who] = useState(() => { try { return localStorage.getItem('cadflow.user') || ''; } catch { return ''; } });
   const endRef = useRef(null);
   const abortRef = useRef(null);
+  const taRef = useRef(null);
+
+  const active = chats.find((c) => c.id === activeId);
+  const items = active?.items || [];
 
   useEffect(() => {
-    try { sessionStorage.setItem(KEY, JSON.stringify(items.filter((i) => i.role !== 'tool'))); } catch { /* bỏ qua */ }
-    endRef.current?.scrollIntoView({ block: 'end' });
-  }, [items]);
+    try {
+      localStorage.setItem(KEY, JSON.stringify(chats.map((c) => ({ ...c, items: c.items.filter((i) => i.role !== 'tool') }))));
+      if (activeId) localStorage.setItem(ACTIVE, activeId); else localStorage.removeItem(ACTIVE);
+    } catch { /* bỏ qua */ }
+  }, [chats, activeId]);
+  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [items, busy]);
   useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(() => { // textarea tự giãn theo nội dung
+    const t = taRef.current;
+    if (t) { t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 200) + 'px'; }
+  }, [input]);
+
+  const stop = () => { abortRef.current?.abort(); setBusy(false); };
+  const patch = (id, fn) => setChats((l) => l.map((c) => (c.id === id ? { ...c, items: fn(c.items), updatedAt: Date.now() } : c)));
+
+  const select = (id) => { stop(); setActiveId(id); setError(''); setSideOpen(false); };
+  const newChat = () => { stop(); setActiveId(null); setError(''); setInput(''); setSideOpen(false); };
+  const remove = (id) => {
+    setChats((l) => l.filter((c) => c.id !== id));
+    if (id === activeId) { stop(); setActiveId(null); }
+  };
+  const rename = (id, title) => setChats((l) => l.map((c) => (c.id === id ? { ...c, title } : c)));
 
   const send = async (text) => {
     text = text.trim();
     if (!text || busy) return;
-    const next = [...items.filter((i) => i.role !== 'tool'), { role: 'user', text }];
-    setItems(next); setInput(''); setBusy(true); setError('');
+    let id = activeId;
+    const base = (active?.items || []).filter((i) => i.role !== 'tool');
+    const next = [...base, { role: 'user', text }];
+    if (!active) {
+      id = newId();
+      setChats((l) => [{ id, title: titleOf(next), createdAt: Date.now(), updatedAt: Date.now(), items: next }, ...l]);
+      setActiveId(id);
+    } else {
+      patch(id, () => next);
+    }
+    setInput(''); setBusy(true); setError('');
+    const clean = (l) => l.filter((i) => i.role !== 'tool');
     // Chỉ gửi lời thoại user/assistant; thẻ đề xuất và dòng tool là việc của giao diện.
     const messages = next.filter((i) => i.role === 'user' || i.role === 'assistant').map((i) => ({ role: i.role, content: i.text }));
     const ctl = new AbortController();
     abortRef.current = ctl;
     try {
       await streamChat({ messages, requestedBy: who }, (e) => {
-        if (e.type === 'text') setItems((l) => [...l.filter((i) => i.role !== 'tool'), { role: 'assistant', text: e.text }]);
-        else if (e.type === 'tool') setItems((l) => [...l.filter((i) => i.role !== 'tool'), { role: 'tool', name: e.name }]);
-        else if (e.type === 'job') setItems((l) => [...l.filter((i) => i.role !== 'tool'), { role: 'job', ...e }]);
-        else if (e.type === 'proposal') setItems((l) => [...l.filter((i) => i.role !== 'tool'), { role: 'proposal', ...e }]);
+        if (e.type === 'text') patch(id, (l) => [...clean(l), { role: 'assistant', text: e.text }]);
+        else if (e.type === 'tool') patch(id, (l) => [...clean(l), { role: 'tool', name: e.name }]);
+        else if (e.type === 'job') patch(id, (l) => [...clean(l), { role: 'job', ...e }]);
+        else if (e.type === 'proposal') patch(id, (l) => [...clean(l), { role: 'proposal', ...e }]);
         else if (e.type === 'error') setError(e.error);
       }, ctl.signal);
     } catch (e) {
       if (e.name !== 'AbortError') setError(e.message);
     } finally {
-      setItems((l) => l.filter((i) => i.role !== 'tool'));
-      setBusy(false);
+      patch(id, clean);
+      if (abortRef.current === ctl) setBusy(false);
     }
   };
 
-  const reset = () => { abortRef.current?.abort(); setItems([]); setError(''); setBusy(false); };
+  const tool = items.find((i) => i.role === 'tool');
 
   return (
-    <div className="chat">
-      <Flex justify="between" align="center" mb="3">
-        <div>
-          <Text as="div" size="5" weight="bold">Describe your job</Text>
-          <Text as="div" size="2" color="gray">The assistant fills in the parameters, validates them and creates the job.</Text>
+    <div className="chat-shell">
+      <Sidebar chats={chats} activeId={activeId} onSelect={select} onNew={newChat} onDelete={remove} onRename={rename} open={sideOpen} />
+      <section className="chat-main">
+        <div className="chat-bar">
+          <button className="chat-burger" onClick={() => setSideOpen((o) => !o)} aria-label="Chats">☰</button>
+          <span className="chat-bar-title">{active?.title || 'New chat'}</span>
         </div>
-        {items.length > 0 && <Button variant="soft" color="gray" onClick={reset}>New chat</Button>}
-      </Flex>
 
-      <div className="chat-log">
-        {items.length === 0 && (
-          <Flex direction="column" gap="2" align="start">
-            <Text size="2" color="gray">Try:</Text>
-            {EXAMPLES.map((ex) => <Button key={ex} variant="outline" size="2" onClick={() => send(ex)}>{ex}</Button>)}
-          </Flex>
-        )}
-        {items.map((it, i) => {
-          if (it.role === 'proposal') {
-            return <Proposal key={i} item={it} who={who} onChange={(n) => setItems((l) => l.map((x, j) => (j === i ? n : x)))} />;
-          }
-          if (it.role === 'job') return <Created key={i} item={it} />;
-          if (it.role === 'tool') return <Text key={i} size="1" color="gray" className="chat-tool">working: {it.name}...</Text>;
-          return <div key={i} className={`chat-msg ${it.role}`}>{it.text}</div>;
-        })}
-        {busy && !items.some((i) => i.role === 'tool') && <Text size="1" color="gray">thinking...</Text>}
-        <div ref={endRef} />
-      </div>
+        <div className="chat-scroll">
+          <div className="chat-col">
+            {items.length === 0 && (
+              <div className="chat-hero">
+                <div className="chat-hero-mark">✦</div>
+                <h2>What do you want to build?</h2>
+                <p>Describe a part. The assistant fills in the parameters, validates them and creates the job.</p>
+                <div className="chat-chips">
+                  {EXAMPLES.map((ex) => <button key={ex} onClick={() => send(ex)}>{ex}</button>)}
+                </div>
+              </div>
+            )}
+            {items.map((it, i) => {
+              if (it.role === 'proposal') {
+                return <Proposal key={i} item={it} who={who} onChange={(n) => patch(activeId, (l) => l.map((x, j) => (j === i ? n : x)))} />;
+              }
+              if (it.role === 'job') return <Created key={i} item={it} />;
+              if (it.role === 'tool') return null;
+              if (it.role === 'user') return <div key={i} className="chat-msg user">{it.text}</div>;
+              return (
+                <div key={i} className="chat-row">
+                  <span className="chat-avatar">✦</span>
+                  <div className="chat-msg assistant">{it.text}</div>
+                </div>
+              );
+            })}
+            {busy && (
+              <div className="chat-row">
+                <span className="chat-avatar pulse">✦</span>
+                <span className="chat-status">{tool ? `Working: ${tool.name}…` : 'Thinking…'}</span>
+              </div>
+            )}
+            {error && <Callout.Root color="red" size="1"><Callout.Text>{error}</Callout.Text></Callout.Root>}
+            <div ref={endRef} />
+          </div>
+        </div>
 
-      {error && <Callout.Root color="red" size="1" mb="2"><Callout.Text>{error}</Callout.Text></Callout.Root>}
-      <Flex gap="2" align="end">
-        <TextArea
-          style={{ flex: 1 }} rows={2} value={input} placeholder="e.g. gas turbine with 8 cans and a 1.5 m exhaust"
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input); } }}
-          disabled={busy}
-        />
-        <Button onClick={() => send(input)} disabled={busy || !input.trim()}>Send</Button>
-      </Flex>
+        <div className="chat-composer-wrap">
+          <div className="chat-composer">
+            <textarea
+              ref={taRef} rows={1} value={input} placeholder="Reply to the assistant…"
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(input); } }}
+            />
+            {busy
+              ? <button className="chat-send stop" onClick={stop} aria-label="Stop">■</button>
+              : <button className="chat-send" onClick={() => send(input)} disabled={!input.trim()} aria-label="Send">↑</button>}
+          </div>
+          <div className="chat-hint">Enter to send · Shift+Enter for a new line</div>
+        </div>
+      </section>
     </div>
   );
 }

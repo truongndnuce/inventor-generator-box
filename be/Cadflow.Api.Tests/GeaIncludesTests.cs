@@ -44,7 +44,7 @@ public class GeaIncludesTests
         Assert.Empty(r.Diagnostics);
         var lines = LinesOf(r.Text).Select(l => l.Trim()).ToArray();
         Assert.Equal(
-            ["GEA_VERSION 1", "PARAM_PREFIX GT_", "BEGIN_FORM", "USER_INPUT_PARAM TR_Len LENGTH 100 mm", "USER_INPUT_PARAM GT_A LENGTH 1 mm",
+            ["GEA_VERSION 1", "PARAM_PREFIX GT_ TR_", "BEGIN_FORM", "USER_INPUT_PARAM TR_Len LENGTH 100 mm", "USER_INPUT_PARAM GT_A LENGTH 1 mm",
              "END_FORM", "BEGIN_BUILD", "x = 1", "y = 2", "z = 3", "END_BUILD"], lines);
         Assert.DoesNotContain("INCLUDE", r.Text);
         Assert.DoesNotContain("PRODUCT_NAME", r.Text); // header của thư viện không được chèn
@@ -55,6 +55,15 @@ public class GeaIncludesTests
     {
         var r = GeaIncludes.Expand(Host, Libs(("tank", Lib)));
         Assert.Equal(["TR_"], r.LibPrefixes);
+    }
+
+    [Fact]
+    public void Host_prefix_line_lists_the_library_prefixes_so_the_expanded_text_stands_alone()
+    {
+        var r = GeaIncludes.Expand("GEA_VERSION 1\nPARAM_PREFIX GT_ ! host\nBEGIN_BUILD\n INCLUDE lib:tank\nEND_BUILD\n", Libs(("tank", Lib)));
+        Assert.Contains("PARAM_PREFIX GT_ TR_ ! host", r.Text);
+        // idempotente: mở rộng lại bản đã mở rộng không thêm trùng
+        Assert.Equal(r.Text, GeaIncludes.Expand(r.Text, null).Text);
     }
 
     [Fact]
