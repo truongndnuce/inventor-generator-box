@@ -109,7 +109,7 @@ internal sealed class InventorJobExecutor
                     scriptText = File.ReadAllText(scriptPath);
                 }
 
-                var script = GeaScript.Compile(scriptText);
+                var script = GeaScript.Compile(scriptText, GeaScriptLibrary.LibraryResolver(scriptPath), scriptName); // job từ server cũ có thể còn INCLUDE
                 if (script.HasErrors)
                     return JobResult.Fail($"{scriptName} has errors: " + script.Diagnostics.First(d => d.Severity == GeaSeverity.Error).Format(scriptName), retryable: false);
                 if (script.Program.Target != "PART")

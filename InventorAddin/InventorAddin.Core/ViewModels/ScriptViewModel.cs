@@ -534,7 +534,7 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
     private void Recompile(IReadOnlyDictionary<string, object?>? values)
     {
         var previous = values ?? CurrentValues();
-        _script = GeaScript.Compile(_scriptText);
+        _script = GeaScript.Compile(_scriptText, GeaScriptLibrary.LibraryResolver(_scriptPath), _scriptPath != null ? Path.GetFileName(_scriptPath) : "script.gea");
 
         Diagnostics.Clear();
         var file = _scriptPath != null ? Path.GetFileName(_scriptPath) : "script.gea";

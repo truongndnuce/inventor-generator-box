@@ -17,6 +17,13 @@ public static class GeaScriptLibrary
 
     public static string UserDirectory => Path.Combine(Log.DataDirectory, "scripts");
 
+    /// <summary>Thư viện component đi kèm add-in (Scripts\lib), dùng cho <c>INCLUDE lib:</c>.</summary>
+    public static string BundledLibDirectory => Path.Combine(BundledDirectory, "lib");
+
+    /// <summary>Resolver cho <c>INCLUDE lib:</c>: tìm cạnh file đang mở (nếu có) rồi trong thư viện đi kèm add-in.</summary>
+    public static Func<string, string?> LibraryResolver(string? scriptPath = null) =>
+        InventorAddin.Gea.GeaLibraryResolver.For(scriptPath == null ? null : Path.GetDirectoryName(scriptPath), BundledLibDirectory);
+
     public static string BundledPath(string fileName) => Path.Combine(BundledDirectory, fileName);
 
     public static IReadOnlyList<string> BundledScripts()
