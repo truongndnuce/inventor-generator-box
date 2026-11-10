@@ -1,38 +1,38 @@
-# Chat MCP: tạo job bằng mô tả
+# Chat MCP: create jobs from a description
 
-Hai cửa vào, cùng một bộ công cụ `CadTools` (`be/Cadflow.Api/Mcp/CadTools.cs`):
+Two entry points, one tool set `CadTools` (`be/Cadflow.Api/Mcp/CadTools.cs`):
 
-| Cửa vào | Dùng khi | Tạo job thế nào |
+| Entry point | Use when | How a job is created |
 |---|---|---|
-| Web `#/chat` -> `POST /api/chat` (SSE) | User mô tả trong trình duyệt | Mặc định (`Chat:AutoCreate=true`): LLM gọi `validate_job` rồi `create_job`, job vào hàng đợi ngay, giao diện hiện thẻ job. Với `Chat__AutoCreate=false`: LLM chỉ **đề xuất** (`propose_job`) và job chỉ vào hàng đợi khi user bấm **Create job** (`POST /api/chat/confirm/{draftId}`, bản nháp dùng một lần, hết hạn sau 30 phút) |
-| MCP `/mcp` (HTTP) | Claude Desktop, MCP Inspector, client khác | Công cụ `create_job` bình thường; client tự xin phép user |
+| Web `#/chat` -> `POST /api/chat` (SSE) | The user describes it in the browser | Default (`Chat:AutoCreate=true`): the LLM calls `validate_job` then `create_job`, the job enters the queue right away, and the UI shows a job card. With `Chat__AutoCreate=false`: the LLM only **proposes** (`propose_job`) and the job enters the queue only when the user presses **Create job** (`POST /api/chat/confirm/{draftId}`, a single-use draft that expires after 30 minutes) |
+| MCP `/mcp` (HTTP) | Claude Desktop, MCP Inspector, other clients | A normal `create_job` tool; the client asks the user for permission itself |
 
-Công cụ: `list_products`, `get_product_schema`, `list_configs`, `validate_job`, `create_job`, `import_gea`, `get_script_form`, `get_job`, `list_jobs`, `cancel_job`. Đơn vị luôn là mm, độ, số nguyên.
+Tools: `list_products`, `get_product_schema`, `list_configs`, `validate_job`, `create_job`, `import_gea`, `get_script_form`, `get_job`, `list_jobs`, `cancel_job`. Units are always mm, degrees, integers.
 
-## Cấu hình
+## Configuration
 
-Đặt trong `be/Cadflow.Api/.env` (git bỏ qua; mẫu ở `.env.example`; `KEY__SUB=value` ứng với `KEY:SUB`; biến môi trường thật được ưu tiên hơn `.env`). `dotnet user-secrets` và `ANTHROPIC_API_KEY` vẫn dùng được.
+Set it in `be/Cadflow.Api/.env` (ignored by git; a sample is in `.env.example`; `KEY__SUB=value` maps to `KEY:SUB`; real environment variables take precedence over `.env`). `dotnet user-secrets` and `ANTHROPIC_API_KEY` still work.
 
 ```
 Anthropic__ApiKey=<key>
-Anthropic__Model=claude-sonnet-5-5          # tùy chọn
-# Nhà cung cấp tương thích Anthropic, ví dụ DeepSeek:
+Anthropic__Model=claude-sonnet-5-5          # optional
+# An Anthropic-compatible provider, for example DeepSeek:
 # Anthropic__BaseUrl=https://api.deepseek.com/anthropic
 # Anthropic__Model=deepseek-chat
-# Chat__AutoCreate=false                    # quay về chế độ chờ xác nhận
-# Mcp__Key=<khóa>                           # khóa cho /mcp (header X-Api-Key)
+# Chat__AutoCreate=false                    # go back to the wait-for-confirmation mode
+# Mcp__Key=<key>                           # the key for /mcp (header X-Api-Key)
 ```
 
-- Chưa đặt `Anthropic:ApiKey`: `/api/chat` trả 503, phần còn lại vẫn chạy.
-- Chưa đặt `Mcp:Key`: `/mcp` chỉ nhận kết nối từ chính máy chủ (loopback). Khi mở ra mạng phải đặt khóa.
-- `/api/chat` và `/api/chat/confirm` giới hạn 20 yêu cầu/phút/IP. API người dùng chưa có xác thực, hãy thêm trước khi công khai.
-- Ở chế độ tự tạo, LLM tạo job mà không hỏi lại; server vẫn kiểm tra luật một lần nữa khi tạo, nhưng mô tả mơ hồ có thể cho ra thông số không đúng ý. Nên xem lại thông số ở trang job.
-- Job lưu trong PostgreSQL, xem `database.md`.
+- `Anthropic:ApiKey` not set: `/api/chat` returns 503, the rest keeps working.
+- `Mcp:Key` not set: `/mcp` accepts connections only from the server machine itself (loopback). When exposing it to the network, set a key.
+- `/api/chat` and `/api/chat/confirm` are limited to 20 requests/minute/IP. The user API has no authentication yet; add it before going public.
+- In auto-create mode, the LLM creates jobs without asking again; the server still re-checks the rules when creating, but a vague description can produce parameters that are not what you meant. Review the parameters on the job page.
+- Jobs are stored in PostgreSQL, see `database.md`.
 
-## Thử nhanh
+## Quick test
 
 ```bash
 npx @modelcontextprotocol/inspector   # URL: http://localhost:18080/mcp
 ```
 
-Ví dụ: `validate_job` với `{"code":"gas-turbine","values":{"GT_CanCount":6}}` báo "Can count must be a multiple of 4".
+Example: `validate_job` with `{"code":"gas-turbine","values":{"GT_CanCount":6}}` reports "Can count must be a multiple of 4".

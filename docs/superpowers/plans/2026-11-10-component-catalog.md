@@ -1,71 +1,71 @@
-# Kế hoạch triển khai: danh mục component trên web (hướng A)
+# Implementation plan: a component catalog on the web (direction A)
 
-Thiết kế: `docs/superpowers/specs/2026-11-10-component-catalog-design.md`. Mỗi task kết thúc bằng một commit; test chạy bằng `dotnet test be/Cadflow.Api.Tests` (cần PostgreSQL local, xem `docs/database.md`). Giao diện không có test tự động trong repo: kiểm bằng `npx vite build` (trong `fe/`) và thử tay. Không động tới `fe/src/pages/Chat.jsx` (đang được sửa riêng).
+Design: `docs/superpowers/specs/2026-11-10-component-catalog-design.md`. Each task ends with a commit; tests run with `dotnet test be/Cadflow.Api.Tests` (needs a local PostgreSQL, see `docs/database.md`). The UI has no automated tests in the repo: check with `npx vite build` (in `fe/`) and by hand. Do not touch `fe/src/pages/Chat.jsx` (it is being edited separately).
 
-## Task 1: Chú thích từng bước trong `tank-base-cover.gea` + test quy ước
+## Task 1: Explain every step in `tank-base-cover.gea` + the convention test
 
-**File:** `InventorAddin/InventorAddin.Core/Scripts/lib/tank-base-cover.gea`. **Test mới:** `be/Cadflow.Api.Tests/ComponentCommentsTests.cs`.
+**File:** `InventorAddin/InventorAddin.Core/Scripts/lib/tank-base-cover.gea`. **New test:** `be/Cadflow.Api.Tests/ComponentCommentsTests.cs`.
 
-1. Test trước (đỏ): với mỗi file `Scripts/lib/*.gea` trong thư mục output của test:
-   - Cắt khối `BEGIN_FORM...END_FORM` và `BEGIN_BUILD...END_BUILD`; trong mỗi khối, tách thành **đoạn lệnh** (các dòng liên tiếp không có dòng trống) và khẳng định mỗi đoạn có ít nhất một dòng chú thích (`!` ở đầu dòng sau khi trim).
-   - Chú thích đầu file (các dòng `!` trước `GEA_VERSION`) có ít nhất một đoạn mô tả (một dòng không phải gạch `====` và không rỗng).
-   - Thông báo lỗi nêu tên file và dòng đầu của đoạn thiếu chú thích.
-2. Chú thích lại thư viện (tiếng Việt, mỗi đoạn lệnh một dòng "Bước N: ..." kèm ý nghĩa/công thức): khai báo biến cao độ và biến tham chiếu; `hTank = TR_BaseThickness` (đáy thùng nằm trên đế), `hCover` (đáy nắp = đế + chiều cao thùng), `hTop` (đỉnh nắp); mỗi `CREATE_FEATURE builder:Block` (kích thước, vì sao nhô ra `TR_BaseOverhang`/`TR_CoverOverhang`, `Elevation`); `SET_REF_NAME`, `SET_REF_ATTR ... "ROLE"`, `SET_APPEARANCE`. Đoạn FORM (nhóm tham số) cũng có chú thích nói mỗi tham số là gì. **Chỉ thêm chú thích**, không đổi lệnh.
-3. Chạy toàn bộ test: test quy ước xanh, `TransformerIncludeEquivalenceTests` vẫn xanh (không đổi hành vi).
+1. Test first (red): for every `Scripts/lib/*.gea` file in the test output folder:
+      - Cut out the `BEGIN_FORM...END_FORM` and `BEGIN_BUILD...END_BUILD` blocks; inside each block split into **statement paragraphs** (consecutive lines with no blank line) and assert that each paragraph has at least one comment line (`!` at the start of the line after trimming).
+      - The comment at the top of the file (the `!` lines before `GEA_VERSION`) has at least one description paragraph (a line that is not a `====` rule and not empty).
+      - The error message names the file and the first line of the paragraph that lacks a comment.
+2. Re-annotate the library (English, one "Step N: ..." line per statement paragraph with the meaning/formula): declaring the elevation variables and the reference variable; `hTank = TR_BaseThickness` (the tank bottom sits on the base), `hCover` (cover bottom = base + tank height), `hTop` (cover top); each `CREATE_FEATURE builder:Block` (the size, why it overhangs by `TR_BaseOverhang`/`TR_CoverOverhang`, `Elevation`); `SET_REF_NAME`, `SET_REF_ATTR ... "ROLE"`, `SET_APPEARANCE`. The FORM paragraph (the parameter group) also has comments saying what each parameter is. **Only add comments**, do not change statements.
+3. Run all the tests: the convention test is green, `TransformerIncludeEquivalenceTests` is still green (no behavior change).
 4. Commit `Explain each step in tank-base-cover.gea; enforce comment convention for libraries`.
 
-## Task 2: `ComponentCatalog` (danh sách + chi tiết)
+## Task 2: `ComponentCatalog` (list + details)
 
-**File mới:** `be/Cadflow.Api/Components.cs`. **Sửa:** `be/Cadflow.Api/GeaLibraries.cs` (thêm `Names()`: tên file `*.gea` trong `Scripts/lib` khớp `^[A-Za-z0-9_-]{1,64}$`, sắp xếp). **Test mới:** `ComponentCatalogTests.cs`.
+**New file:** `be/Cadflow.Api/Components.cs`. **Edit:** `be/Cadflow.Api/GeaLibraries.cs` (add `Names()`: the names of `*.gea` files in `Scripts/lib` matching `^[A-Za-z0-9_-]{1,64}$`, sorted). **New test:** `ComponentCatalogTests.cs`.
 
-1. Test trước (đỏ), dùng thư mục thư viện tạm để dựng thư viện giả (`ComponentCatalog` nhận một `Func<IEnumerable<string>> names` và `Func<string,string?> read`, mặc định trỏ vào `GeaLibraries`):
-   - Thư viện thật `tank-base-cover`: `title` = `Tank, base and cover`, `prefixes` = `["TR_"]`, 7 tham số (`TR_TankLength` ... `TR_CoverOverhang`) có đủ nhãn, nhóm, đơn vị `mm`, mặc định, min, max, `required`; `sharedVariables` có `hTank`, `hCover`, `hTop` (LENGTH) và `tbcBody` (REFERENCE); `summary` không rỗng; `errors` rỗng.
-   - `description`: các dòng `!` đầu file bỏ `!` và dòng gạch; `summary` = đoạn đầu (đến dòng `!` rỗng).
-   - Thư viện hỏng (cú pháp sai): vẫn có trong danh sách, `errors` có mã `GEA...`, `parameters` rỗng.
-   - `Get("..")`, `Get("a/b")`, `Get("missing")` trả null.
-   - Sắp xếp theo tên; danh sách rỗng khi không có thư viện.
-2. Cài đặt `ComponentCatalog.List()`, `Get(name)`, và DTO (record) `ComponentInfo`, `ComponentParam`, `ComponentVar`. Biên dịch bằng `GeaScript.Compile(text, GeaLibraries.Resolve, name + ".gea")`; tham số từ `EvaluateFormNumbers(null).Fields` (Name, Label, Group, Unit, Type, Min, Max, Required, giá trị mặc định lấy từ `Values`). Quét `sharedVariables` bằng regex trên khối BUILD của thư viện.
+1. Test first (red), using a temporary library folder to build fake libraries (`ComponentCatalog` takes a `Func<IEnumerable<string>> names` and a `Func<string,string?> read`, defaulting to `GeaLibraries`):
+      - The real library `tank-base-cover`: `title` = `Tank, base and cover`, `prefixes` = `["TR_"]`, 7 parameters (`TR_TankLength` ... `TR_CoverOverhang`) with a label, group, unit `mm`, default, min, max, `required`; `sharedVariables` has `hTank`, `hCover`, `hTop` (LENGTH) and `tbcBody` (REFERENCE); `summary` is not empty; `errors` is empty.
+      - `description`: the `!` lines at the top of the file without the `!` and the rule lines; `summary` = the first paragraph (up to an empty `!` line).
+      - A broken library (a syntax error): still in the list, `errors` has a `GEA...` code, `parameters` is empty.
+      - `Get("..")`, `Get("a/b")`, `Get("missing")` return null.
+      - Sorted by name; the list is empty when there are no libraries.
+2. Implement `ComponentCatalog.List()`, `Get(name)`, and the DTO records `ComponentInfo`, `ComponentParam`, `ComponentVar`. Compile with `GeaScript.Compile(text, GeaLibraries.Resolve, name + ".gea")`; the parameters come from `EvaluateFormNumbers(null).Fields` (Name, Label, Group, Unit, Type, Min, Max, Required, the default value taken from `Values`). Scan `sharedVariables` with a regex over the BUILD block of the library.
 3. Commit `Add ComponentCatalog`.
 
-## Task 3: `ComponentStarter` (script khởi tạo có chú thích)
+## Task 3: `ComponentStarter` (an annotated starter script)
 
-**Sửa:** `be/Cadflow.Api/Components.cs`. **Test mới:** `ComponentStarterTests.cs`.
+**Edit:** `be/Cadflow.Api/Components.cs`. **New test:** `ComponentStarterTests.cs`.
 
-1. Test trước (đỏ):
-   - `Build("tank-base-cover")` (mặc định): biên dịch không lỗi (`GeaScript.Compile(text, GeaLibraries.Resolve)`), có `INCLUDE lib:tank-base-cover` đúng hai lần (FORM và BUILD), `PARAM_PREFIX MY_`, `PRODUCT_NAME "New product"`.
-   - `Build(name, productName: "Reactor", prefix: "RX_")` áp dụng đúng; form của bản biên dịch có tham số `TR_TankLength`.
-   - `JobService.Import(starter)` trả 200, `form` có `TR_TankLength`; tạo job từ `scriptId` thành công (dùng `TestDb`).
-   - Từ chối: `productName` có `"`, `\` hoặc xuống dòng hoặc dài hơn 80 ký tự; `prefix` không khớp `^[A-Za-z][A-Za-z0-9]{0,15}_$`; thư viện không có (trả lỗi, không ném ngoại lệ).
-   - Chú thích đủ từng phần: chứa các dòng giải thích cho header (`GEA_VERSION`, `PRODUCT_NAME`, `PARAM_PREFIX`, `TARGET`), FORM, BUILD, chỗ thêm tham số riêng, và liệt kê các biến dùng chung của thư viện; quy ước "mỗi đoạn lệnh có chú thích" của Task 1 cũng đúng với script khởi tạo.
-2. Cài đặt theo mẫu trong spec mục 2: chú thích đầu file, từng lệnh header có chú thích riêng, FORM/BUILD mỗi bước một chú thích, ví dụ `USER_INPUT_PARAM` và `CREATE_FEATURE builder:Block` được comment sẵn (dùng đúng cú pháp trong `transformer.gea`, đặt khối lên `hTop`).
+1. Test first (red):
+      - `Build("tank-base-cover")` (default): compiles without errors (`GeaScript.Compile(text, GeaLibraries.Resolve)`), has `INCLUDE lib:tank-base-cover` exactly twice (FORM and BUILD), `PARAM_PREFIX MY_`, `PRODUCT_NAME "New product"`.
+      - `Build(name, productName: "Reactor", prefix: "RX_")` is applied correctly; the form of the compiled copy has the parameter `TR_TankLength`.
+      - `JobService.Import(starter)` returns 200, the `form` has `TR_TankLength`; creating a job from the `scriptId` succeeds (using `TestDb`).
+      - Rejected: a `productName` with `"`, `\` or a line break or longer than 80 characters; a `prefix` that does not match `^[A-Za-z][A-Za-z0-9]{0,15}_$`; a missing library (returns an error, does not throw).
+      - Every part is commented: it contains explanation lines for the header (`GEA_VERSION`, `PRODUCT_NAME`, `PARAM_PREFIX`, `TARGET`), FORM, BUILD, the place to add your own parameters, and lists the shared variables of the library; the "every statement paragraph has a comment" convention of Task 1 also holds for the starter script.
+2. Implement following the template in section 2 of the spec: a comment at the top of the file, each header statement with its own comment, one comment per step in FORM/BUILD, the `USER_INPUT_PARAM` and `CREATE_FEATURE builder:Block` examples commented out (using exactly the syntax of `transformer.gea`, placing the block on `hTop`).
 3. Commit `Add ComponentStarter`.
 
 ## Task 4: Endpoint
 
-**Sửa:** `be/Cadflow.Api/Program.cs` (đăng ký `ComponentCatalog` singleton). **Test:** thử bằng `curl` trên backend thật (không có hạ tầng test HTTP trong repo; logic đã được test ở Task 2-3).
+**Edit:** `be/Cadflow.Api/Program.cs` (register `ComponentCatalog` as a singleton). **Test:** try with `curl` on the real backend (there is no HTTP test infrastructure in the repo; the logic was tested in Tasks 2-3).
 
-1. `GET /api/components` → `ComponentCatalog.List()`; `GET /api/components/{name}/gea` → `Results.File(bytes, "text/plain; charset=utf-8", fileDownloadName: name + ".gea")`, 404 nếu `Get` null; `GET /api/components/{name}/starter` (query `productName`, `prefix`) → file `name-starter.gea`, 400 nếu đầu vào không hợp lệ, 404 nếu thiếu thư viện.
-2. Build, restart backend (`kill` tiến trình đang nghe :18080 rồi `dotnet run --no-build`), kiểm tra bằng `curl`: danh sách, tải `gea` (so với file gốc bằng `diff`), `starter` (rồi `POST /api/gea/import` với nội dung đó), 404 cho `..` và tên lạ, 400 cho prefix xấu.
+1. `GET /api/components` → `ComponentCatalog.List()`; `GET /api/components/{name}/gea` → `Results.File(bytes, "text/plain; charset=utf-8", fileDownloadName: name + ".gea")`, 404 if `Get` is null; `GET /api/components/{name}/starter` (query `productName`, `prefix`) → the file `name-starter.gea`, 400 if the input is invalid, 404 if the library is missing.
+2. Build, restart the backend (`kill` the process listening on :18080, then `dotnet run --no-build`), check with `curl`: the list, download `gea` (compare with the original file using `diff`), `starter` (then `POST /api/gea/import` with that content), 404 for `..` and unknown names, 400 for a bad prefix.
 3. Commit `Add component catalog endpoints`.
 
-## Task 5: Giao diện
+## Task 5: User interface
 
-**Sửa:** `fe/src/lib.js` (thêm `importScriptText(text, fileName)`), `fe/src/components.jsx` (`ImportGeaButton` dùng hàm mới, hành vi không đổi), `fe/src/App.jsx` (route `#/components`, mục NAV `Components`), `fe/src/app.css`. **Mới:** `fe/src/pages/Components.jsx`.
+**Edit:** `fe/src/lib.js` (add `importScriptText(text, fileName)`), `fe/src/components.jsx` (`ImportGeaButton` uses the new function, behavior unchanged), `fe/src/App.jsx` (the route `#/components`, a NAV entry `Components`), `fe/src/app.css`. **New:** `fe/src/pages/Components.jsx`.
 
-1. `importScriptText`: `postJson('/api/gea/import', { text })`, lưu `sessionStorage['cadflow.import']` (`scriptId`, `values`, `texts`, `warnings`, `hasValues`, `fileName`), `go('#/import/<id>')`; lỗi ném lại như hiện nay (có `e.body.diagnostics`).
-2. `Components.jsx`: `api('/api/components')`, thẻ mỗi component (tiêu đề, summary, nút mở rộng description, biến dùng chung, bảng tham số theo nhóm trong `<details>`, khối hai dòng `INCLUDE` có nút Copy, `Callout` khi `errors`), ba nút: hai liên kết tải (`<a href download>` tới `/gea` và `/starter`) và nút **Order this component** (`fetch` starter → `importScriptText`). Trạng thái loading/lỗi bằng `Callout`.
-3. `npx vite build` không lỗi (khôi phục `package-lock.json` nếu `npm install` làm đổi). Thử tay trên `http://localhost:5173/#/components` (Vite dev đang chạy): thấy thẻ `tank-base-cover`, tải được hai file, nút Order mở form `#/import/...` có các ô Tank, base and cover. Nếu có Chrome tự động hóa thì chụp màn hình; nếu không, nêu rõ phần nào chưa xem bằng mắt.
+1. `importScriptText`: `postJson('/api/gea/import', { text })`, store `sessionStorage['cadflow.import']` (`scriptId`, `values`, `texts`, `warnings`, `hasValues`, `fileName`), `go('#/import/<id>')`; errors are rethrown as they are now (with `e.body.diagnostics`).
+2. `Components.jsx`: `api('/api/components')`, one card per component (title, summary, a button that expands the description, shared variables, the parameter table by group inside `<details>`, a block with the two `INCLUDE` lines and a Copy button, a `Callout` for `errors`), three buttons: two download links (`<a href download>` to `/gea` and `/starter`) and the **Order this component** button (`fetch` the starter → `importScriptText`). Loading/error states with `Callout`.
+3. `npx vite build` has no errors (restore `package-lock.json` if `npm install` changed it). Try by hand on `http://localhost:5173/#/components` (the Vite dev server is running): see the `tank-base-cover` card, download both files, the Order button opens the form `#/import/...` with the Tank, base and cover fields. If browser automation is available, take a screenshot; if not, say clearly which parts were not seen by eye.
 4. Commit `Add Components page`.
 
-## Task 6: Tài liệu
+## Task 6: Documentation
 
-- `sa-docs/gea-language-spec.md` mục 20: thêm tiểu mục "Danh mục component trên web" (endpoint, nút, script khởi tạo) và **quy ước chú thích thư viện** (đoạn đầu là mô tả, mỗi đoạn lệnh có chú thích, có test bắt buộc).
-- `docs/component-reuse-roadmap.md`: đánh dấu hướng A đã xong, ghi những gì khác thiết kế (nếu có).
-- `README.md`: một dòng về tab Components.
-- Chạy toàn bộ test, commit `Document component catalog`.
+- `sa-docs/gea-language-spec.md` section 20: add the sub-sections "Component catalog on the web" (endpoints, buttons, starter script) and the **library comment convention** (the first paragraph is the description, every statement paragraph has a comment, with a mandatory test).
+- `docs/component-reuse-roadmap.md`: mark direction A as done, and note what differs from the design (if anything).
+- `README.md`: one line about the Components tab.
+- Run all the tests, commit `Document component catalog`.
 
-## Nghiệm thu
+## Acceptance
 
-- `dotnet test be/Cadflow.Api.Tests` toàn bộ xanh (80 test hiện có + test mới).
-- Backend thật: `/api/components` trả `tank-base-cover`; file tải về đọc được, mỗi bước có giải thích; script khởi tạo import được và đặt đơn được (job `queued`).
-- `git status` sạch trừ `Chat.jsx` (sửa riêng của người dùng); không commit `.env`, file build.
+- `dotnet test be/Cadflow.Api.Tests` is all green (the 80 existing tests + the new tests).
+- On the real backend: `/api/components` returns `tank-base-cover`; the downloaded file is readable and every step is explained; the starter script can be imported and ordered (job `queued`).
+- `git status` is clean except `Chat.jsx` (the user's separate edit); do not commit `.env` or build files.

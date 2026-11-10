@@ -1,31 +1,31 @@
-# Thiết kế: danh mục component trên web (hướng A)
+# Design: a component catalog on the web (direction A)
 
-Ngày: 2026-11-10. Trạng thái: đã duyệt hướng thiết kế trong chat. Thuộc `docs/component-reuse-roadmap.md` (hướng A); dựa trên `INCLUDE lib:` (`2026-11-10-gea-include-design.md`).
+Date: 2026-11-10. Status: the design direction was approved in chat. Part of `docs/component-reuse-roadmap.md` (direction A); built on `INCLUDE lib:` (`2026-11-10-gea-include-design.md`).
 
-## Mục tiêu
+## Goal
 
-Người dùng xem được các component đang có (thư viện `Scripts/lib/*.gea`), tải file của chúng, và dùng chúng để tạo script mới hoặc đặt hàng ngay, không cần tự viết dòng `INCLUDE`. Các file `.gea` tải về phải **giải thích từng bước** của script.
+Users can see the components that exist (the `Scripts/lib/*.gea` libraries), download their files, and use them to create a new script or place an order right away, without writing the `INCLUDE` line themselves. The downloaded `.gea` files must **explain every step** of the script.
 
-## Ngoài phạm vi
+## Out of scope
 
-Tải thư viện lên web (cần đăng nhập, kiểm tra an toàn, quyền sửa/xóa); chọn nhiều component trong một khung (hiện chỉ có một thư viện, làm khi có thư viện thứ hai); Chat/MCP; xuất file CAD riêng cho component (hướng B).
+Uploading libraries on the web (needs login, safety checks, edit/delete rights); choosing several components in one frame (there is only one library now, do it when a second one exists); Chat/MCP; exporting separate CAD files for a component (direction B).
 
-## 1. API (server, chỉ đọc)
+## 1. API (server, read-only)
 
-| Endpoint | Trả về |
+| Endpoint | Returns |
 |---|---|
-| `GET /api/components` | Danh sách component (xem dưới). |
-| `GET /api/components/{name}/gea` | File thư viện gốc, tải về (`attachment; filename={name}.gea`, `text/plain; charset=utf-8`). |
-| `GET /api/components/{name}/starter?productName=&prefix=` | Script khởi tạo, tải về (`{name}-starter.gea`). `productName` mặc định `"New product"`, `prefix` mặc định `MY_`; giá trị không hợp lệ trả 400. |
+| `GET /api/components` | The list of components (see below). |
+| `GET /api/components/{name}/gea` | The original library file, as a download (`attachment; filename={name}.gea`, `text/plain; charset=utf-8`). |
+| `GET /api/components/{name}/starter?productName=&prefix=` | A starter script, as a download (`{name}-starter.gea`). `productName` defaults to `"New product"`, `prefix` defaults to `MY_`; an invalid value returns 400. |
 
-Mỗi phần tử của danh sách:
+Each element of the list:
 
 ```json
 {
   "name": "tank-base-cover",
   "title": "Tank, base and cover",
-  "summary": "Component dùng lại: đế, thùng và nắp ...",
-  "description": "<toàn bộ đoạn chú thích đầu file>",
+    "summary": "Reusable component: base, tank and cover ...",
+    "description": "<the whole comment paragraph at the top of the file>",
   "prefixes": ["TR_"],
   "sharedVariables": [{"name":"hTank","type":"LENGTH"}, {"name":"hCover","type":"LENGTH"}, {"name":"hTop","type":"LENGTH"}, {"name":"tbcBody","type":"REFERENCE"}],
   "parameters": [{"name":"TR_TankLength","label":"Tank length","group":"Tank, base and cover","unit":"mm","type":"Length","default":2000,"min":1000,"max":5000,"required":true}],
@@ -33,74 +33,74 @@ Mỗi phần tử của danh sách:
 }
 ```
 
-- `title` = `PRODUCT_NAME`. `description` = các dòng chú thích `!` liên tiếp ở đầu file (bỏ dòng gạch `====`, bỏ `!`). `summary` = đoạn đầu tiên của `description` (đến dòng trống hoặc dòng `!` rỗng).
-- `parameters` lấy bằng cách biên dịch thư viện (`GeaScript.Compile`) rồi `EvaluateFormNumbers(null)`. `sharedVariables` quét dòng `DECLARE_VARIABLE <KIỂU> <tên>` và `DECLARE_REFERENCE <tên>` trong khối BUILD của thư viện.
-- Thư viện biên dịch lỗi vẫn có trong danh sách: `errors` chứa thông báo (`GEA...`), `parameters` rỗng.
-- Tên phải khớp `^[A-Za-z0-9_-]{1,64}$` (cùng quy tắc `INCLUDE`); tên lạ hoặc không có file trả 404. Mọi endpoint chỉ đọc; không có cách ghi.
+- `title` = `PRODUCT_NAME`. `description` = the consecutive `!` comment lines at the top of the file (without the `====` rule lines and the `!`). `summary` = the first paragraph of `description` (up to a blank line or an empty `!` line).
+- `parameters` come from compiling the library (`GeaScript.Compile`) and then `EvaluateFormNumbers(null)`. `sharedVariables` scans the lines `DECLARE_VARIABLE <TYPE> <name>` and `DECLARE_REFERENCE <name>` in the BUILD block of the library.
+- A library that fails to compile is still in the list: `errors` holds the messages (`GEA...`), `parameters` is empty.
+- The name must match `^[A-Za-z0-9_-]{1,64}$` (the same rule as `INCLUDE`); an unknown name or a missing file returns 404. Every endpoint is read-only; there is no way to write.
 
-## 2. Script khởi tạo
+## 2. The starter script
 
-Sinh trên server (`ComponentStarter`), có chú thích tiếng Việt cho **từng phần**:
+Generated on the server (`ComponentStarter`), with English comments for **every part**:
 
 ```
-! ===== Script khởi tạo: dùng component "<title>" (thư viện <name>) =====
-! (cách đọc file: phần đầu, FORM, BUILD; dòng bắt đầu bằng ! là chú thích)
-! Phiên bản ngôn ngữ .gea. Bắt buộc, là lệnh đầu tiên.
+! ===== Starter script: uses the component "<title>" (library <name>) =====
+! (how to read the file: header, FORM, BUILD; a line starting with ! is a comment)
+! Version of the .gea language. Required, the first statement.
 GEA_VERSION 1
-! Tên sản phẩm hiện trên web.
+! Product name shown on the web.
 PRODUCT_NAME "<productName>"
-! Tiền tố thông số riêng của bạn; tham số của component giữ tiền tố của nó (<prefixes>).
+! Prefix for your own parameters; the component's parameters keep their own prefix (<prefixes>).
 PARAM_PREFIX <prefix>
-! PART = dựng một Part (.ipt).
+! PART = build a Part (.ipt).
 TARGET PART
 
 BEGIN_FORM
-  ! Bước 1: chèn nhóm thông số của component (liệt kê tên các tham số).
+    ! Step 1: insert the parameter group of the component (lists the parameter names).
   INCLUDE lib:<name>
-  ! Bước 2: thông số của riêng bạn. Bỏ dấu ! để bật ví dụ:
+    ! Step 2: your own parameters. Remove the ! to enable the example:
   !   USER_INPUT_PARAM <prefix>Example LENGTH 100 mm MIN 10 MAX 500 LABEL "Example"
 END_FORM
 
 BEGIN_BUILD
-  ! Bước 1: chèn các bước dựng của component. Sau dòng này dùng được các biến dùng chung: <danh sách>.
+    ! Step 1: insert the build steps of the component. After this line the shared variables can be used: <list>.
   INCLUDE lib:<name>
-  ! Bước 2: bước dựng của riêng bạn. Ví dụ đặt một khối lên nắp (bỏ dấu ! để bật):
+    ! Step 2: your own build steps. Example: place a block on the cover (remove the ! to enable it):
   !   CREATE_FEATURE builder:Block ...
 END_BUILD
 ```
 
-Khung phải **biên dịch không lỗi** và nhận được qua `POST /api/gea/import` mà chưa sửa gì. Ví dụ trong chú thích dùng đúng cú pháp builder đang có (`Block`), danh sách biến lấy từ `sharedVariables`. `productName` đi vào chuỗi nên chặn `"`, `\`, xuống dòng; `prefix` khớp `^[A-Za-z][A-Za-z0-9]{0,15}_$`.
+The skeleton must **compile without errors** and be accepted by `POST /api/gea/import` without any edit. The example in the comments uses the builder syntax that exists (`Block`), and the variable list comes from `sharedVariables`. `productName` goes into a string, so `"`, `\` and line breaks are blocked; `prefix` matches `^[A-Za-z][A-Za-z0-9]{0,15}_$`.
 
-## 3. Giải thích từng bước trong file `.gea`
+## 3. Explaining every step in the `.gea` file
 
-- `tank-base-cover.gea` được chú thích lại: mỗi bước (khai báo biến, tính cao độ, dựng đế, dựng thùng, dựng nắp, đặt tên và gán thuộc tính) có chú thích nói ý nghĩa và công thức. Chỉ thêm chú thích: bộ test tương đương với `transformer.gea` gốc phải vẫn pass.
-- **Quy ước** (ghi vào `sa-docs/gea-language-spec.md` mục 20): đoạn đầu của chú thích đầu file là mô tả ngắn hiện trên thẻ; mỗi **đoạn lệnh** (các dòng liên tiếp không có dòng trống xen giữa) trong khối FORM/BUILD của thư viện phải có ít nhất một dòng chú thích. Một test áp quy ước này cho mọi file trong `Scripts/lib`, nên thư viện thêm sau cũng phải giải thích.
-- Chú thích bằng tiếng Việt như các script hiện có.
+- `tank-base-cover.gea` is re-annotated: every step (declare variables, compute elevations, build the base, build the tank, build the cover, set names and attributes) has a comment that says what it means and gives the formula. Comments only: the equivalence tests against the original `transformer.gea` must still pass.
+- **Convention** (recorded in `sa-docs/gea-language-spec.md` section 20): the first paragraph of the comment at the top of the file is a short description shown on the card; every **statement paragraph** (consecutive lines with no blank line between them) in the FORM/BUILD block of a library must have at least one comment line. A test applies this convention to every file in `Scripts/lib`, so a library added later must also explain itself.
+- Comments are in English.
 
-## 4. Giao diện (`fe/`)
+## 4. User interface (`fe/`)
 
 - Tab **Components** (`#/components`) trong `App.jsx`; trang `pages/Components.jsx`.
-- Mỗi component một thẻ: tiêu đề, mô tả (summary; mở rộng được để xem cả `description`), biến dùng chung, bảng tham số xếp theo nhóm (thu gọn được), hai dòng `INCLUDE` để copy, báo lỗi nếu `errors` không rỗng.
-- Ba nút: **Download library (.gea)**; **Download starter script (.gea)**; **Order this component**. Nút thứ ba lấy script khởi tạo (`/starter`), gửi tới `/api/gea/import` có sẵn, lưu `sessionStorage['cadflow.import']` như `ImportGeaButton` rồi chuyển sang `#/import/<scriptId>`. Phần dùng chung được tách thành hàm `importScriptText(text, fileName)` trong `lib.js` để hai nơi dùng cùng một đường.
-- Trạng thái tải, lỗi (mạng, 400/404) hiện bằng `Callout` như các trang khác.
+- One card per component: title, description (the summary; expandable to see the whole `description`), shared variables, a parameter table grouped by group (collapsible), the two `INCLUDE` lines to copy, an error notice if `errors` is not empty.
+- Three buttons: **Download library (.gea)**; **Download starter script (.gea)**; **Order this component**. The third fetches the starter script (`/starter`), sends it to the existing `/api/gea/import`, stores `sessionStorage['cadflow.import']` like `ImportGeaButton`, and goes to `#/import/<scriptId>`. The shared part is extracted into the function `importScriptText(text, fileName)` in `lib.js` so both places use one path.
+- The loading state and errors (network, 400/404) show with a `Callout` like the other pages.
 
-## 5. Mã
+## 5. Code
 
-`be/Cadflow.Api/Components.cs` (`ComponentCatalog`, `ComponentStarter`), `GeaLibraries` thêm `Names()`; endpoint trong `Program.cs`; `fe/src/pages/Components.jsx`; sửa `App.jsx`, `lib.js`, `components.jsx`, `app.css`.
+`be/Cadflow.Api/Components.cs` (`ComponentCatalog`, `ComponentStarter`), `GeaLibraries` gets `Names()`; the endpoints in `Program.cs`; `fe/src/pages/Components.jsx`; edits to `App.jsx`, `lib.js`, `components.jsx`, `app.css`.
 
-## 6. Kiểm thử
+## 6. Testing
 
 `Cadflow.Api.Tests`:
-- Danh sách có `tank-base-cover` với 7 tham số, tiền tố `TR_`, biến `hTank`/`hCover`/`hTop`/`tbcBody`, `summary` không rỗng, `errors` rỗng.
-- Thư viện hỏng (thư mục thư viện tạm) vẫn có trong danh sách với `errors`; `description`/`summary` trích đúng.
-- File tải về trùng byte với file gốc; tên lạ (`..`, `a/b`, không tồn tại) là 404.
-- Script khởi tạo: biên dịch không lỗi; import qua `JobService.Import` trả 200 và form có tham số của component; tên sản phẩm và tiền tố tùy chỉnh được áp dụng; đầu vào không hợp lệ bị từ chối; có chú thích cho từng phần (header, FORM, BUILD, chỗ thêm tham số).
-- Quy ước chú thích áp cho mọi file `Scripts/lib/*.gea`.
-- Test tương đương `transformer.gea` vẫn pass.
-- Giao diện: không có test tự động trong repo; kiểm tra bằng `vite build` và thử tay (liệt kê, ba nút, đặt hàng thử).
+- The list contains `tank-base-cover` with 7 parameters, prefix `TR_`, variables `hTank`/`hCover`/`hTop`/`tbcBody`, a non-empty `summary`, empty `errors`.
+- A broken library (a temporary library folder) is still in the list with `errors`; `description`/`summary` are extracted correctly.
+- The downloaded file is byte-identical to the original; an unknown name (`..`, `a/b`, nonexistent) is 404.
+- The starter script: compiles without errors; import through `JobService.Import` returns 200 and the form has the component parameters; a custom product name and prefix are applied; invalid input is rejected; every part has a comment (header, FORM, BUILD, the place to add parameters).
+- The comment convention applies to every `Scripts/lib/*.gea` file.
+- The equivalence test against `transformer.gea` still passes.
+- UI: no automated test in the repo; check with `vite build` and by hand (listing, three buttons, a trial order).
 
-## Rủi ro
+## Risks
 
-- API người dùng chưa có xác thực; các endpoint mới chỉ đọc thư viện đi kèm nên rủi ro thấp.
-- Quét `DECLARE_*` bằng regex chỉ đúng với khai báo viết theo dòng đơn giản như hiện nay.
-- Hiện chỉ có một thư viện nên giao diện chưa được thử với nhiều component; danh sách vẫn đúng với số lượng bất kỳ.
+- The user API has no authentication yet; the new endpoints only read the libraries that ship with the server, so the risk is low.
+- Scanning `DECLARE_*` with a regex is only correct for declarations written one per line, as they are now.
+- There is only one library now, so the UI has not been tried with many components; the list is still correct for any count.

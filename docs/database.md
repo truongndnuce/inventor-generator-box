@@ -1,53 +1,53 @@
-# Cơ sở dữ liệu (PostgreSQL)
+# Database (PostgreSQL)
 
-Job, file kết quả (danh sách) và nhật ký sự kiện nằm trong PostgreSQL. `JobStore` (`be/Cadflow.Api/JobStore.cs`) là lớp duy nhất đụng tới DB, dùng Npgsql với SQL thuần.
+Jobs, result files (the list) and the event log live in PostgreSQL. `JobStore` (`be/Cadflow.Api/JobStore.cs`) is the only class that touches the DB, using Npgsql with plain SQL.
 
-## Lưu ở đâu
+## Where things are stored
 
-| Dữ liệu | Nơi lưu |
+| Data | Where |
 |---|---|
-| Job, danh sách artifact, sự kiện | **PostgreSQL** (`jobs`, `job_artifacts`, `job_events`) |
-| Trạng thái worker (heartbeat, Busy) | Bộ nhớ của backend, tự làm mới theo nhịp tim, **không vào DB** |
-| File kết quả | R2 hoặc `data/artifacts/<jobId>/` |
-| Script `.gea` import, cấu hình sản phẩm | File trong `data/scripts`, `data/config` |
-| Bản nháp chat (`DraftStore`) | Bộ nhớ, hết hạn sau 30 phút |
+| Jobs, artifact list, events | **PostgreSQL** (`jobs`, `job_artifacts`, `job_events`) |
+| Worker state (heartbeat, Busy) | The backend memory, refreshed by every heartbeat, **not in the DB** |
+| Result files | R2 or `data/artifacts/<jobId>/` |
+| Imported `.gea` scripts, product configurations | Files in `data/scripts`, `data/config` |
+| Chat drafts (`DraftStore`) | Memory, expire after 30 minutes |
 
-## Lược đồ
+## Schema
 
-Bảng tự tạo bằng `CREATE TABLE IF NOT EXISTS` khi backend khởi động (có khóa `pg_advisory_lock`, hai backend khởi động cùng lúc không đua nhau).
+The tables are created with `CREATE TABLE IF NOT EXISTS` when the backend starts (with a `pg_advisory_lock`, so two backends starting at the same time do not race).
 
-- **`jobs`**: `id` (PK, `AJ-yyyyMMdd-HHmmss-xxxx`), `product_code`, `product_version`, `status` (`queued|running|succeeded|failed|cancelled`), `step`, `error`, `requested_by`, `created_at`, `started_at`, `finished_at`, `last_heartbeat`, `worker`, `attempts`, `inputs`/`text_inputs`/`summary` (jsonb), `script_name`, `script_sha256`, `script_source`, `artifacts_purged_at`. Chỉ mục: `(status, created_at)` cho hàng đợi, `requested_by`, `product_code`.
-- **`job_artifacts`**: PK `(job_id, name)`, `kind`, `size`, `r2_key` (null = file nằm trên đĩa server). Xóa theo job (`ON DELETE CASCADE`).
-- **`job_events`**: `id` (bigserial), `job_id`, `time`, `message`. Chỉ thêm dòng. Chỉ mục `(job_id, time)`.
+- **`jobs`**: `id` (PK, `AJ-yyyyMMdd-HHmmss-xxxx`), `product_code`, `product_version`, `status` (`queued|running|succeeded|failed|cancelled`), `step`, `error`, `requested_by`, `created_at`, `started_at`, `finished_at`, `last_heartbeat`, `worker`, `attempts`, `inputs`/`text_inputs`/`summary` (jsonb), `script_name`, `script_sha256`, `script_source`, `artifacts_purged_at`. Indexes: `(status, created_at)` for the queue, `requested_by`, `product_code`.
+- **`job_artifacts`**: PK `(job_id, name)`, `kind`, `size`, `r2_key` (null = the file is on the server disk). Deleted together with the job (`ON DELETE CASCADE`).
+- **`job_events`**: `id` (bigserial), `job_id`, `time`, `message`. Append-only. Index `(job_id, time)`.
 
-Thời gian là `timestamptz` (UTC). `inputs`, `text_inputs`, `summary` luôn đọc/ghi cả khối nên để jsonb, không tách bảng.
+Times are `timestamptz` (UTC). `inputs`, `text_inputs` and `summary` are always read/written as a whole block, so they are jsonb, not separate tables.
 
-## Hàng đợi
+## The queue
 
-`Claim` là một câu `UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING ...`, nên nhiều worker hoặc nhiều backend dùng chung DB vẫn không nhận trùng job. Các thao tác của worker (`progress`, `complete`, `fail`, artifact) khóa dòng job và chỉ chấp nhận worker đang giữ job. `ReapStale` (mỗi 10 giây) đưa job Running quá 90 giây không heartbeat về hàng đợi, hoặc đánh `failed` khi hết `MaxAttempts` (3).
+`Claim` is one `UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING ...` statement, so several workers or several backends sharing the DB never take the same job. The worker operations (`progress`, `complete`, `fail`, artifact) lock the job row and accept only the worker that holds the job. `ReapStale` (every 10 seconds) returns Running jobs with no heartbeat for 90 seconds to the queue, or marks them `failed` when `MaxAttempts` (3) is used up.
 
-## Cấu hình
+## Configuration
 
-`ConnectionStrings:Cadflow` trong `be/Cadflow.Api/appsettings.json`, mặc định `Host=localhost;Database=cadflow;Username=admin` (không mật khẩu, hợp với Postgres local). Khi cần mật khẩu hoặc server khác, đặt trong `.env` (git bỏ qua): `ConnectionStrings__Cadflow=Host=...;Database=cadflow;Username=...;Password=...`.
+`ConnectionStrings:Cadflow` in `be/Cadflow.Api/appsettings.json`, default `Host=localhost;Database=cadflow;Username=admin` (no password, fine for a local Postgres). When you need a password or another server, set it in `.env` (ignored by git): `ConnectionStrings__Cadflow=Host=...;Database=cadflow;Username=...;Password=...`.
 
 ```bash
 brew services start postgresql@15   # macOS
 createdb cadflow
 ```
 
-Thiếu chuỗi kết nối hoặc không nối được DB thì backend không khởi động.
+If the connection string is missing or the DB cannot be reached, the backend does not start.
 
-## Chuyển từ jobs.json
+## Migrating from jobs.json
 
-Lần đầu chạy, nếu `data/jobs.json` còn, backend nhập toàn bộ job vào DB (bỏ qua id đã có) rồi đổi tên thành `jobs.json.migrated`. Không cần làm gì thêm.
+On the first run, if `data/jobs.json` still exists, the backend imports every job into the DB (skipping ids that already exist) and renames it to `jobs.json.migrated`. Nothing else is needed.
 
 ## Test
 
-`be/Cadflow.Api.Tests` (xUnit) chạy trên PostgreSQL thật. Mỗi test tự tạo một DB `cadflow_test_xxxx` và xóa khi xong.
+`be/Cadflow.Api.Tests` (xUnit) runs on a real PostgreSQL. Each test creates its own DB `cadflow_test_xxxx` and drops it when done.
 
 ```bash
 dotnet test be/Cadflow.Api.Tests
-# server khác: CADFLOW_TEST_PG="Host=...;Username=...;Password=..." dotnet test ...
+# another server: CADFLOW_TEST_PG="Host=...;Username=...;Password=..." dotnet test ...
 ```
 
-Phủ: `JobStore` (lưu bền, `Claim` song song không trùng, quyền của worker, retry, hủy, reap, heartbeat, artifact và retention, nhập `jobs.json`) và `CadTools` (validate, đề xuất/xác nhận một lần, tạo job, get/list/cancel).
+Covers: `JobStore` (durable storage, parallel `Claim` without duplicates, worker ownership, retry, cancel, reap, heartbeat, artifacts and retention, `jobs.json` import) and `CadTools` (validate, propose/confirm exactly once, create job, get/list/cancel).

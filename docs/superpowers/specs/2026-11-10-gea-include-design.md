@@ -1,97 +1,97 @@
-# Thiết kế: `INCLUDE lib:` để dùng lại component trong script .gea
+# Design: `INCLUDE lib:` to reuse a component in a .gea script
 
-Ngày: 2026-11-10. Trạng thái: đã duyệt hướng thiết kế trong chat.
+Date: 2026-11-10. Status: the design direction was approved in chat.
 
-## Mục tiêu
+## Goal
 
-Dùng lại một component (ví dụ nhóm "Tank, base and cover" của `transformer.gea`: form + bước dựng Base/Tank/Cover) trong script .gea khác, mà không copy mã. Sửa thư viện thì mọi script dùng nó đều đổi. Đây là P1 `INCLUDE lib:<tên>` trong `sa-docs/gea-language-spec.md` và trả lời Q1/D6: **dùng chung biến với script cha**.
+Reuse a component (for example the "Tank, base and cover" group of `transformer.gea`: the form + the Base/Tank/Cover build steps) in another .gea script without copying code. Changing the library changes every script that uses it. This is P1 `INCLUDE lib:<name>` in `sa-docs/gea-language-spec.md` and answers Q1/D6: **share variables with the parent script**.
 
-## Ngoài phạm vi
+## Out of scope
 
-Thư viện do người dùng tải lên web, chọn component bằng giao diện, namespace (`AS Tank`), chèn part `.ipt` vào assembly (`ADD_COMPONENT`), include lồng nhau quá 8 tầng.
+Libraries uploaded by users on the web, choosing components through the UI, namespaces (`AS Tank`), inserting an `.ipt` part into an assembly (`ADD_COMPONENT`), include nesting deeper than 8 levels.
 
-## Cách làm: mở rộng văn bản trước lexer
+## Approach: expand the text before the lexer
 
-Một bước tiền xử lý thay mỗi dòng `INCLUDE lib:<tên>` bằng nội dung tương ứng của thư viện. Lexer, parser, checker và interpreter không đổi (trừ phần tiền tố ở mục 3). Cách này được chọn thay vì include trên AST vì rủi ro thấp hơn nhiều, và thay vì copy khối mã vì sửa thư viện phải lan được.
+A preprocessing step replaces each `INCLUDE lib:<name>` line with the matching content of the library. The lexer, parser, checker and interpreter do not change (except the prefix part in section 3). This was chosen over an include on the AST because the risk is much lower, and over copying a block of code because a change to the library must propagate.
 
-### 1. Cú pháp
+### 1. Syntax
 
-Thư viện là file `Scripts/lib/<tên>.gea`: có header (`GEA_VERSION`, `PARAM_PREFIX`, ...), khối `BEGIN_FORM ... END_FORM` và khối `BEGIN_BUILD ... END_BUILD` (cả hai tùy chọn).
+A library is a file `Scripts/lib/<name>.gea`: it has a header (`GEA_VERSION`, `PARAM_PREFIX`, ...), a `BEGIN_FORM ... END_FORM` block and a `BEGIN_BUILD ... END_BUILD` block (both optional).
 
-Script cha ghi `INCLUDE lib:<tên>` **bên trong** một khối:
+The parent script writes `INCLUDE lib:<name>` **inside** a block:
 
 ```
 BEGIN_FORM
-  INCLUDE lib:tank-base-cover      ! chèn thân FORM của thư viện (nhóm tham số, ASSERT)
+    INCLUDE lib:tank-base-cover      ! inserts the FORM body of the library (parameter group, ASSERT)
   BEGIN_GROUP "Radiators" ...
 END_FORM
 
 BEGIN_BUILD
-  INCLUDE lib:tank-base-cover      ! chèn thân BUILD của thư viện
-  ... cánh tản nhiệt, bình dầu ...
+    INCLUDE lib:tank-base-cover      ! inserts the BUILD body of the library
+    ... radiators, conservator ...
 END_BUILD
 ```
 
-Trong `BEGIN_FORM` dòng này chèn thân khối FORM của thư viện, trong `BEGIN_BUILD` chèn thân khối BUILD. Vị trí và thứ tự do script cha quyết định. Thư viện không có khối tương ứng thì chèn không gì cả. `INCLUDE` ngoài khối là lỗi.
+In `BEGIN_FORM` this line inserts the FORM block body of the library, in `BEGIN_BUILD` it inserts the BUILD block body. The position and order are decided by the parent script. If the library has no matching block, nothing is inserted. `INCLUDE` outside a block is an error.
 
-### 2. Biến dùng chung
+### 2. Shared variables
 
-Nội dung chèn thẳng vào script cha, thấy và đặt được mọi biến. Khai báo trùng tên (tham số, biến) do checker hiện có báo lỗi. `DECLARE_VARIABLE` trong thư viện nằm trong phạm vi BUILD của cha.
+The content is inserted straight into the parent script, and sees and sets every variable. A duplicate name (parameter, variable) is reported by the existing checker. `DECLARE_VARIABLE` in the library lives in the BUILD scope of the parent.
 
-### 3. Tiền tố tham số
+### 3. Parameter prefix
 
-Header của thư viện không được chèn (chỉ lấy `PARAM_PREFIX`). `GeaProgram` có thêm `ExtraParamPrefixes`; checker (`GEA2030` ở `GeaChecker.cs:337` và `:393`) chấp nhận tên bắt đầu bằng tiền tố của cha **hoặc** một tiền tố trong danh sách. Thư viện đầu tiên là `tank-base-cover` với `PARAM_PREFIX TR_` (tên tham số giữ nguyên), và `transformer.gea` đổi sang dùng `INCLUDE`. `TransformerParams.cs`, job cũ và form không đổi.
+The header of the library is not inserted (only `PARAM_PREFIX` is taken). `GeaProgram` gets `ExtraParamPrefixes`; the checker (`GEA2030` in `GeaChecker.cs:337` and `:393`) accepts a name that starts with the prefix of the parent **or** a prefix in the list. The first library is `tank-base-cover` with `PARAM_PREFIX TR_` (parameter names unchanged), and `transformer.gea` switches to using `INCLUDE`. `TransformerParams.cs`, old jobs and the form do not change.
 
-### 4. API (Core, không phụ thuộc Inventor)
+### 4. API (Core, no Inventor dependency)
 
 ```csharp
 public sealed record GeaExpansion(string Text, IReadOnlyList<GeaSourceLine> Lines, IReadOnlyList<string> LibPrefixes, IReadOnlyList<GeaDiagnostic> Diagnostics);
-public sealed record GeaSourceLine(string File, int Line);          // dòng của văn bản đã mở rộng -> (file, dòng gốc)
+public sealed record GeaSourceLine(string File, int Line);          // a line of the expanded text -> (file, original line)
 public static class GeaIncludes { public static GeaExpansion Expand(string text, Func<string, string?> resolveLib); }
 ```
 
-`GeaInterpreter.Compile(string text)` thêm tham số `Func<string,string?>? resolveLib = null`; có `INCLUDE` mà không có resolver thì báo lỗi. Compile gọi `Expand`, parse bản mở rộng, gắn `LibPrefixes`, rồi đổi `Line` của mọi chẩn đoán qua `Lines`. Lỗi trong thư viện có tên file (`tank-base-cover.gea:23`).
+`GeaInterpreter.Compile(string text)` gets a parameter `Func<string,string?>? resolveLib = null`; an `INCLUDE` with no resolver is an error. Compile calls `Expand`, parses the expanded copy, sets `LibPrefixes`, then maps the `Line` of every diagnostic through `Lines`. An error inside a library carries the file name (`tank-base-cover.gea:23`).
 
-### 4a. Bảo vệ
+### 4a. Safeguards
 
-- Tên thư viện khớp `^[A-Za-z0-9_-]{1,64}$`, không có đường dẫn hay `..`.
-- Độ sâu tối đa 8 và phát hiện vòng (A include B include A).
-- Một thư viện chỉ được include một lần cho mỗi loại khối (lần hai là lỗi, vì sẽ khai báo trùng).
-- Thư viện không tìm thấy là lỗi có dòng, không phải ngoại lệ.
+- The library name matches `^[A-Za-z0-9_-]{1,64}$`, with no path or `..`.
+- Maximum depth 8 and cycle detection (A includes B includes A).
+- A library may be included only once per kind of block (the second time is an error, because it would declare things twice).
+- A library that is not found is an error with a line, not an exception.
 
-### 5. Nơi nạp thư viện
+### 5. Where libraries are loaded from
 
-- **Server**: `Scripts/lib/*.gea` được copy ra thư mục chạy (giống `transformer.gea`, link từ `InventorAddin.Core/Scripts/lib`). Resolver đọc `AppContext.BaseDirectory/Scripts/lib/<tên>.gea`. Khi import script hoặc tạo job từ script có `INCLUDE`, server mở rộng **trước** khi lưu: `ScriptStore` lưu và worker nhận **bản đã mở rộng**, nên worker Inventor không cần thư viện, và mã băm tính trên bản đã mở rộng.
-- **Add-in**: resolver tìm trong `Scripts/lib` đi kèm add-in, rồi trong thư mục của file đang mở.
-- **Export .gea** trên web trả bản đã mở rộng (không giữ dòng `INCLUDE`). File tự chạy được ở bất kỳ đâu.
+- **Server**: `Scripts/lib/*.gea` is copied to the run folder (like `transformer.gea`, linked from `InventorAddin.Core/Scripts/lib`). The resolver reads `AppContext.BaseDirectory/Scripts/lib/<name>.gea`. When a script with `INCLUDE` is imported or a job is created from it, the server expands **before** storing: `ScriptStore` stores and the worker receives **the expanded copy**, so the Inventor worker needs no library, and the hash is computed on the expanded copy.
+- **Add-in**: the resolver looks in the `Scripts/lib` that ships with the add-in, then in the folder of the open file.
+- **Export .gea** on the web returns the expanded copy (no `INCLUDE` line is kept). The file runs on its own anywhere.
 
-### 6. Tương thích
+### 6. Compatibility
 
-`transformer.gea` sau khi đổi phải cho **cùng** danh sách tham số, giá trị mặc định, nhãn, luật `MIN/MAX/ASSERT` và cùng chuỗi lệnh BUILD như bản không dùng `INCLUDE`. Đây là điều kiện nghiệm thu chính.
+After the change, `transformer.gea` must give the **same** parameter list, default values, labels, `MIN/MAX/ASSERT` rules and the same BUILD command sequence as the version without `INCLUDE`. This is the main acceptance condition.
 
-## Kiểm thử
+## Testing
 
-Trong `be/Cadflow.Api.Tests` (server đã link mã Gea):
+In `be/Cadflow.Api.Tests` (the server already links the Gea code):
 
-1. Mở rộng FORM và BUILD đúng khối; thư viện thiếu khối thì chèn rỗng.
-2. `transformer.gea` dùng `INCLUDE` tương đương bản gốc (so danh sách tham số, mặc định, nhãn, kết quả validate với vài bộ giá trị, các lệnh BUILD).
-3. Lỗi: `INCLUDE` ngoài khối, thư viện không có, tên chứa `/` hoặc `..`, vòng lặp, include lần hai, vượt độ sâu, không có resolver.
-4. Ánh xạ dòng: lỗi trong thư viện báo tên file và dòng của thư viện; lỗi ở script cha báo đúng dòng gốc dù có chèn phía trên.
-5. Tiền tố: script có prefix khác (ví dụ `GT_`) include thư viện `TR_` thì hợp lệ; tham số lạ vẫn bị `GEA2030`.
-6. Server: import script có `INCLUDE` cho form đúng và lưu bản đã mở rộng; tạo job sinh `WorkItem.ScriptText` không còn `INCLUDE`.
+1. Expansion goes to the right block for FORM and BUILD; a library missing a block inserts nothing.
+2. `transformer.gea` using `INCLUDE` is equivalent to the original (compare the parameter list, defaults, labels, the validate result for a few value sets, the BUILD commands).
+3. Errors: `INCLUDE` outside a block, a missing library, a name containing `/` or `..`, a cycle, a second include, exceeding the depth, no resolver.
+4. Line mapping: an error in the library reports the file name and the line in the library; an error in the parent script reports the right original line even with insertions above it.
+5. Prefix: a script with another prefix (for example `GT_`) that includes a `TR_` library is valid; an unknown parameter still gets `GEA2030`.
+6. Server: importing a script with `INCLUDE` gives the right form and stores the expanded copy; creating a job produces a `WorkItem.ScriptText` with no `INCLUDE`.
 
-## Tài liệu
+## Documentation
 
-Cập nhật `sa-docs/gea-language-spec.md` (mục INCLUDE, đóng Q1, mục P1) và `docs/smartassembly-to-inventor-mapping.md` (D6 đã chốt).
+Update `sa-docs/gea-language-spec.md` (the INCLUDE section, close Q1, the P1 section) and `docs/smartassembly-to-inventor-mapping.md` (D6 settled).
 
-## Rủi ro
+## Risks
 
-- Add-in Inventor không thể build/test ở máy này (không có Inventor). Phần add-in (resolver theo thư mục) chỉ build được, không chạy được; logic mở rộng nằm trong Core nên được test ở server.
-- Tham số `TR_` xuất hiện trong script của sản phẩm khác có thể gây nhầm. Đổi tên sang tiền tố trung tính cần đổi `TransformerParams.cs` và job cũ nên để lại sau.
+- The Inventor add-in cannot be built/tested on this machine (no Inventor). The add-in part (the resolver by folder) can only be built, not run; the expansion logic is in Core so it is tested on the server.
+- A `TR_` parameter appearing in the script of another product could cause confusion. Renaming to a neutral prefix would need changes to `TransformerParams.cs` and old jobs, so it is left for later.
 
-## Thay đổi khi triển khai (so với thiết kế ban đầu)
+## Changes made during implementation (versus the original design)
 
-- **`PARAM_PREFIX` nhận nhiều tiền tố** (`PARAM_PREFIX GT_ TR_`). Bản đã mở rộng được lưu và biên dịch lại không có resolver, nên dòng `PARAM_PREFIX` của script cha phải liệt kê cả tiền tố của thư viện, nếu không tham số `TR_...` bị `GEA2030`. `GeaIncludes.Expand` tự viết lại dòng này.
-- Mã lỗi INCLUDE là `GEA1010`-`GEA1015` (dải cú pháp), không phải `GEA3xxx` (dải đó dành cho kiểm tra giá trị).
-- `tank-base-cover` tự khai báo `hTank`, `hCover`, `hTop` và dùng biến tham chiếu riêng `tbcBody`; script cha không khai báo lại các biến đó. Ba lệnh gán `hTank/hCover/hTop` nay nằm sau `PROCESSING_BOX_START` (không đổi kết quả, đã kiểm bằng test tương đương trên Host mô phỏng).
-- Test tương đương của `transformer.gea` chạy cả hai bản trên `GeaSimulationHost` và so sánh vết lệnh, nên không phụ thuộc thứ tự câu lệnh.
+- **`PARAM_PREFIX` accepts several prefixes** (`PARAM_PREFIX GT_ TR_`). The expanded copy is stored and recompiled without a resolver, so the `PARAM_PREFIX` line of the parent script must list the prefixes of the libraries too, otherwise the parameters `TR_...` get `GEA2030`. `GeaIncludes.Expand` rewrites this line itself.
+- The INCLUDE error codes are `GEA1010`-`GEA1015` (the syntax range), not `GEA3xxx` (that range is for value checks).
+- `tank-base-cover` declares `hTank`, `hCover`, `hTop` itself and uses its own reference variable `tbcBody`; the parent script does not declare those variables again. The three assignments `hTank/hCover/hTop` now come after `PROCESSING_BOX_START` (the result is unchanged, checked with the equivalence test on the simulation Host).
+- The equivalence test of `transformer.gea` runs both versions on `GeaSimulationHost` and compares the command traces, so it does not depend on the order of statements.

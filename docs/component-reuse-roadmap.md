@@ -1,53 +1,53 @@
-# Lộ trình: dùng lại và xuất component
+# Roadmap: reusing and exporting components
 
-Trạng thái ngày 2026-11-10. `INCLUDE lib:` đã xong (xem `superpowers/specs/2026-11-10-gea-include-design.md` và `sa-docs/gea-language-spec.md` mục 20): script này dùng lại nhóm tham số và các bước dựng của thư viện `Scripts/lib/<tên>.gea` (hiện có `tank-base-cover`). Tài liệu này ghi ba hướng tiếp theo. **Đây là lộ trình, chưa phải thiết kế chi tiết**: mỗi hướng cần một bản thiết kế riêng (spec rồi kế hoạch) trước khi làm.
+Status as of 2026-11-10. `INCLUDE lib:` is done (see `superpowers/specs/2026-11-10-gea-include-design.md` and `sa-docs/gea-language-spec.md` section 20): a script reuses the parameter group and the build steps of the library `Scripts/lib/<name>.gea` (currently `tank-base-cover`). This document records three next directions. **This is a roadmap, not a detailed design**: each direction needs its own design (spec, then plan) before work starts.
 
-## Hiện trạng cần biết
+## What to know about the current state
 
-- Job dựng **một Part** và xuất `<jobId>.ipt`, `<jobId>.stp`, các ảnh `.png` và `.pdf` (`InventorJobExecutor`). Base, Tank, Cover là ba solid body trong cùng Part, tên `TR_Base`, `TR_Tank`, `TR_Cover` (`SET_REF_NAME`), có thuộc tính `ROLE` = `BASE`/`TANK`/`COVER`.
-- Nút **Export .gea** ở trang job và Dashboard xuất **cả script** của job kèm giá trị (`GeaExport`), bản đã mở rộng INCLUDE. Không có cách xuất riêng một component.
-- Web không có màn hình liệt kê thư viện; muốn dùng thư viện phải tự viết dòng `INCLUDE`.
-- `ADD_COMPONENT`, `BEGIN_ASSEMBLE`/`END_ASSEMBLE`, `MATE`, `INSERT`, `EXPORT_STEP` là lệnh **đã dành riêng (P2) nhưng chưa làm**. `TARGET ASSEMBLY` chỉ chạy thử, Inventor Host chưa hỗ trợ (`GEA2020` cảnh báo). Server chỉ nhận `TARGET PART`.
-- Máy phát triển hiện tại **không có Inventor**: phần add-in chỉ viết được, chưa chạy được. Mọi hạng mục dưới đây có phần add-in phải được kiểm trên máy Windows có Inventor 2027.
+- A job builds **one Part** and exports `<jobId>.ipt`, `<jobId>.stp`, the `.png` images and the `.pdf` (`InventorJobExecutor`). Base, Tank and Cover are three solid bodies in the same Part, named `TR_Base`, `TR_Tank`, `TR_Cover` (`SET_REF_NAME`), with the attribute `ROLE` = `BASE`/`TANK`/`COVER`.
+- The **Export .gea** button on the job page and the Dashboard exports **the whole script** of the job with its values (`GeaExport`), the INCLUDE-expanded copy. There is no way to export a single component on its own.
+- The web has no screen that lists the libraries; to use a library you have to write the `INCLUDE` line yourself.
+- `ADD_COMPONENT`, `BEGIN_ASSEMBLE`/`END_ASSEMBLE`, `MATE`, `INSERT`, `EXPORT_STEP` are statements that are **reserved (P2) but not built**. `TARGET ASSEMBLY` can only be dry-run, the Inventor Host does not support it (`GEA2020` warning). The server accepts only `TARGET PART`.
+- The current development machine **has no Inventor**: add-in code can only be written, not run. Every item below that involves the add-in must be tested on a Windows machine with Inventor 2027.
 
-## Hướng A: danh mục component trên web (tải file `.gea`) — ĐÃ XONG (2026-11-10)
+## Direction A: a component catalog on the web (download `.gea` files) — DONE (2026-11-10)
 
-> Đã làm theo `superpowers/specs/2026-11-10-component-catalog-design.md`: tab Components, ba nút (đặt hàng chính component, tải script khởi tạo, tải thư viện), thư viện được chú thích từng bước kèm test ép quy ước. Khác với phác thảo dưới đây: không có zip cho thư viện lồng nhau, và mô tả lấy từ chú thích đầu file. Phần còn lại của mục là phác thảo ban đầu.
+> Done following `superpowers/specs/2026-11-10-component-catalog-design.md`: the Components tab, three buttons (order the component itself, download a starter script, download the library), libraries annotated step by step with a test that enforces the convention. Different from the sketch below: there is no zip for nested libraries, and the description comes from the comment at the top of the file. The rest of this section is the original sketch.
 
-**Mục tiêu**: xem các component đang có và tải file `.gea` của từng cái, để dùng trong script của mình.
+**Goal**: see the components that exist and download the `.gea` file of each one, to use in your own script.
 
-- API: `GET /api/components` (liệt kê `Scripts/lib`: tên, mô tả, tiền tố, danh sách tham số của khối FORM, các biến mà script cha được dùng) và `GET /api/components/{name}/gea` (tải file thư viện gốc, còn `INCLUDE` lồng nhau thì giữ nguyên).
-- Mô tả của component lấy từ `PRODUCT_NAME` và đoạn chú thích đầu file; tham số lấy bằng cách biên dịch thư viện (đã có `GeaScript`).
-- Web: trang **Components** trong thanh điều hướng, mỗi component một thẻ (tên, mô tả, bảng tham số, nút **Download .gea**, ví dụ hai dòng `INCLUDE` để copy).
-- Tùy chọn sau: tải kèm các thư viện lồng nhau dưới dạng một file zip.
-- Rủi ro: gần như không có (chỉ đọc file). Không cần Inventor.
-- Kiểm thử: `Cadflow.Api.Tests` (liệt kê đúng, tên không hợp lệ trả 404, không đọc ngoài `Scripts/lib`).
+- API: `GET /api/components` (lists `Scripts/lib`: name, description, prefix, the parameter list of the FORM block, the variables the parent script may use) and `GET /api/components/{name}/gea` (downloads the original library file, nested `INCLUDE` lines kept as they are).
+- The component description comes from `PRODUCT_NAME` and the comment at the top of the file; the parameters come from compiling the library (`GeaScript` already exists).
+- Web: a **Components** page in the navigation bar, one card per component (name, description, parameter table, a **Download .gea** button, the two `INCLUDE` lines to copy).
+- An option for later: download the nested libraries together as one zip file.
+- Risk: almost none (it only reads files). No Inventor needed.
+- Testing: `Cadflow.Api.Tests` (lists correctly, an invalid name returns 404, nothing is read outside `Scripts/lib`).
 
-## Hướng B: xuất file CAD riêng cho từng component
+## Direction B: export a separate CAD file for each component
 
-**Mục tiêu**: một job (ví dụ máy biến áp) trả thêm `Tank.ipt`/`.stp`, `Base.ipt`/`.stp`, `Cover.ipt`/`.stp` riêng, để dùng ở nơi khác.
+**Goal**: one job (for example a transformer) also returns separate `Tank.ipt`/`.stp`, `Base.ipt`/`.stp`, `Cover.ipt`/`.stp` files, to use elsewhere.
 
-- Cách khai báo (cần chốt khi thiết kế): lệnh trong BUILD của thư viện, ví dụ `EXPORT_COMPONENT tbcBody "Tank"`, hoặc khai báo trong header thư viện danh sách body cần xuất. Lệnh này cũng cần để người viết script chọn component nào xuất.
-- Thực thi (add-in): tạo Part mới chứa riêng body đó (derive hoặc copy body), lưu `.ipt`, xuất `.stp`; thêm vào danh sách artifact của job với `kind` mới (`component-ipt`, `component-step`) và tên có tiền tố component. Server và R2 đã nhận artifact theo `name`/`kind` nên ít phải đổi; trang job cần nhóm các file theo component.
-- Host mô phỏng: ghi vết lệnh (để test được trên server như `GeaSimulationHost`).
-- Tham số: component xuất ra là **kết quả của lần dựng này** (kích thước cố định theo job), không có form riêng.
-- Câu hỏi mở: xuất mặc định hay phải bật bằng tham số; một body hay một nhóm body cho một file; tên file; có kèm ảnh riêng không; ảnh hưởng thời gian dựng (mỗi component thêm một lần lưu và xuất STEP).
-- Rủi ro: add-in và Inventor API (copy body sang Part khác giữ nguyên vị trí hay đưa về gốc tọa độ). Không thử được ở máy này.
+- How to declare it (to settle during design): a statement in the BUILD of the library, for example `EXPORT_COMPONENT tbcBody "Tank"`, or a declaration in the library header listing the bodies to export. The statement is also needed so the script author can choose which component to export.
+- Execution (add-in): create a new Part holding only that body (derive or copy the body), save `.ipt`, export `.stp`; add them to the artifact list of the job with a new `kind` (`component-ipt`, `component-step`) and a name with the component prefix. The server and R2 already accept artifacts by `name`/`kind`, so little needs to change; the job page needs to group the files by component.
+- Simulation Host: record the command trace (so it can be tested on the server like `GeaSimulationHost`).
+- Parameters: the exported component is **the result of this build** (dimensions fixed per job), it has no form of its own.
+- Open questions: export by default or switch it on with a parameter; one body or a group of bodies per file; the file name; whether to include separate images; the effect on build time (each component adds one save and one STEP export).
+- Risk: the add-in and the Inventor API (copying a body to another Part keeps its position or moves it to the origin). Cannot be tried on this machine.
 
-## Hướng C: chèn Part đã dựng vào assembly
+## Direction C: insert built Parts into an assembly
 
-**Mục tiêu**: một script dựng assembly, trong đó chèn các Part (ví dụ Tank, base và cover đã dựng) và đặt vị trí bằng mate.
+**Goal**: a script builds an assembly, inserting Parts (for example the built Tank, base and cover) and positioning them with mates.
 
-- Ngôn ngữ: làm các lệnh P2 đã dành riêng: `TARGET ASSEMBLY`, `ADD_COMPONENT`, `BEGIN_ASSEMBLE`/`END_ASSEMBLE` với `MATE`, `FLUSH`, `INSERT`. Cần đặc tả chi tiết trong `sa-docs/gea-language-spec.md` (hiện mục 11 chỉ giữ chỗ) và bảng manifest.
-- Nguồn Part: (1) một Part do chính script này dựng bằng `INCLUDE` rồi lưu riêng; (2) Part đã có từ job trước (`jobId` + tên component, nhờ hướng B); (3) file `.ipt` trong thư viện. Nên bắt đầu với (1) và (2).
-- Host: Inventor Host cho `ASSEMBLY` (tạo `.iam`, `Occurrences.AddByComponentName`, ràng buộc mate), host mô phỏng cho test. Server hiện chỉ nhận `TARGET PART`: cần mở cho ASSEMBLY, tính lại giới hạn (kích thước, số lệnh) và cách job lấy Part đầu vào.
-- Câu hỏi mở: định danh component trong assembly (đặt tên, thuộc tính); xử lý khi Part nguồn bị xóa theo chính sách lưu giữ file (`Retention:Days`); mate cho thân hộp chữ nhật có đủ không hay cần face selector; xuất assembly ra `.iam`/`.stp` và bản vẽ.
-- Rủi ro: lớn nhất (ngôn ngữ, add-in, server, kiểm thử Inventor). Chỉ làm sau khi hướng B chạy ổn.
+- Language: build the reserved P2 statements: `TARGET ASSEMBLY`, `ADD_COMPONENT`, `BEGIN_ASSEMBLE`/`END_ASSEMBLE` with `MATE`, `FLUSH`, `INSERT`. A detailed spec is needed in `sa-docs/gea-language-spec.md` (section 11 currently only holds a place) and in the manifest table.
+- Source of the Part: (1) a Part this script builds itself with `INCLUDE` and then saves separately; (2) a Part that already exists from an earlier job (`jobId` + component name, thanks to direction B); (3) an `.ipt` file in the library. Start with (1) and (2).
+- Host: an Inventor Host for `ASSEMBLY` (creates an `.iam`, `Occurrences.AddByComponentName`, mate constraints), a simulation host for tests. The server currently accepts only `TARGET PART`: it must be opened to ASSEMBLY, the limits (size, statement count) recalculated, and a way defined for a job to get its input Part.
+- Open questions: how to identify a component in the assembly (naming, attributes); what to do when the source Part was deleted by the file retention policy (`Retention:Days`); whether mates are enough for a rectangular box body or a face selector is needed; exporting the assembly to `.iam`/`.stp` and the drawing.
+- Risk: the largest (language, add-in, server, Inventor testing). Do it only after direction B runs reliably.
 
-## Thứ tự đề xuất
+## Suggested order
 
-1. **A** (nhỏ, độc lập, không cần Inventor): làm trước, cho người dùng thấy và tải được component.
-2. **B** (trung bình): cần máy có Inventor; mở đường cho C vì tạo ra các Part riêng.
-3. **C** (lớn): làm cuối, dựa trên B.
+1. **A** (small, independent, needs no Inventor): do it first, so people can see and download components.
+2. **B** (medium): needs a machine with Inventor; it paves the way for C because it produces separate Parts.
+3. **C** (large): do it last, building on B.
 
-Mỗi hướng: viết spec trong `docs/superpowers/specs/`, kế hoạch trong `docs/superpowers/plans/`, test trên server (`Cadflow.Api.Tests`) trước, phần add-in kiểm thử trên máy có Inventor.
+For each direction: write a spec in `docs/superpowers/specs/`, a plan in `docs/superpowers/plans/`, test on the server first (`Cadflow.Api.Tests`), and test the add-in part on a machine with Inventor.

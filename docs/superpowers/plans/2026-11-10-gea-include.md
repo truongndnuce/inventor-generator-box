@@ -1,17 +1,17 @@
-# Kế hoạch triển khai: `INCLUDE lib:` cho script .gea
+# Implementation plan: `INCLUDE lib:` for .gea scripts
 
-Thiết kế: `docs/superpowers/specs/2026-11-10-gea-include-design.md`. Mỗi task kết thúc bằng một commit; test chạy bằng `dotnet test be/Cadflow.Api.Tests` (cần PostgreSQL local, xem `docs/database.md`). Add-in Inventor không chạy được ở máy này, chỉ build được.
+Design: `docs/superpowers/specs/2026-11-10-gea-include-design.md`. Each task ends with a commit; tests run with `dotnet test be/Cadflow.Api.Tests` (needs a local PostgreSQL, see `docs/database.md`). The Inventor add-in cannot run on this machine, it can only be built.
 
-## Task 1: Bộ mở rộng `GeaIncludes` (Core, thuần văn bản)
+## Task 1: The `GeaIncludes` expander (Core, pure text)
 
-**File mới:** `InventorAddin/InventorAddin.Core/Gea/GeaIncludes.cs`; link vào `be/Cadflow.Api/Cadflow.Api.csproj` (đã link `Gea\*.cs` nên tự có). **Test:** `be/Cadflow.Api.Tests/GeaIncludesTests.cs`.
+**New file:** `InventorAddin/InventorAddin.Core/Gea/GeaIncludes.cs`; link into `be/Cadflow.Api/Cadflow.Api.csproj` (it already links `Gea\*.cs`, so it is picked up). **Test:** `be/Cadflow.Api.Tests/GeaIncludesTests.cs`.
 
-1. Viết test trước (đỏ). Dùng resolver giả `name => dict.GetValueOrDefault(name)`:
-   - Mở rộng trong `BEGIN_FORM` chèn thân FORM của thư viện; trong `BEGIN_BUILD` chèn thân BUILD; thư viện thiếu khối đó thì chèn rỗng.
-   - Header thư viện (`GEA_VERSION`, `PRODUCT_NAME`, `TARGET`, `PARAM_PREFIX`) không vào kết quả; `PARAM_PREFIX` đi vào `LibPrefixes`.
-   - `Lines[i]` ánh xạ đúng `(File, Line)` cho dòng của cha và dòng của thư viện.
-   - Lỗi (mỗi lỗi một test, `Diagnostics` có `GEA1012`...): `INCLUDE` ngoài khối; thiếu thư viện; tên có `/`, `\`, `..` hoặc ngoài `^[A-Za-z0-9_-]{1,64}$`; vòng lặp A↔B; include lần hai cùng loại khối; độ sâu > 8; resolver null.
-2. Cài đặt:
+1. Write the tests first (red). Use a fake resolver `name => dict.GetValueOrDefault(name)`:
+      - Expanding inside `BEGIN_FORM` inserts the FORM body of the library; inside `BEGIN_BUILD` it inserts the BUILD body; a library that lacks that block inserts nothing.
+      - The library header (`GEA_VERSION`, `PRODUCT_NAME`, `TARGET`, `PARAM_PREFIX`) does not go into the result; `PARAM_PREFIX` goes into `LibPrefixes`.
+      - `Lines[i]` maps to the right `(File, Line)` for lines of the parent and lines of the library.
+      - Errors (one test each, `Diagnostics` has `GEA1012`...): `INCLUDE` outside a block; a missing library; a name with `/`, `\`, `..` or outside `^[A-Za-z0-9_-]{1,64}$`; a cycle A↔B; a second include of the same kind of block; depth > 8; a null resolver.
+2. Implementation:
    ```csharp
    public sealed record GeaSourceLine(string File, int Line);
    public sealed record GeaExpansion(string Text, IReadOnlyList<GeaSourceLine> Lines,
@@ -22,66 +22,66 @@ Thiết kế: `docs/superpowers/specs/2026-11-10-gea-include-design.md`. Mỗi t
        public static GeaExpansion Expand(string text, Func<string, string?>? resolveLib, string fileName = "script");
    }
    ```
-   Quét từng dòng, theo dõi khối hiện tại bằng dòng `BEGIN_FORM`/`BEGIN_BUILD` và `END_*` (bỏ qua chú thích `!` và dòng trong chuỗi). Dòng `INCLUDE lib:<tên>` (không phân biệt hoa thường, cho phép chú thích đuôi) được thay bằng thân khối cùng loại của thư viện, đệ quy với tập thư viện đang mở (để bắt vòng) và độ sâu. Thân khối = các dòng giữa `BEGIN_x` và `END_x` của thư viện (không lấy chính hai dòng đó). Mã lỗi `GEA1010`-`GEA1015` cho nhóm include, vị trí = dòng của `INCLUDE` trong file chứa nó.
-3. Chạy test xanh, commit `Add GeaIncludes expander`.
+      Scan line by line, tracking the current block with the `BEGIN_FORM`/`BEGIN_BUILD` and `END_*` lines (skip `!` comments and lines inside strings). A line `INCLUDE lib:<name>` (case-insensitive, a trailing comment allowed) is replaced with the body of the block of the same kind of the library, recursively with the set of open libraries (to catch cycles) and the depth. The block body = the lines between `BEGIN_x` and `END_x` of the library (not those two lines themselves). Error codes `GEA1010`-`GEA1015` for the include group, the position = the line of the `INCLUDE` in the file that contains it.
+3. Tests green, commit `Add GeaIncludes expander`.
 
-## Task 2: Compile mở rộng + tiền tố + ánh xạ dòng
+## Task 2: Compile expands + prefix + line mapping
 
-**Sửa:** `Gea/GeaInterpreter.cs` (`GeaScript.Compile`), `Gea/GeaAst.cs` (`GeaProgram`), `Gea/GeaChecker.cs`. **Test:** `GeaIncludeCompileTests.cs`.
+**Edit:** `Gea/GeaInterpreter.cs` (`GeaScript.Compile`), `Gea/GeaAst.cs` (`GeaProgram`), `Gea/GeaChecker.cs`. **Test:** `GeaIncludeCompileTests.cs`.
 
-1. Test trước:
-   - Script cha `PARAM_PREFIX GT_` + `INCLUDE` thư viện `PARAM_PREFIX TR_` (một tham số `TR_X`, một `GT_Y`): `Compile` không lỗi, `Parameters` có cả hai.
-   - Tham số lạ (`ZZ_Q`) vẫn bị `GEA2030`.
-   - Lỗi trong thư viện có `Message` bắt đầu bằng `tank-lib.gea:` và `Line` là dòng trong thư viện; lỗi ở cha sau chỗ chèn báo đúng dòng gốc của cha.
-   - Không truyền resolver và có `INCLUDE` → lỗi `GEA1012`, không ném ngoại lệ.
-   - Script không có `INCLUDE` cho kết quả y hệt trước (hồi quy: chạy lại các test Gea hiện có nếu có, và test số tham số của `transformer.gea`).
-2. Cài đặt:
-   - `GeaProgram` thêm `IReadOnlyList<string> ExtraParamPrefixes { get; init; }` (mặc định rỗng); parser giữ nguyên, `Compile` dùng `with`/gán lại sau khi parse (đổi `init` thành `set` nếu cần).
-   - `Compile(string text, Func<string,string?>? resolveLib = null, string fileName = "script")`: gọi `Expand`, parse `expansion.Text`, gán `ExtraParamPrefixes = LibPrefixes`, gộp `expansion.Diagnostics`, sau khi check thì với mỗi chẩn đoán đổi `Line` qua `Lines` và nếu `File != fileName` thì thêm tiền tố `"<File>:<Line>: "` vào `Message`. Sắp xếp như cũ.
-   - `GeaScript` thêm `ExpandedText` (văn bản sau mở rộng; bằng `Text` khi không có INCLUDE).
-   - Checker: hai chỗ kiểm tra tiền tố (`GeaChecker.cs` quanh dòng 337 và 393) dùng hàm `HasAllowedPrefix(name)` = bắt đầu bằng `ParamPrefix` hoặc bất kỳ tiền tố trong `ExtraParamPrefixes`; dòng 488 (`DeclareHint`) giữ nguyên ý.
+1. Tests first:
+      - A parent script `PARAM_PREFIX GT_` + `INCLUDE` of a library `PARAM_PREFIX TR_` (one parameter `TR_X`, one `GT_Y`): `Compile` has no error, `Parameters` has both.
+      - An unknown parameter (`ZZ_Q`) still gets `GEA2030`.
+      - An error inside the library has a `Message` that starts with `tank-lib.gea:` and a `Line` that is the line in the library; an error in the parent after the insertion reports the right original line of the parent.
+      - No resolver passed and an `INCLUDE` present → error `GEA1012`, no exception.
+      - A script with no `INCLUDE` gives exactly the same result as before (regression: re-run the existing Gea tests if any, and the parameter count test of `transformer.gea`).
+2. Implementation:
+      - `GeaProgram` gets `IReadOnlyList<string> ExtraParamPrefixes { get; init; }` (empty by default); the parser stays as it is, `Compile` uses `with`/reassigns after parsing (change `init` to `set` if needed).
+      - `Compile(string text, Func<string,string?>? resolveLib = null, string fileName = "script")`: calls `Expand`, parses `expansion.Text`, sets `ExtraParamPrefixes = LibPrefixes`, merges `expansion.Diagnostics`, and after the check, for each diagnostic maps `Line` through `Lines` and, if `File != fileName`, prefixes the `Message` with `"<File>:<Line>: "`. Sorted as before.
+      - `GeaScript` gets `ExpandedText` (the text after expansion; equal to `Text` when there is no INCLUDE).
+      - Checker: the two prefix checks (`GeaChecker.cs` around lines 337 and 393) use a function `HasAllowedPrefix(name)` = starts with `ParamPrefix` or any prefix in `ExtraParamPrefixes`; line 488 (`DeclareHint`) keeps its meaning.
 3. Test xanh, commit `Compile expands INCLUDE and accepts library prefixes`.
 
-## Task 3: Thư viện `tank-base-cover` và `transformer.gea` dùng nó
+## Task 3: The `tank-base-cover` library and `transformer.gea` using it
 
-**File mới:** `InventorAddin/InventorAddin.Core/Scripts/lib/tank-base-cover.gea`. **Sửa:** `Scripts/transformer.gea`, `InventorAddin.Core.csproj` (copy `Scripts\lib\*.gea` ra output add-in), `be/Cadflow.Api/Cadflow.Api.csproj` (Content link `Scripts\lib\tank-base-cover.gea` → `Scripts\lib\`, `PreserveNewest`). **Test:** `TransformerIncludeEquivalenceTests.cs`.
+**New file:** `InventorAddin/InventorAddin.Core/Scripts/lib/tank-base-cover.gea`. **Edit:** `Scripts/transformer.gea`, `InventorAddin.Core.csproj` (copy `Scripts\lib\*.gea` to the add-in output), `be/Cadflow.Api/Cadflow.Api.csproj` (Content link `Scripts\lib\tank-base-cover.gea` → `Scripts\lib\`, `PreserveNewest`). **Test:** `TransformerIncludeEquivalenceTests.cs`.
 
-1. Test trước (đỏ vì chưa có thư viện): đọc `transformer.gea` hiện tại bằng git (`git show HEAD:...` lưu một bản gốc làm fixture `be/Cadflow.Api.Tests/Fixtures/transformer.original.gea`) và bản mới đã `INCLUDE`; so sánh `Compile(...)` hai bản:
-   - cùng danh sách tham số (tên, kiểu, mặc định, min, max, nhãn, nhóm),
-   - cùng kết quả `EvaluateFormNumbers` cho mặc định và vài bộ giá trị (kể cả vi phạm luật),
-   - cùng chuỗi lệnh BUILD (so `ExpandedText` đã chuẩn hóa khoảng trắng và bỏ dòng trống/chú thích).
-2. Tách nhóm: khối `BEGIN_GROUP "Tank, base and cover"` (dòng 20–28) thành thân FORM của thư viện; phần BUILD "Base, tank and cover" (đế/thùng/nắp, `hTank`, `hCover`, `hTop` và ba `SET_REF_NAME`) thành thân BUILD. `DECLARE_VARIABLE` các biến đó dời vào thư viện nếu chỉ thư viện dùng, ngược lại để lại ở cha. Thư viện có header `GEA_VERSION 1`, `PRODUCT_NAME`, `PARAM_PREFIX TR_`, `TARGET PART`.
-3. `transformer.gea`: thay các khối đó bằng `INCLUDE lib:tank-base-cover` đúng vị trí cũ trong cả FORM và BUILD.
+1. Test first (red because the library does not exist yet): read the current `transformer.gea` with git (`git show HEAD:...` saves the original as the fixture `be/Cadflow.Api.Tests/Fixtures/transformer.original.gea`) and the new version with `INCLUDE`; compare `Compile(...)` of the two:
+      - the same parameter list (name, type, default, min, max, label, group),
+      - the same `EvaluateFormNumbers` result for the defaults and a few value sets (including rule violations),
+      - the same BUILD command sequence (compare `ExpandedText` with whitespace normalized and blank/comment lines removed).
+2. Extract the group: the block `BEGIN_GROUP "Tank, base and cover"` (lines 20–28) becomes the FORM body of the library; the BUILD part "Base, tank and cover" (base/tank/cover, `hTank`, `hCover`, `hTop` and the three `SET_REF_NAME`) becomes the BUILD body. The `DECLARE_VARIABLE` of those variables moves into the library if only the library uses them, otherwise it stays in the parent. The library has the header `GEA_VERSION 1`, `PRODUCT_NAME`, `PARAM_PREFIX TR_`, `TARGET PART`.
+3. `transformer.gea`: replace those blocks with `INCLUDE lib:tank-base-cover` at exactly the old position in both FORM and BUILD.
 4. Test xanh; commit `Extract tank-base-cover library; transformer.gea uses INCLUDE`.
 
-## Task 4: Server nạp thư viện, lưu bản đã mở rộng
+## Task 4: The server loads libraries and stores the expanded copy
 
-**File mới:** `be/Cadflow.Api/GeaLibraries.cs` (`Resolve(name)` đọc `AppContext.BaseDirectory/Scripts/lib/<tên>.gea`, null nếu không có; tên không hợp lệ trả null). **Sửa:** `be/Cadflow.Api/JobService.cs` (ba chỗ `GeaScript.Compile` ở dòng 30, 81, 115 truyền `GeaLibraries.Resolve`; dòng 60 mở rộng bản bundled trước `scripts.Save`; import lưu `script.ExpandedText` thay cho `clean`). **Test:** `ServerIncludeTests.cs`.
+**New file:** `be/Cadflow.Api/GeaLibraries.cs` (`Resolve(name)` reads `AppContext.BaseDirectory/Scripts/lib/<name>.gea`, null if missing; an invalid name returns null). **Edit:** `be/Cadflow.Api/JobService.cs` (the three `GeaScript.Compile` places at lines 30, 81, 115 pass `GeaLibraries.Resolve`; line 60 expands the bundled copy before `scripts.Save`; import stores `script.ExpandedText` instead of `clean`). **Test:** `ServerIncludeTests.cs`.
 
-1. Test trước (dùng `TestDb`, ghi thư viện thử vào `Scripts/lib` của thư mục test hoặc dùng `tank-base-cover` thật):
-   - `Import` text có `INCLUDE lib:tank-base-cover` trả `form` có tham số `TR_TankLength`; `ScriptStore.Get(scriptId)` không còn chứa `INCLUDE`.
-   - Tạo job `transformer` (đường built-in): `ScriptStore.Get(job.ScriptSha256)` không còn `INCLUDE`, và `claim` trả `ScriptText` đã mở rộng.
-   - Import script dùng thư viện không tồn tại → 400 kèm `diagnostics`.
-2. Cài đặt như trên; `ScriptStore.ReadBundled` giữ nguyên (chỉ đọc), phần mở rộng nằm ở `JobService`. Kiểm tra `Cadflow.Api.csproj` copy `Scripts/lib` ra output khi chạy test.
+1. Test first (use `TestDb`, write a test library into `Scripts/lib` of the test folder or use the real `tank-base-cover`):
+      - `Import` of text with `INCLUDE lib:tank-base-cover` returns a `form` with the parameter `TR_TankLength`; `ScriptStore.Get(scriptId)` no longer contains `INCLUDE`.
+      - Creating a `transformer` job (the built-in path): `ScriptStore.Get(job.ScriptSha256)` no longer contains `INCLUDE`, and `claim` returns the expanded `ScriptText`.
+      - Importing a script that uses a library that does not exist → 400 with `diagnostics`.
+2. Implement as above; `ScriptStore.ReadBundled` stays as it is (read only), the expansion lives in `JobService`. Check that `Cadflow.Api.csproj` copies `Scripts/lib` to the output when running tests.
 3. Test xanh, commit `Server expands INCLUDE on import and job creation`.
 
-## Task 5: Add-in mở file có INCLUDE (chỉ build)
+## Task 5: The add-in opens files with INCLUDE (build only)
 
-**Sửa:** `InventorAddin/InventorAddin.Core/ViewModels/ScriptViewModel.cs` (dòng ~537): `GeaScript.Compile(_scriptText, GeaLibraryResolver.For(directoryOfOpenFile))`. `InventorJobExecutor.cs:112` không đổi (job nhận bản đã mở rộng). **File mới:** `Core/Gea/GeaLibraryResolver.cs`: thử `<thư mục file>/lib/<tên>.gea` và `<thư mục file>/<tên>.gea`, rồi `AppContext.BaseDirectory/Scripts/lib/<tên>.gea`; chỉ nhận tên hợp lệ.
+**Edit:** `InventorAddin/InventorAddin.Core/ViewModels/ScriptViewModel.cs` (line ~537): `GeaScript.Compile(_scriptText, GeaLibraryResolver.For(directoryOfOpenFile))`. `InventorJobExecutor.cs:112` does not change (the job receives the expanded copy). **New file:** `Core/Gea/GeaLibraryResolver.cs`: tries `<file folder>/lib/<name>.gea` and `<file folder>/<name>.gea`, then `AppContext.BaseDirectory/Scripts/lib/<name>.gea`; accepts valid names only.
 
-1. Thêm test thuần cho `GeaLibraryResolver` ở `Cadflow.Api.Tests` (nếu file được link) hoặc kiểm tra bằng đọc mã nếu không link được.
-2. Build solution add-in nếu máy có SDK/tham chiếu Inventor; nếu không, ghi rõ chưa build được. Commit `Add-in resolves INCLUDE libraries`.
+1. Add a pure test for `GeaLibraryResolver` in `Cadflow.Api.Tests` (if the file is linked) or check by reading the code if it cannot be linked.
+2. Build the add-in solution if the machine has the SDK/Inventor references; if not, say clearly that it could not be built. Commit `Add-in resolves INCLUDE libraries`.
 
-## Task 6: Tài liệu
+## Task 6: Documentation
 
-- `sa-docs/gea-language-spec.md`: thêm mục `INCLUDE lib:` (cú pháp trong khối, biến dùng chung, tiền tố thư viện, lỗi `GEA1010-1015`, giới hạn), cập nhật bảng P1 và đánh dấu Q1 đã chốt (dùng chung biến).
-- `sa-docs/smartassembly-to-inventor-mapping.md` và `docs/smartassembly-to-inventor-mapping.md`: D6 đã chốt.
-- `README.md`: một dòng về `Scripts/lib` và cách thêm thư viện.
+- `sa-docs/gea-language-spec.md`: add the section `INCLUDE lib:` (syntax inside a block, shared variables, library prefix, errors `GEA1010-1015`, limits), update the P1 table and mark Q1 as settled (share variables).
+- `sa-docs/smartassembly-to-inventor-mapping.md` and `docs/smartassembly-to-inventor-mapping.md`: D6 settled.
+- `README.md`: one line about `Scripts/lib` and how to add a library.
 - Commit `Document INCLUDE`.
 
-## Nghiệm thu
+## Acceptance
 
-- `dotnet test be/Cadflow.Api.Tests` toàn bộ xanh (22 test cũ + test mới).
-- Chạy backend, đặt job `transformer` qua `POST /api/jobs`: job được tạo, `claim` trả script đã mở rộng.
-- Import `.gea` có `INCLUDE` qua `POST /api/gea/import` trả form đúng.
-- `git status` sạch, không commit file build hay `.env`.
+- `dotnet test be/Cadflow.Api.Tests` is all green (22 old tests + the new tests).
+- Run the backend, place a `transformer` job through `POST /api/jobs`: the job is created, `claim` returns the expanded script.
+- Importing a `.gea` with `INCLUDE` through `POST /api/gea/import` returns the right form.
+- `git status` is clean, no build files or `.env` committed.
