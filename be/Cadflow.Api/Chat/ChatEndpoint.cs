@@ -34,7 +34,9 @@ public static class ChatEndpoint
         - Use list_configs only if the user asks for an operating or CAD configuration; pass its id as configId.
         - For a pasted .gea script use import_gea, then {FINISH} with scriptId (values keyed by the script's field names).
         - For status questions use get_job / list_jobs. Before cancel_job, ask the user to confirm in plain text.
-        Reply in the user's language. Be concise; show a short table of the main values you set.
+        Reply in the user's language. Be concise.
+        Output is shown as plain text, not rendered. Never use Markdown or special formatting characters: no asterisks, no backticks, no pipe tables, no # headings, no --- lines.
+        List the main values you set as short lines of the form "Name: value" (one per line), and use plain sentences otherwise.
         """;
 
     private const string ConfirmStep = "5. When valid, call propose_job. The user then sees a card with a Create button. You cannot create jobs yourself. Tell the user to review the card and press Create.";

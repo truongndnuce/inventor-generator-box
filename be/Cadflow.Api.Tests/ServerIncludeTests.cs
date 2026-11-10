@@ -34,6 +34,10 @@ public sealed class ServerIncludeTests : IDisposable
         END_BUILD
         """;
 
+    // Chú thích của thư viện có thể nhắc từ INCLUDE; điều cần đảm bảo là không còn dòng lệnh INCLUDE lib:.
+    private static void AssertNoIncludeDirective(string text) =>
+        Assert.DoesNotMatch(new System.Text.RegularExpressions.Regex(@"^\s*INCLUDE\s+lib:", System.Text.RegularExpressions.RegexOptions.Multiline), text);
+
     private static JsonElement Json(object body) => JsonSerializer.SerializeToElement(body, new JsonSerializerOptions(JsonSerializerDefaults.Web));
 
     [Fact]
@@ -48,7 +52,7 @@ public sealed class ServerIncludeTests : IDisposable
         Assert.Contains("GT_Pipes", form);          // tham số của script cha
 
         var stored = _scripts.Get(body.GetProperty("scriptId").GetString())!;
-        Assert.DoesNotContain("INCLUDE", stored);
+        AssertNoIncludeDirective(stored);
         Assert.Contains("SET_REF_NAME tbcBody \"TR_Tank\"", stored);
     }
 
@@ -62,7 +66,7 @@ public sealed class ServerIncludeTests : IDisposable
         Assert.True(created.Ok, created.Error?.ToString());
         var job = _store.Get(created.Job!.Id)!;
         Assert.Equal(2500, job.Inputs["TR_TankLength"]);
-        Assert.DoesNotContain("INCLUDE", _scripts.Get(job.ScriptSha256)!);
+        AssertNoIncludeDirective(_scripts.Get(job.ScriptSha256)!);
     }
 
     [Fact]
@@ -72,7 +76,7 @@ public sealed class ServerIncludeTests : IDisposable
 
         Assert.True(created.Ok, created.Error?.ToString());
         var text = _scripts.Get(_store.Get(created.Job!.Id)!.ScriptSha256)!;
-        Assert.DoesNotContain("INCLUDE", text);
+        AssertNoIncludeDirective(text);
         Assert.Contains("USER_INPUT_PARAM TR_TankLength", text);
         Assert.Contains("CREATE_FEATURE builder:Bushing", text);   // phần của script cha vẫn còn
     }

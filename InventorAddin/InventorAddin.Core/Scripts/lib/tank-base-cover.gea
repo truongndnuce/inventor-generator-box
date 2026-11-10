@@ -1,6 +1,9 @@
 ! ============================================================================
 ! Component dùng lại: đế, thùng và nắp (nhóm "Tank, base and cover" của máy biến áp).
 !
+! Component dựng ba solid body chồng lên nhau theo chiều cao: đế (tấm đáy nhô ra quanh thùng), thùng (hộp chính)
+! và nắp (tấm trên cùng nhô ra quanh thùng). Bảy thông số bên dưới điều khiển kích thước của cả ba.
+!
 ! Dùng trong script khác bằng một dòng INCLUDE ở HAI chỗ (xem sa-docs/gea-language-spec.md, mục INCLUDE):
 !     BEGIN_FORM   ...  INCLUDE lib:tank-base-cover  ...  END_FORM    ! nhóm tham số TR_Tank*, TR_Base*, TR_Cover*
 !     BEGIN_BUILD  ...  INCLUDE lib:tank-base-cover  ...  END_BUILD   ! dựng ba solid body TR_Base, TR_Tank, TR_Cover
@@ -17,12 +20,18 @@ TARGET PART
 
 BEGIN_FORM
 
+  ! Bước 1: các ô nhập của component, gom thành một nhóm trên form đặt hàng.
+  ! Mỗi dòng USER_INPUT_PARAM khai báo một thông số: tên (có tiền tố TR_), kiểu và đơn vị, giá trị mặc định,
+  ! giới hạn MIN/MAX (form báo lỗi nếu nhập ngoài khoảng), REQUIRED (bắt buộc nhập) và LABEL (nhãn hiện trên form).
   BEGIN_GROUP "Tank, base and cover"
+    ! Kích thước thùng: dài (theo X), rộng (theo D) và cao.
     USER_INPUT_PARAM TR_TankLength     LENGTH 2000 mm MIN 1000 MAX 5000 REQUIRED LABEL "Tank length"
     USER_INPUT_PARAM TR_TankWidth      LENGTH 1100 mm MIN 600  MAX 2500 REQUIRED LABEL "Tank width"
     USER_INPUT_PARAM TR_TankHeight     LENGTH 1500 mm MIN 800  MAX 3500 REQUIRED LABEL "Tank height"
+    ! Đế: độ dày tấm đế và phần đế nhô ra mỗi phía so với thành thùng.
     USER_INPUT_PARAM TR_BaseThickness  LENGTH 80 mm   MIN 40   MAX 200  LABEL "Base plate thickness"
     USER_INPUT_PARAM TR_BaseOverhang   LENGTH 120 mm  MIN 40   MAX 300  LABEL "Base plate overhang"
+    ! Nắp: độ dày tấm nắp và phần nắp nhô ra mỗi phía so với thành thùng.
     USER_INPUT_PARAM TR_CoverThickness LENGTH 50 mm   MIN 20   MAX 150  LABEL "Cover thickness"
     USER_INPUT_PARAM TR_CoverOverhang  LENGTH 40 mm   MIN 0    MAX 120  LABEL "Cover overhang"
   END_GROUP
@@ -31,27 +40,38 @@ END_FORM
 
 BEGIN_BUILD
 
+  ! Bước 1: khai báo biến. Ba biến cao độ (tính từ mặt dưới của đế, cao độ 0) được dùng chung với script cha
+  ! sau khi INCLUDE, nên script cha không được khai báo lại. tbcBody là biến tham chiếu riêng của component
+  ! để nhận solid body vừa dựng, đặt tên khác `body` để không đụng biến của script cha.
   DECLARE_VARIABLE LENGTH hTank
   DECLARE_VARIABLE LENGTH hCover
   DECLARE_VARIABLE LENGTH hTop
   DECLARE_REFERENCE tbcBody
 
+  ! Bước 2: tính cao độ các mặt phân cách. Đế nằm dưới cùng nên đáy thùng nằm trên mặt trên của đế (hTank);
+  ! đáy nắp nằm trên đỉnh thùng (hCover = độ dày đế + chiều cao thùng); đỉnh nắp là hTop. Script cha có thể
+  ! dùng hTop để đặt thêm chi tiết lên trên nắp.
   hTank = TR_BaseThickness
   hCover = TR_BaseThickness + TR_TankHeight
   hTop = hCover + TR_CoverThickness
 
-  ! --- Đế, thùng, nắp ---
+  ! Bước 3: hiện hộp tiến trình trên Inventor để người dùng biết bước đang chạy (10 là phần trăm tiến độ).
   PROCESSING_BOX_SET_STATE "Base, tank and cover" 10
+
+  ! Bước 4: dựng ĐẾ bằng builder Block (hình hộp). Block đặt tâm ở X = 0, D = 0; đế nằm ở cao độ 0 (không cần
+  ! Elevation). Mỗi cạnh dài hơn thùng 2 x phần nhô ra, vì nhô ra cả hai phía. FEATURE_OUT lấy solid body vừa tạo.
   CREATE_FEATURE builder:Block
     FEATURE_IN "SizeX"  TR_TankLength + 2 * TR_BaseOverhang
     FEATURE_IN "SizeD"  TR_TankWidth + 2 * TR_BaseOverhang
     FEATURE_IN "Height" TR_BaseThickness
     FEATURE_OUT tbcBody "Body"
   END_CREATE_FEATURE
+  ! Đặt tên body (các script khác tìm theo tên này), gán thuộc tính ROLE để biết đây là đế, và tô màu xám.
   SET_REF_NAME tbcBody "TR_Base"
   SET_REF_ATTR tbcBody "ROLE" "BASE"
   SET_APPEARANCE tbcBody "Grey"
 
+  ! Bước 5: dựng THÙNG. Elevation = hTank nâng thùng lên đứng trên đế; kích thước đúng bằng ba thông số của thùng.
   CREATE_FEATURE builder:Block
     FEATURE_IN "Elevation" hTank
     FEATURE_IN "SizeX"     TR_TankLength
@@ -63,6 +83,8 @@ BEGIN_BUILD
   SET_REF_ATTR tbcBody "ROLE" "TANK"
   SET_APPEARANCE tbcBody "Grey"
 
+  ! Bước 6: dựng NẮP. Elevation = hCover đặt nắp lên đỉnh thùng; nắp rộng hơn thùng 2 x phần nhô ra ở mỗi cạnh
+  ! (TR_CoverOverhang = 0 thì nắp vừa khít thùng).
   CREATE_FEATURE builder:Block
     FEATURE_IN "Elevation" hCover
     FEATURE_IN "SizeX"     TR_TankLength + 2 * TR_CoverOverhang
