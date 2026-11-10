@@ -87,6 +87,17 @@ public sealed class R2Store : IDisposable
         }
     }
 
+    /// <summary>Key of a document-vault file. Outside <c>jobs/</c>, so the retention policy never touches it.</summary>
+    public static string KeyForVault(string itemId, int version, string name) => $"vault/{itemId}/v{version}/{name}";
+
+    /// <summary>Uploads a local file (the server has the bytes, e.g. a vault upload).</summary>
+    public async Task PutFileAsync(string key, string path, string contentType, CancellationToken ct = default) =>
+        await _s3!.PutObjectAsync(new PutObjectRequest { BucketName = _options.Bucket, Key = key, FilePath = path, ContentType = contentType }, ct);
+
+    /// <summary>Copies an object inside the bucket without downloading it (job result -> vault).</summary>
+    public async Task CopyAsync(string sourceKey, string destKey, CancellationToken ct = default) =>
+        await _s3!.CopyObjectAsync(new CopyObjectRequest { SourceBucket = _options.Bucket, SourceKey = sourceKey, DestinationBucket = _options.Bucket, DestinationKey = destKey }, ct);
+
     public async Task DeleteAsync(string key, CancellationToken ct = default) =>
         await _s3!.DeleteObjectAsync(new DeleteObjectRequest { BucketName = _options.Bucket, Key = key }, ct);
 

@@ -16,3 +16,7 @@ fe/dist/
 .env
 .env.*
 !.env.example
+
+# PLM front-end (Vite)
+fe-plm/node_modules/
+fe-plm/dist/

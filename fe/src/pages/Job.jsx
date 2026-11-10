@@ -50,6 +50,7 @@ export default function Job({ id, onNav }) {
   const [error, setError] = useState(null);
   const [tick, setTick] = useState(0);
   const [rebuildError, setRebuildError] = useState(null);
+  const [vaultMsg, setVaultMsg] = useState(null);
   const done = job ? ['succeeded', 'failed', 'cancelled'].includes(job.status) : false;
 
   // Poll until the job ends (upgrade to SSE/SignalR when needed, section 8 of the plan).
@@ -87,6 +88,15 @@ export default function Job({ id, onNav }) {
       const j = await postJson(`/api/jobs/${encodeURIComponent(job.id)}/rebuild`, { requestedBy: localStorage.getItem('cadflow.user') || '' });
       go(`#/jobs/${j.id}`);
     } catch (e) { setRebuildError(e.message); }
+  };
+
+  // Save to PLM: copies the result files into the document vault (folder <product>-<job id> with image/drawing/model), where retention does not reach.
+  const saveToVault = async () => {
+    setVaultMsg(null);
+    try {
+      const r = await postJson(`/api/vault/from-job/${encodeURIComponent(job.id)}`, { requestedBy: localStorage.getItem('cadflow.user') || '' });
+      setVaultMsg({ ok: true, folderId: r.folder.id, text: r.added + r.newVersions === 0 ? 'Already saved to PLM.' : `Saved to PLM: ${r.added} new file(s), ${r.newVersions} new version(s).` });
+    } catch (e) { setVaultMsg({ ok: false, text: e.message }); }
   };
 
   const meta = [
@@ -148,6 +158,13 @@ export default function Job({ id, onNav }) {
               <Button key={a.name} asChild variant="outline" size="2"><a href={dl(a)} download={a.name}>{`${a.name} (${fmtSize(a.size)})`}</a></Button>
             ))}
           </Flex>
+          {job.kind !== 'preview' && (
+            <Flex gap="3" align="center" mt="3" wrap="wrap">
+              <Button variant="soft" onClick={saveToVault}>Save to PLM</Button>
+              {vaultMsg && <Text size="2" color={vaultMsg.ok ? 'green' : 'red'}>{vaultMsg.text}</Text>}
+              {vaultMsg?.ok && <Link href={`/plm/#/files/${vaultMsg.folderId}`}>Open in PLM</Link>}
+            </Flex>
+          )}
         </Card>
       )}
 

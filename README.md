@@ -9,6 +9,7 @@ fe/  (static web)  ──►  be/Cadflow.Api (ASP.NET Core, job queue)  ◄─�
 | Folder | Role |
 |---------|---------|
 | `fe/` | The configurator (a form generated from the schema, rules checked through the API), the order list, a job page that tracks progress in real time. React + Radix UI Themes (Vite); `npm run build` is needed to create `fe/dist`. |
+| `fe-plm/` | The **PLM vault** front-end (Docs-style: folder tree, files table, versions, states). A separate Vite app on the same API; the server serves its build at `/plm/`. See *PLM vault* below. |
 | `be/Cadflow.Api/` | The API: products, orders, jobs, file download, the worker API. It shares the `*Params.cs` files (Models) with the add-in, so the rules exist in one copy only. It also serves `fe/`. |
 | `InventorAddin/` | The Inventor 2027 add-in suite, **one add-in per product** but sharing one **Cadflow** tab on the Part ribbon (see the *Add-in suite* section below). `InventorAddin.Core/` is the shared library; its `Web/` folder is the **web worker**: it asks the server for jobs, builds on the Inventor UI thread, exports `.ipt`, `.stp`, `.png`, `.pdf`. |
 
@@ -24,6 +25,17 @@ fe/  (static web)  ──►  be/Cadflow.Api (ASP.NET Core, job queue)  ◄─�
       Open http://localhost:18080. Jobs live in PostgreSQL (`ConnectionStrings:Cadflow`); result files, scripts and product configurations live in `be/Cadflow.Api/data/` (change it with the `DataDir` setting). Tests: `dotnet test be/Cadflow.Api.Tests` (needs PostgreSQL, see `docs/database.md`).
 2. **Add-in**: build `InventorAddin/InventorAddin.sln` (each add-in writes its own `.addin` file into `%AppData%\Autodesk\Inventor 2027\Addins`), then open Inventor 2027. When loaded, each add-in connects to the server on its own and takes only the jobs of its own product. The add-in window title shows `web: connected`.
 3. Place an order on the web: the job goes `queued → running → succeeded`, and the job page shows the images, STEP and `.ipt`.
+
+## PLM vault
+
+A document vault for results that must outlive the job retention: folders, files with a number, **version** and **state** (In Work → Under Review → Approved → Released). Each saved job gets a folder named `<product>-<job id>` with fixed `image`, `drawing` and `model` sub-folders (`.png` → image, `.pdf/.dwg` → drawing, `.ipt/.stp` → model); files are **copied** into the vault, so retention does not touch them. You can also upload any file into any folder; a file with a name that already exists becomes a new version (and goes back to In Work). Users are free-text names (no login yet).
+
+```
+cd fe-plm && npm install && npm run build     # creates fe-plm/dist, served by the server at http://localhost:18080/plm/
+cd fe-plm && npm run dev                      # http://localhost:5174/plm/ (forwards /api to :18080; set VITE_MAIN_APP_URL=http://localhost:5173/ to link back to the orders app)
+```
+
+On a finished job page, **Save to PLM** calls `POST /api/vault/from-job/{jobId}`. The API (`/api/vault`): `GET tree`, `GET folders[/{id}]`, `POST folders`, `PATCH|DELETE folders/{id}`, `POST folders/{id}/items?name=&by=` (the body is the file), `GET items/{id}`, `POST items/{id}/versions`, `GET items/{id}/versions/{n}/file?download=`, `PATCH items/{id}/state`, `DELETE items/{id}`, `GET search?q=&kind=&state=`. Files go to R2 under `vault/` when R2 is configured, else to `data/vault/`. Settings: `FrontendPlm:Path` (default `fe-plm/dist`).
 
 ## Add-in suite
 

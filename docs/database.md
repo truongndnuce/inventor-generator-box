@@ -22,6 +22,12 @@ The tables are created with `CREATE TABLE IF NOT EXISTS` when the backend starts
 
 Times are `timestamptz` (UTC). `inputs`, `text_inputs` and `summary` are always read/written as a whole block, so they are jsonb, not separate tables.
 
+- **`vault_folders`** (PLM vault): `id`, `parent_id` (self reference, `ON DELETE CASCADE`), `name`, `kind` (`image|drawing|model` for the three fixed sub-folders of a job folder, else null), `job_id` (set on the job folder), `created_by`, `created_at`. Unique `(parent, lower(name))`.
+- **`vault_items`**: `id`, `folder_id`, `number` (unique, `MDL|IMG|DRW|DOC-` + a global sequence), `name`, `kind` (by file extension), `current_version`, `state` (`In Work|Under Review|Approved|Released`), `created_*`, `modified_*`. Unique `(folder_id, lower(name))`.
+- **`vault_versions`**: PK `(item_id, version)`, `r2_key` (null = `data/vault/` on the server disk), `size`, `content_type`, `comment`, `source_job_id` (the job a file was saved from; saving the same job twice adds nothing), `created_by`, `created_at`.
+
+The vault tables are created by `VaultStore` under its own advisory lock (727002). Vault files use the key `vault/{item}/v{n}/{name}`, outside `jobs/`, so the retention policy never deletes them.
+
 ## The queue
 
 `Claim` runs one `UPDATE ... WHERE id = (SELECT ... ORDER BY priority, created_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING ...` statement per queue, in the order of queues the worker sent (`queues`, for example `["build","filter"]`); the first queue with a matching job wins. A worker that sends no `queues` takes any queue, most urgent first. Several workers or several backends sharing the DB never take the same job. The worker operations (`progress`, `complete`, `fail`, artifact) lock the job row and accept only the worker that holds the job. `ReapStale` (every 10 seconds) returns Running jobs with no heartbeat for 90 seconds to the queue, or marks them `failed` when `MaxAttempts` (3) is used up.

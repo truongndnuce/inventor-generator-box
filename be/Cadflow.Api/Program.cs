@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Cadflow.Api;
 using Cadflow.Api.Chat;
 using Cadflow.Api.Mcp;
+using Cadflow.Api.Vault;
 using System.Threading.RateLimiting;
 using InventorAddin.Gea;
 using InventorAddin.Models;
@@ -49,6 +50,8 @@ builder.Services.AddRateLimiter(o =>
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1) }));
 });
 builder.Services.AddSingleton(new R2Store(builder.Configuration.GetSection("R2").Get<R2Options>() ?? new R2Options()));
+builder.Services.AddSingleton(new Cadflow.Api.Vault.VaultStore(dbConn));
+builder.Services.AddSingleton(sp => new Cadflow.Api.Vault.VaultFiles(dataDir, sp.GetRequiredService<R2Store>(), sp.GetRequiredService<JobStore>()));
 builder.Services.AddHostedService<StaleJobReaper>();
 builder.Services.AddHostedService<RetentionService>();
 builder.Services.Configure<JsonOptions>(o => o.SerializerOptions.PropertyNameCaseInsensitive = true);
@@ -82,6 +85,15 @@ if (Directory.Exists(frontendDir))
 else
 {
     app.Logger.LogWarning("Frontend build not found: {Dir}. Run 'npm install' and 'npm run build' in fe/ (or use 'npm run dev'). Only the API is served.", frontendDir);
+}
+
+// The PLM vault front-end (fe-plm/, built with base /plm/) is served next to the main one.
+var plmDir = Path.GetFullPath(app.Configuration["FrontendPlm:Path"] ?? Path.Combine(app.Environment.ContentRootPath, "..", "..", "fe-plm", "dist"));
+if (Directory.Exists(plmDir))
+{
+    var plmFiles = new PhysicalFileProvider(plmDir);
+    app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = plmFiles, RequestPath = "/plm" });
+    app.UseStaticFiles(new StaticFileOptions { FileProvider = plmFiles, RequestPath = "/plm" });
 }
 
 var store = app.Services.GetRequiredService<JobStore>();
@@ -396,6 +408,7 @@ worker.MapPost("/jobs/{id}/fail", (string id, string worker, FailRequest req) =>
         ? Results.NoContent()
         : Results.Conflict(new { error = "The job is not running on this worker." }));
 
+app.MapVault();
 app.MapMcp("/mcp");
 app.MapChat(app.Configuration["Anthropic:ApiKey"] ?? Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY"),
     app.Configuration["Anthropic:Model"] ?? "claude-sonnet-5-5", app.Configuration["Anthropic:BaseUrl"], app.Configuration.GetValue("Chat:AutoCreate", true));
