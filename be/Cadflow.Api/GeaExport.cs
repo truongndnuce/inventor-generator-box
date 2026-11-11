@@ -90,7 +90,7 @@ public static class GeaExport
 
     /// <summary>
     /// Original script without the export block: LF line endings, exactly one newline at the end. The export block is always at the end of the file
-    /// (from the dashed line before <c>! CADFlow export:</c> to the end), and any stray <c>!@</c> lines are removed as well.
+    /// (from the dashed line before <c>! CADFlow export:</c> to the end), and any stray <c>!@</c> lines are removed as well (except the three lines of the Designer block, which start in column 0).
     /// </summary>
     public static string StripBlock(string text)
     {
@@ -101,9 +101,13 @@ public static class GeaExport
             if (cut > 0 && lines[cut - 1].StartsWith("! ----", StringComparison.Ordinal)) cut--;
             lines.RemoveRange(cut, lines.Count - cut);
         }
-        lines.RemoveAll(l => l.TrimStart().StartsWith(Tag, StringComparison.Ordinal));
+        // The Designer keeps its model in lines of the same kind (!@DESIGNER, !@BODY_SHA256, !@MODEL, in column 0); they are part of the script, not stray lines.
+        lines.RemoveAll(l => l.TrimStart().StartsWith(Tag, StringComparison.Ordinal) && !IsDesignerLine(l));
         return string.Join("\n", lines).TrimEnd() + "\n";
     }
+
+    private static bool IsDesignerLine(string line) =>
+        line.StartsWith("!@DESIGNER", StringComparison.Ordinal) || line.StartsWith("!@BODY_SHA256", StringComparison.Ordinal) || line.StartsWith("!@MODEL", StringComparison.Ordinal);
 
     /// <summary>Reads the <c>!@</c> block from a .gea file; returns null if the file has no block (a plain .gea file that never went through CADFlow).</summary>
     public static Block? ParseBlock(string text)
