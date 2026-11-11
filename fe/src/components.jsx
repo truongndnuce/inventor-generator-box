@@ -1,5 +1,5 @@
 ﻿import { useRef, useState } from 'react';
-import { Badge, Button, Callout, Flex, Slider, Text, TextField } from '@radix-ui/themes';
+import { Badge, Button, Callout, Checkbox, Flex, Select, Slider, Text, TextField } from '@radix-ui/themes';
 import { API, STATUS_COLOR, api, fmtDuration, importScriptText, postJson, reorder, usePolling } from './lib.js';
 
 /** Page title strip: a black background with the product image (public/hero.jpg) fading toward the left. */
@@ -182,4 +182,31 @@ export function QueueSummary() {
       ))}
     </Flex>
   );
+}
+
+/** One field of the form generated from the FORM block of the script: radio -> Select, text, checkbox, or number. */
+export function ScriptField({ f, value, text, invalid, setValue, setText }) {
+  const label = <Text as="label" htmlFor={f.name} size="2" weight="medium" title={f.tooltip || ''}>{f.label}</Text>;
+  const color = invalid ? 'red' : undefined;
+  let control;
+  let hint = null;
+  if (f.kind === 'radio') {
+    control = (
+      <Select.Root value={text} onValueChange={setText}>
+        <Select.Trigger id={f.name} color={color} />
+        <Select.Content>{f.options.map((o) => <Select.Item key={o} value={o}>{o}</Select.Item>)}</Select.Content>
+      </Select.Root>
+    );
+  } else if (f.kind === 'text') {
+    control = <TextField.Root id={f.name} value={text} color={color} onChange={(e) => setText(e.target.value)} />;
+  } else if (f.kind === 'checkbox') {
+    control = <Checkbox id={f.name} checked={value === 1} color={color} onCheckedChange={(c) => setValue(c ? 1 : 0)} />;
+  } else {
+    control = (
+      <TextField.Root id={f.name} type="number" min={f.min} max={f.max} step={f.integer ? 1 : (f.step || 'any')}
+        value={value} color={color} onChange={(e) => e.target.value !== '' && setValue(Number(e.target.value))} />
+    );
+    hint = <span className="range">{f.min != null && f.max != null ? `${f.min}-${f.max} ${f.unit}`.trim() : f.unit}</span>;
+  }
+  return <div className="field script-field">{label}{control}{hint}</div>;
 }

@@ -212,3 +212,6 @@ button.cfg-label.gh:hover { color: var(--accent-11); }
 .comp-more summary { cursor: pointer; }
 .comp-pre { margin: 8px 0 0; padding: 10px 12px; white-space: pre-wrap; font: inherit; font-size: var(--font-size-2); color: var(--gray-11); background: var(--gray-a2); border-radius: var(--radius-3); }
 .comp-code { padding: 4px 8px; border-radius: var(--radius-2); background: var(--gray-a3); font-size: var(--font-size-2); }
+
+/* Designer: generated .gea text and the dry-run trace */
+.gea-text { margin: 0 0 8px; padding: 10px 12px; max-height: 520px; overflow: auto; white-space: pre; font-family: var(--code-font-family, ui-monospace, monospace); font-size: 12.5px; line-height: 1.5; background: var(--gray-2); border: 1px solid var(--gray-5); border-radius: var(--radius-3); }

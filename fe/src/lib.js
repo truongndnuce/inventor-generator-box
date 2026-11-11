@@ -78,3 +78,17 @@ export function reorder(job) {
     go(`#/new/${job.productCode}`);
   }
 }
+
+/** Saves text as a file in the browser (a temporary link to a Blob). */
+export function downloadText(name, text, type = 'text/plain') {
+  const url = URL.createObjectURL(new Blob([text], { type: `${type};charset=utf-8` }));
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** A file name from a product name: letters, digits, dash and underscore only. */
+export const safeFileName = (s, fallback = 'design') => (String(s || '').trim().replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || fallback);
