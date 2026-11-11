@@ -4,7 +4,8 @@ using System.Text;
 namespace Cadflow.Api;
 
 /// <summary>The lines <c>FirstLine..LastLine</c> (1-based, inclusive) of the generated text that were produced by the model element <see cref="Path"/>.</summary>
-public sealed record LineEntry(int FirstLine, int LastLine, string Path);
+/// <param name="LineOffset">For a raw build step: how many blank lines at the start of the typed text the generator dropped, so line N of the generated entry is line N + offset of what the author typed.</param>
+public sealed record LineEntry(int FirstLine, int LastLine, string Path, int LineOffset = 0);
 
 /// <summary>A generated script and the table that maps its lines back to model elements.</summary>
 public sealed record DesignOutput(string Text, IReadOnlyList<LineEntry> LineMap)
@@ -135,7 +136,7 @@ public static class DesignGenerator
         w.L("BEGIN_BUILD");
         w.L();
         var raws = model.Steps.Select((s, i) => (Step: s, Index: i))
-            .Select(x => (x.Index, Lines: RawLines(x.Step.Text)))
+            .Select(x => { var (lines, dropped) = RawLines(x.Step.Text); return (x.Index, Lines: lines, Dropped: dropped); })
             .Where(x => x.Lines.Count > 0)
             .ToList();
         if (raws.Count == 0)
@@ -148,7 +149,7 @@ public static class DesignGenerator
                 if (i > 0) w.L();
                 int a = w.Next;
                 foreach (var line in raws[i].Lines) w.L(line);
-                w.Entry($"steps[{raws[i].Index}]", a, w.Next - 1);
+                w.Entry($"steps[{raws[i].Index}]", a, w.Next - 1, raws[i].Dropped);
             }
         }
         w.L();
@@ -205,13 +206,17 @@ public static class DesignGenerator
     /// <summary>Shortest text that reads back as the same number, with a decimal point whatever the culture.</summary>
     private static string Num(double v) => v.ToString("R", CultureInfo.InvariantCulture);
 
-    /// <summary>The lines of a raw build text: LF endings, blank lines at both ends removed, trailing spaces removed, every non-empty line indented two spaces.</summary>
-    private static List<string> RawLines(string? text)
+    /// <summary>
+    /// The lines of a raw build text: LF endings, blank lines at both ends removed, trailing spaces removed, every non-empty line indented two spaces.
+    /// <c>Dropped</c> is the number of blank lines removed at the start, needed to give a compiler message the line the author typed.
+    /// </summary>
+    private static (List<string> Lines, int Dropped) RawLines(string? text)
     {
         var lines = (text ?? "").Replace("\r\n", "\n").Replace('\r', '\n').Split('\n').Select(l => l.TrimEnd()).ToList();
-        while (lines.Count > 0 && lines[0].Length == 0) lines.RemoveAt(0);
+        int dropped = 0;
+        while (lines.Count > 0 && lines[0].Length == 0) { lines.RemoveAt(0); dropped++; }
         while (lines.Count > 0 && lines[^1].Length == 0) lines.RemoveAt(lines.Count - 1);
-        return lines.Select(l => l.Length == 0 ? l : "  " + l).ToList();
+        return (lines.Select(l => l.Length == 0 ? l : "  " + l).ToList(), dropped);
     }
 
     /// <summary>Collects the lines and the line map while the file is written.</summary>
@@ -231,7 +236,7 @@ public static class DesignGenerator
             _lines++;
         }
 
-        public void Entry(string path, int first, int last) => Map.Add(new LineEntry(first, last, path));
+        public void Entry(string path, int first, int last, int lineOffset = 0) => Map.Add(new LineEntry(first, last, path, lineOffset));
 
         public string Text() => _sb.ToString();
     }
