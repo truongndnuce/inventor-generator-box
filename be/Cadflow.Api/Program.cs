@@ -163,6 +163,22 @@ app.MapPost("/api/gea/{id}/form", (string id, GeaFormRequest req, JobService job
     return Results.Json(r.Body, statusCode: r.Status);
 });
 
+// ================================================================= script designer
+// The Designer page builds a design model (JSON) and gets the .gea text back. The logic is in DesignerApi; problems with the model come back as data (200), not as 400.
+
+app.MapGet("/api/gea/builders", () => Results.Json(DesignerApi.Builders().Body));
+
+static async Task<IResult> DesignerCall(HttpRequest http, Func<string, DesignerApi.Reply> action)
+{
+    var (body, err) = await DesignerApi.ReadBody(http.Body, http.ContentLength);
+    var r = err ?? action(body!);
+    return Results.Json(r.Body, statusCode: r.Status);
+}
+
+app.MapPost("/api/gea/designer/generate", (HttpRequest http) => DesignerCall(http, DesignerApi.Generate));
+app.MapPost("/api/gea/designer/parse", (HttpRequest http) => DesignerCall(http, DesignerApi.Parse));
+app.MapPost("/api/gea/designer/dryrun", (HttpRequest http) => DesignerCall(http, DesignerApi.DryRun));
+
 // ================================================================= orders / jobs
 
 /// <summary>"generate,export" -> a set of lowercase names; null when the parameter is missing (no filter).</summary>
