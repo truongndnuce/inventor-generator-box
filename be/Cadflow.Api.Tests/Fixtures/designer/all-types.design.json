@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "product": { "name": "Axial fan", "prefix": "FN_", "target": "PART" },
+  "groups": [
+    { "title": "Casing", "params": [
+      { "name": "FN_Diameter", "type": "LENGTH", "default": "1200", "unit": "mm", "min": 400, "max": 3000, "step": 50, "required": true, "label": "Casing diameter", "tooltip": "Inner diameter of the casing" },
+      { "name": "FN_Length",   "type": "LENGTH", "default": "0.4",  "unit": "m",  "min": 0.1, "max": 2, "label": "Casing length" },
+      { "name": "FN_Pitch",    "type": "ANGLE",  "default": "30",   "unit": "deg", "min": 0, "max": 90, "label": "Blade pitch" }
+    ] },
+    { "title": "Rotor and options", "params": [
+      { "name": "FN_Blades", "type": "INTEGER", "default": "6", "min": 2, "max": 24, "required": true, "label": "Blade count" },
+      { "name": "FN_Ratio",  "type": "DOUBLE",  "default": "0.5", "min": 0.1, "max": 0.9, "label": "Hub ratio" },
+      { "name": "FN_Tag",    "type": "STRING",  "default": "Fan \"A\"", "label": "Tag", "tooltip": "Shown on the drawing" },
+      { "name": "FN_Guard",  "type": "CHECKBOX", "default": "TRUE", "label": "With guard" },
+      { "name": "FN_GuardGap", "type": "LENGTH", "default": "20", "min": 5, "max": 60, "label": "Guard gap", "visibleWhen": "FN_Guard" },
+      { "name": "FN_Mount",  "type": "RADIO", "default": "Wall", "options": [ "Floor", "Wall", "Ceiling" ], "label": "Mounting" },
+      { "name": "FN_Drive",  "type": "RADIO", "options": [ "Direct", "Belt" ], "label": "Drive" }
+    ] }
+  ],
+  "vars": [
+    { "name": "radius", "type": "LENGTH", "expr": "FN_Diameter / 2" }
+  ],
+  "rules": [
+    { "expr": "FN_Length > radius / 4", "message": "Casing length must exceed a quarter of the radius." },
+    { "expr": "FN_Blades * 10 <= 200", "message": "That many blades is unusual.", "warn": true }
+  ],
+  "steps": [
+    { "kind": "raw", "text": "REGEN_MDL" }
+  ]
+}

@@ -63,7 +63,8 @@ public sealed class DesignRule
     public bool Warn { get; set; }
 }
 
-/// <summary>A variable computed from the parameters (DECLARE_VARIABLE + assignment), usable in rules and in the build text.</summary>
+/// <summary>A variable computed from the parameters (DECLARE_VARIABLE + assignment inside FORM), usable in the rules and in other variables.
+/// A variable is only valid in the block that declares it (language spec section 3), so the build text cannot read it; it declares its own variables.</summary>
 public sealed class DesignVar
 {
     public string Name { get; set; } = "";

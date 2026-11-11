@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <None Update="Fixtures\*.gea" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Fixtures\designer\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
