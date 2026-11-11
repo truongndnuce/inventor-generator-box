@@ -21,7 +21,7 @@ export const MAIN_APP = import.meta.env.VITE_MAIN_APP_URL || '/';
 
 export const STATE_COLOR = { 'In Work': 'gray', 'Under Review': 'amber', Approved: 'green', Released: 'blue' };
 
-/** Hash router: #/files, #/files/<folderId>, #/item/<id>, #/search/<text>. */
+/** Hash router: #/files, #/files/<folderId>, #/item/<id>. */
 export function useHash() {
   const [hash, setHash] = useState(location.hash || '#/files');
   useEffect(() => {

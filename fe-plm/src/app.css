@@ -18,9 +18,7 @@ body { margin: 0; }
 .main { overflow: auto; min-width: 0; padding: 20px 28px 32px; }
 .page-title { font-size: 28px; font-weight: 400; margin: 0 0 16px; }
 .toolbar { display: flex; align-items: center; gap: 10px; margin: 14px 0; flex-wrap: wrap; }
-.files { display: grid; grid-template-columns: 250px 1fr; gap: 20px; align-items: start; }
-@media (max-width: 900px) { .files { grid-template-columns: 1fr; } }
-.tree { border: 1px solid var(--plm-line); border-radius: 4px; padding: 6px 0; background: var(--color-panel-solid); max-height: calc(100vh - 230px); overflow: auto; }
+.tree { padding: 2px 0 6px; max-height: 50vh; overflow: auto; }
 .tree-row { display: flex; align-items: center; gap: 4px; padding: 5px 8px; cursor: pointer; white-space: nowrap; font-size: 13px; }
 .tree-row:hover { background: var(--gray-3); }
 .tree-row.sel { background: var(--accent-3); color: var(--accent-11); font-weight: 500; }

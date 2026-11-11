@@ -1,49 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertDialog, Button, Callout, Dialog, Flex, Text, TextField } from '@radix-ui/themes';
-import { ChevronDownIcon, ChevronRightIcon, FileIcon, MagnifyingGlassIcon, PlusIcon, UploadIcon } from '@radix-ui/react-icons';
+import { AlertDialog, Button, Callout, ContextMenu, Dialog, Flex, Select, Text, TextField } from '@radix-ui/themes';
+import { FileIcon, MagnifyingGlassIcon } from '@radix-ui/react-icons';
 import { api, go, send, uploadFile, fmtDate } from '../lib.js';
-import { Crumbs, ModifiedCells, Pager, RowMenu, StateBadge, Thumb, VersionBadge, usePaging } from '../components.jsx';
+import { FolderGlyph, Crumbs, ModifiedCells, Pager, RowMenu, StateBadge, Thumb, VersionBadge, usePaging } from '../components.jsx';
 
-const FolderGlyph = () => <span style={{ color: 'var(--amber-9)' }}>📁</span>;
+const ALL = '__all';
+const STATES = ['In Work', 'Under Review', 'Approved', 'Released'];
 
-function Tree({ folders, current, onSelect }) {
-  const byParent = useMemo(() => {
-    const m = new Map();
-    for (const f of folders) { const k = f.parentId || ''; (m.get(k) || m.set(k, []).get(k)).push(f); }
-    return m;
-  }, [folders]);
-  const ancestors = useMemo(() => {
-    const set = new Set(); let f = folders.find((x) => x.id === current);
-    while (f?.parentId) { set.add(f.parentId); f = folders.find((x) => x.id === f.parentId); }
-    return set;
-  }, [folders, current]);
-  const [open, setOpen] = useState({});
-  const isOpen = (id) => open[id] ?? ancestors.has(id);
-
-  const Row = ({ f, depth }) => {
-    const kids = byParent.get(f.id) || [];
-    return (
-      <>
-        <div className={`tree-row ${current === f.id ? 'sel' : ''}`} style={{ paddingLeft: 8 + depth * 16 }} onClick={() => onSelect(f.id)}>
-          <span className="tree-caret" onClick={(e) => { e.stopPropagation(); setOpen({ ...open, [f.id]: !isOpen(f.id) }); }}>
-            {kids.length ? (isOpen(f.id) ? <ChevronDownIcon /> : <ChevronRightIcon />) : null}
-          </span>
-          <FolderGlyph /> <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.name}</span>
-        </div>
-        {isOpen(f.id) && kids.map((k) => <Row key={k.id} f={k} depth={depth + 1} />)}
-      </>
-    );
-  };
-  return (
-    <div className="tree">
-      <div className={`tree-row ${!current ? 'sel' : ''}`} onClick={() => onSelect(null)}><span className="tree-caret" /><FolderGlyph /> All files</div>
-      {(byParent.get('') || []).map((f) => <Row key={f.id} f={f} depth={0} />)}
-    </div>
-  );
-}
-
-export default function Files({ folderId, user }) {
-  const [tree, setTree] = useState([]);
+export default function Files({ folderId, user, reloadTree }) {
   const [view, setView] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
@@ -51,20 +15,39 @@ export default function Files({ folderId, user }) {
   const [newName, setNewName] = useState(null);
   const [toDelete, setToDelete] = useState(null);
   const input = useRef(null);
+  const [q, setQ] = useState('');
+  const [kind, setKind] = useState(ALL);
+  const [state, setState] = useState(ALL);
+  const [found, setFound] = useState([]);
+  const searching = !!q.trim() || kind !== ALL || state !== ALL;
 
   const load = useCallback(async () => {
     try {
-      const [t, v] = await Promise.all([api('/api/vault/tree'), api(folderId ? `/api/vault/folders/${folderId}` : '/api/vault/folders')]);
-      setTree(t.folders); setView(v); setError('');
+      const v = await api(folderId ? `/api/vault/folders/${folderId}` : '/api/vault/folders');
+      setView(v); setError(''); reloadTree?.();
     } catch (e) { setError(e.message); }
   }, [folderId]);
   useEffect(() => { load(); }, [load]);
 
+  // Search (all folders) replaces the folder listing while a text or a filter is set.
+  useEffect(() => {
+    if (!searching) return;
+    const t = setTimeout(() => {
+      const p = new URLSearchParams();
+      if (q.trim()) p.set('q', q.trim());
+      if (kind !== ALL) p.set('kind', kind);
+      if (state !== ALL) p.set('state', state);
+      api('/api/vault/search?' + p).then((r) => { setFound(r); setError(''); }).catch((e) => setError(e.message));
+    }, 200);
+    return () => clearTimeout(t);
+  }, [q, kind, state, searching]);
+
   const rows = useMemo(() => {
+    if (searching) return found.map((i) => ({ type: 'item', i }));
     if (!view) return [];
     const folders = [...view.folders].sort((a, b) => a.name.localeCompare(b.name)).map((f) => ({ type: 'folder', f }));
     return [...folders, ...view.items.map((i) => ({ type: 'item', i }))];
-  }, [view]);
+  }, [view, searching, found]);
   const { rows: pageRows, pager } = usePaging(rows);
 
   async function upload(files) {
@@ -95,23 +78,35 @@ export default function Files({ folderId, user }) {
     <>
       <h1 className="page-title">{folder ? folder.name : 'Files'}</h1>
       <div className="toolbar">
-        <Button onClick={() => input.current.click()} disabled={!folderId || !!busy}><UploadIcon /> Upload</Button>
         <input ref={input} type="file" multiple hidden onChange={(e) => { upload([...e.target.files]); e.target.value = ''; }} />
-        <Button variant="soft" onClick={() => setNewName('')}><PlusIcon /> New folder</Button>
+        <TextField.Root style={{ width: 320 }} placeholder="Number or name" value={q} onChange={(e) => setQ(e.target.value)}>
+          <TextField.Slot><MagnifyingGlassIcon /></TextField.Slot>
+        </TextField.Root>
+        <Select.Root value={kind} onValueChange={setKind}>
+          <Select.Trigger /><Select.Content>
+            <Select.Item value={ALL}>All types</Select.Item>
+            {['image', 'drawing', 'model', 'other'].map((k) => <Select.Item key={k} value={k}>{k}</Select.Item>)}
+          </Select.Content>
+        </Select.Root>
+        <Select.Root value={state} onValueChange={setState}>
+          <Select.Trigger /><Select.Content>
+            <Select.Item value={ALL}>All states</Select.Item>
+            {STATES.map((s) => <Select.Item key={s} value={s}>{s}</Select.Item>)}
+          </Select.Content>
+        </Select.Root>
         {busy && <Text size="2" color="gray">{busy}</Text>}
-        <div className="spacer" />
-        <Button variant="outline" color="gray" onClick={() => go('#/search/')}><MagnifyingGlassIcon /> Search and filter</Button>
       </div>
       {error && <Callout.Root color="red" size="1" mb="3"><Callout.Text style={{ whiteSpace: 'pre-line' }}>{error}</Callout.Text></Callout.Root>}
 
-      <div className="files">
-        <Tree folders={tree} current={folderId} onSelect={(id) => go(id ? `#/files/${id}` : '#/files')} />
+      <ContextMenu.Root>
+        <ContextMenu.Trigger>
         <div
+          style={{ minHeight: 'calc(100vh - 230px)' }}
           onDragOver={(e) => { if (folderId) { e.preventDefault(); setDrag(true); } }}
           onDragLeave={() => setDrag(false)}
           onDrop={(e) => { e.preventDefault(); setDrag(false); if (folderId) upload([...e.dataTransfer.files]); }}
         >
-          <Crumbs items={view?.breadcrumb || []} />
+          {searching ? <Text size="2" color="gray">Search results from all folders</Text> : <Crumbs items={view?.breadcrumb || []} />}
           {drag && <div className="dropzone">Drop files to upload to {folder?.name}</div>}
           <table className="grid" style={{ marginTop: 10 }}>
             <thead><tr><th /><th>Number</th><th>Name</th><th>Version</th><th>State</th><th>Last modified</th><th>Modified by</th><th /></tr></thead>
@@ -133,14 +128,19 @@ export default function Files({ folderId, user }) {
               ))}
               {view && rows.length === 0 && (
                 <tr><td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--gray-10)' }}>
-                  <FileIcon width={28} height={28} /><br />{folderId ? 'This folder is empty. Upload files, or drop them here.' : 'No folders yet. Create one, or use “Save to PLM” on a finished job.'}
+                  <FileIcon width={28} height={28} /><br />{searching ? 'Nothing matches.' : folderId ? 'This folder is empty. Right-click to upload files, or drop them here.' : 'No folders yet. Create one, or use “Save to PLM” on a finished job.'}
                 </td></tr>
               )}
             </tbody>
           </table>
           <Pager {...pager} />
         </div>
-      </div>
+        </ContextMenu.Trigger>
+        <ContextMenu.Content>
+          <ContextMenu.Item disabled={!folderId || !!busy} onSelect={() => input.current.click()}>Upload files…</ContextMenu.Item>
+          <ContextMenu.Item onSelect={() => setNewName('')}>New folder…</ContextMenu.Item>
+        </ContextMenu.Content>
+      </ContextMenu.Root>
 
       <Dialog.Root open={newName !== null} onOpenChange={(o) => !o && setNewName(null)}>
         <Dialog.Content maxWidth="380px">

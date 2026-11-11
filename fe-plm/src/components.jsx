@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Badge, DropdownMenu, IconButton } from '@radix-ui/themes';
-import { CubeIcon, DotsVerticalIcon, FileIcon, FileTextIcon, ImageIcon, ChevronLeftIcon, ChevronRightIcon, DoubleArrowLeftIcon, DoubleArrowRightIcon } from '@radix-ui/react-icons';
+import { CubeIcon, DotsVerticalIcon, FileIcon, FileTextIcon, ImageIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, DoubleArrowLeftIcon, DoubleArrowRightIcon } from '@radix-ui/react-icons';
 import { STATE_COLOR, fileUrl, fmtDate, go } from './lib.js';
 
 const KIND_ICON = { image: ImageIcon, drawing: FileTextIcon, model: CubeIcon, other: FileIcon };
@@ -70,3 +70,42 @@ export function usePaging(list, size = 25) {
 }
 
 export const ModifiedCells = ({ item }) => (<><td>{fmtDate(item.modifiedAt)}</td><td>{item.modifiedBy}</td></>);
+
+export const FolderGlyph = () => <span style={{ color: 'var(--amber-9)' }}>📁</span>;
+
+export function Tree({ folders, current, onSelect }) {
+  const byParent = useMemo(() => {
+    const m = new Map();
+    for (const f of folders) { const k = f.parentId || ''; (m.get(k) || m.set(k, []).get(k)).push(f); }
+    return m;
+  }, [folders]);
+  const ancestors = useMemo(() => {
+    const set = new Set(); let f = folders.find((x) => x.id === current);
+    while (f?.parentId) { set.add(f.parentId); f = folders.find((x) => x.id === f.parentId); }
+    return set;
+  }, [folders, current]);
+  const [open, setOpen] = useState({});
+  const isOpen = (id) => open[id] ?? ancestors.has(id);
+
+  const Row = ({ f, depth }) => {
+    const kids = byParent.get(f.id) || [];
+    return (
+      <>
+        <div className={`tree-row ${current === f.id ? 'sel' : ''}`} style={{ paddingLeft: 8 + depth * 16 }} onClick={() => onSelect(f.id)}>
+          <span className="tree-caret" onClick={(e) => { e.stopPropagation(); setOpen({ ...open, [f.id]: !isOpen(f.id) }); }}>
+            {kids.length ? (isOpen(f.id) ? <ChevronDownIcon /> : <ChevronRightIcon />) : null}
+          </span>
+          <FolderGlyph /> <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.name}</span>
+        </div>
+        {isOpen(f.id) && kids.map((k) => <Row key={k.id} f={k} depth={depth + 1} />)}
+      </>
+    );
+  };
+  return (
+    <div className="tree">
+      <div className={`tree-row ${!current ? 'sel' : ''}`} onClick={() => onSelect(null)}><span className="tree-caret" /><FolderGlyph /> All files</div>
+      {(byParent.get('') || []).map((f) => <Row key={f.id} f={f} depth={0} />)}
+    </div>
+  );
+}
+
