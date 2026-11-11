@@ -622,3 +622,32 @@ The **Components** tab (`#/components`) lists the libraries in `Scripts/lib` (de
 | Download library (.gea) | Downloads the library file itself, with every step explained |
 
 API (read-only): `GET /api/components`; `GET /api/components/{name}/gea`; `GET /api/components/{name}/starter?productName=&prefix=` (defaults `New product` and `MY_`; an invalid name or a wrong prefix returns 400, a missing library returns 404). Source code: `be/Cadflow.Api/Components.cs` (`ComponentCatalog`, `ComponentStarter`), `fe/src/pages/Components.jsx`.
+
+---
+
+## 21. The `!@DESIGNER` block (files made with the Designer)
+
+A `.gea` file written by the Product Designer (the **Designer** page of the web) ends with a **comment** block that holds the design the file was made from, so the Designer can open the file again and edit it. Like the value block of section 19, it is not language syntax: every line starts with `!`, so the lexer, parser, add-in and worker ignore it, and the file runs everywhere a `.gea` can be used.
+
+```
+! ---------------------------------------------------------------------------
+! CADFlow Designer: the model below lets the Designer open this file again.
+! Do not edit the lines starting with !@ by hand; edit the file in the Designer.
+!@DESIGNER 1
+!@BODY_SHA256 9f2c...
+!@MODEL eyJ2ZXJzaW9uIjoxLCJwcm9kdWN0Ijp7...
+```
+
+| Line | Meaning |
+|-----|----------|
+| `!@DESIGNER 1` | The marker and the version of the block. A file without it was not made with the Designer and opens as text only. Another version is refused with a reason |
+| `!@BODY_SHA256 <hex>` | The SHA-256 of the script **above the block**, normalized as in section 19 (LF line endings, trailing blank lines removed, exactly one newline at the end, UTF-8 without BOM). Used to find out whether the text was edited by hand after the Designer wrote it |
+| `!@MODEL <text>` | The design as JSON, UTF-8, encoded as **base64url without padding** (`-` and `_`, no `=`), on one line. At most 256 KB before encoding |
+
+Rules:
+- Only lines that start in **column 0** count. Text typed in the Build tab is always indented in the generated file, so it cannot pose as a block. If a file has several blocks, the last one is used.
+- A block with a missing or wrong hash, or with statements added after it, still gives its model, flagged as **edited by hand**: the Designer asks whether to open the model (the hand edits are dropped) or to open the file as text. A CADFlow export block (section 19) after the Designer block is allowed and does not count as an edit.
+- A damaged block (bad base64, not UTF-8, not a design, too large, no model line) never makes the Designer fail: the file opens as text with a reason.
+- The generated file, block included, must stay within the 256 KB limit of an imported script (section 19.1).
+- Exporting a job made from a Designer file keeps the block: `GeaExport.StripBlock` removes the `!@` lines of the CADFlow block but leaves the three Designer lines, so an exported file can be opened in the Designer again.
+- Reference source: `be/Cadflow.Api/Designer/DesignBlock.cs` (`Append`, `Strip`, `ReadBack`); the design model is in `DesignModel.cs`, the generator in `DesignGenerator.cs`.

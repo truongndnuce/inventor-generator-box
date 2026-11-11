@@ -66,6 +66,18 @@ Used in the Transformer / Gas Turbine / Generator add-ins (the window is the **S
 
 Builders available for `CREATE_FEATURE builder:<Name>`: `Tank`, `Cover`, `Block`, `Cylinder`, `Bushing`, `Radiator` (manifest in `Gea/GeaManifests.cs`). The web worker builds the transformer with `Scripts/transformer.gea` and the box with `Scripts/box.gea`, so the returned `.ipt` can also be opened and edited with the Script tab. On the web, every job built from a script has an **Export .gea** button (the script + the values set) and **Import .gea** on the New order page rebuilds the form from that file (see `docs/r2-dashboard-gea-roundtrip-plan.md` and `sa-docs/gea-language-spec.md` section 19).
 
+## Product Designer (make a `.gea` without writing it)
+
+The **Designer** page of the web (`#/designer`) lets someone who does not know the `.gea` syntax make the script of a new part: name and prefix, parameters in groups (type, unit, default, range, "show only when"), variables and rules (`ASSERT`, error or warning), and the build text. The page generates the `.gea` file, checks it with the real compiler while you type (each message appears next to the parameter, rule or build line that caused it), and **Try it** runs a dry run on the simulation host: the form for any values, the broken rules, and the list of builder calls. Download the file, or press **Order from this design** to import it. The design is stored at the end of the file as comments (`!@DESIGNER`, `sa-docs/gea-language-spec.md` section 21), so **Open .gea file…** loads it again; a file written by hand opens as text only. A draft is kept in the browser.
+
+API (`be/Cadflow.Api/Designer/`; problems with the design are data in a 200 answer, 400 is a body that is not valid JSON, 413 a body over 512 KB):
+- `GET /api/gea/builders` lists the builders with their inputs and outputs.
+- `POST /api/gea/designer/generate` body `{ model }` returns `{ gea, issues, diagnostics, lineMap }`; `gea` is null while there are errors.
+- `POST /api/gea/designer/parse` body `{ text }` returns `{ hasModel, model, bodyChanged, reason }`.
+- `POST /api/gea/designer/dryrun` body `{ model, values, texts }` returns `{ valid, stage, form, errors, warnings, trace, log }`; it stops after 5 seconds.
+
+This first version makes one `PART` and the build is written as text; a visual parts tab, a build preview and publishing a design as a named product come later (`docs/superpowers/specs/2026-11-11-gea-designer-design.md`, and `...gea-general-builders-design.md` for the general builders).
+
 ## Configuration
 
 - **Add-in**: `%AppData%\InventorBoxAddin\worker.json` (created the first time): `enabled`, `serverUrl`, `workerKey`, `workerName`, `pollSeconds`, `queues`. The worker name on the server is `<workerName>-<add-in>` (for example `PC01-generator`). Logs are in `%AppData%\InventorBoxAddin\logs`.
