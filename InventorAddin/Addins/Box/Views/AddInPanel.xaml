@@ -28,7 +28,7 @@
             <Setter Property="Margin" Value="0,0,6,0" />
         </Style>
 
-        <!-- Một dòng thông số: DataContext là ParamViewModel -->
+        <!-- One parameter row: the DataContext is ParamViewModel -->
         <DataTemplate x:Key="ParamRow">
             <Grid Margin="0,2">
                 <Grid.ColumnDefinitions>
@@ -48,7 +48,7 @@
         </DataTemplate>
     </UserControl.Resources>
 
-    <!-- Hộp viết cứng (BoxParams). Dựng theo script .gea nằm ở add-in Transformer / Gas turbine / Generator. -->
+    <!-- The hand-written box (BoxParams). Building from a .gea script lives in the Transformer / Gas turbine / Generator add-ins. -->
     <Grid Margin="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -74,7 +74,7 @@
             <Button Style="{StaticResource ActionButton}" Content="Delete" Command="{Binding DeletePresetCommand}" />
         </StackPanel>
 
-        <!-- Canvas xem trước -->
+        <!-- Preview canvas -->
         <Border Grid.Row="2" BorderBrush="#B6BCC6" BorderThickness="1" Margin="0,0,0,2" ClipToBounds="True">
             <TabControl Padding="0" BorderThickness="0">
                 <TabItem Header="Section">
@@ -88,7 +88,7 @@
             </TabControl>
         </Border>
 
-        <!-- Form thông số: dựng từ bảng ParameterDef -->
+        <!-- Parameter form: built from the ParameterDef table -->
         <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" Margin="0,6,0,6">
             <ItemsControl ItemsSource="{Binding Groups}">
                 <ItemsControl.ItemTemplate>
@@ -101,7 +101,7 @@
             </ItemsControl>
         </ScrollViewer>
 
-        <!-- Hành động + trạng thái -->
+        <!-- Action + status -->
         <StackPanel Grid.Row="4">
             <WrapPanel Margin="0,0,0,6">
                 <Button Style="{StaticResource ActionButton}" Content="Create" Command="{Binding CreateCommand}" FontWeight="SemiBold" />

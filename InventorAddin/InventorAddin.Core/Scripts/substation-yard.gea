@@ -1,0 +1,121 @@
+! ============================================================================
+! Yard of a substation (internal part of the substation assembly): a gravel pad, a concrete walkway along the yard and two parallel
+! portal gantries (two lattice towers and a crossbeam each). Not an orderable product: the substation assembly places it with
+! ADD_COMPONENT ... FROM "substation-yard".
+!
+! Coordinate system: X along the yard, D across the yard (centered at 0), ground at 0, gravel top at YD_GravelHeight.
+! The rules in FORM match SubstationYardParams.Validate; the constants 4500 / 2000 mm match the C# file.
+! ============================================================================
+GEA_VERSION 1
+PRODUCT_NAME "Substation yard"
+PARAM_PREFIX YD_
+TARGET PART
+
+BEGIN_FORM
+  BEGIN_GROUP "Yard"
+    USER_INPUT_PARAM YD_Length       LENGTH 44000 mm MIN 20000 MAX 120000 REQUIRED LABEL "Yard length (X)"
+    USER_INPUT_PARAM YD_Width        LENGTH 30000 mm MIN 15000 MAX 80000  REQUIRED LABEL "Yard width (Z)"
+    USER_INPUT_PARAM YD_GravelHeight LENGTH 150 mm   MIN 50    MAX 500    LABEL "Gravel thickness"
+  END_GROUP
+  BEGIN_GROUP "Gantry"
+    USER_INPUT_PARAM YD_GantryX     LENGTH 14000 mm MIN 0    MAX 55000 LABEL "Gantry position (X, from the yard center)"
+    USER_INPUT_PARAM YD_TowerHeight LENGTH 12000 mm MIN 6000 MAX 25000 LABEL "Tower height"
+    USER_INPUT_PARAM YD_TowerSize   LENGTH 500 mm   MIN 250  MAX 1000  LABEL "Tower leg size"
+  END_GROUP
+  ASSERT YD_GantryX + 4500 mm <= YD_Length / 2 - 1000 mm \
+    "Both gantries must stand inside the yard: gantry position + 4500 mm must be at most half the yard length - 1000 mm."
+END_FORM
+
+BEGIN_BUILD
+
+  DECLARE_VARIABLE LENGTH towerD
+  DECLARE_VARIABLE LENGTH gx
+  DECLARE_VARIABLE LENGTH top
+  DECLARE_VARIABLE INTEGER index
+  DECLARE_REFERENCE body
+
+  top = YD_GravelHeight + YD_TowerHeight
+  towerD = YD_Width / 2 - 2000 mm
+
+  PROCESSING_BOX_START "Building the yard"
+
+  ! --- Gravel pad and concrete walkway along the yard ---
+  PROCESSING_BOX_SET_STATE "Gravel pad" 15
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "SizeX"  YD_Length
+    FEATURE_IN "SizeD"  YD_Width
+    FEATURE_IN "Height" YD_GravelHeight
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "YD_Gravel"
+  SET_REF_ATTR body "ROLE" "GRAVEL"
+  SET_APPEARANCE body "Grey"
+
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "Elevation" YD_GravelHeight - 20 mm
+    FEATURE_IN "SizeX"     YD_Length - 4000 mm
+    FEATURE_IN "SizeD"     1500 mm
+    FEATURE_IN "Height"    80 mm
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "YD_Walkway"
+  SET_REF_ATTR body "ROLE" "WALKWAY"
+  SET_APPEARANCE body "LightGrey"
+
+  ! --- Two parallel portal gantries: per gantry two towers (two legs + five rungs each) and a crossbeam on top ---
+  PROCESSING_BOX_SET_STATE "Gantries" 60
+  index = 0
+  FOR g FROM 0 TO 1
+    gx = YD_GantryX + g * 4500 mm
+    FOR t FROM 0 TO 1
+      FOR l FROM 0 TO 1
+        CREATE_FEATURE builder:Block
+          FEATURE_IN "CenterX"   gx + (2 * l - 1) * 600 mm
+          FEATURE_IN "CenterD"   (2 * t - 1) * towerD
+          FEATURE_IN "Elevation" YD_GravelHeight - 20 mm
+          FEATURE_IN "SizeX"     YD_TowerSize
+          FEATURE_IN "SizeD"     YD_TowerSize
+          FEATURE_IN "Height"    YD_TowerHeight + 20 mm
+          FEATURE_OUT body "Body"
+        END_CREATE_FEATURE
+        index++
+        SET_REF_NAME body "YD_TowerLeg_" + STR(index)
+        SET_REF_ATTR body "ROLE" "TOWER_LEG"
+        SET_APPEARANCE body "Silver"
+      END_FOR
+      FOR k FROM 1 TO 5
+        CREATE_FEATURE builder:Block
+          FEATURE_IN "CenterX"   gx
+          FEATURE_IN "CenterD"   (2 * t - 1) * towerD
+          FEATURE_IN "Elevation" YD_GravelHeight + k * YD_TowerHeight / 6
+          FEATURE_IN "SizeX"     1200 mm + YD_TowerSize
+          FEATURE_IN "SizeD"     0.6 * YD_TowerSize
+          FEATURE_IN "Height"    0.6 * YD_TowerSize
+          FEATURE_OUT body "Body"
+        END_CREATE_FEATURE
+        index++
+        SET_REF_NAME body "YD_TowerRung_" + STR(index)
+        SET_REF_ATTR body "ROLE" "TOWER_RUNG"
+        SET_APPEARANCE body "Silver"
+      END_FOR
+    END_FOR
+
+    CREATE_FEATURE builder:Block
+      FEATURE_IN "CenterX"   gx
+      FEATURE_IN "Elevation" top - 300 mm
+      FEATURE_IN "SizeX"     1200 mm + YD_TowerSize
+      FEATURE_IN "SizeD"     2 * towerD + YD_TowerSize
+      FEATURE_IN "Height"    500 mm
+      FEATURE_OUT body "Body"
+    END_CREATE_FEATURE
+    SET_REF_NAME body "YD_Crossbeam_" + STR(g + 1)
+    SET_REF_ATTR body "ROLE" "CROSSBEAM"
+    SET_APPEARANCE body "Silver"
+  END_FOR
+
+  PROCESSING_BOX_SET_STATE "Updating the model" 96
+  REGEN_MDL
+  PRINT "Yard built."
+  PROCESSING_BOX_END
+
+END_BUILD

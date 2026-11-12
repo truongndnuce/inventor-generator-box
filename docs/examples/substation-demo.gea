@@ -1,0 +1,48 @@
+! ============================================================================
+! Substation bay demo (TARGET ASSEMBLY): one high-voltage bay laid out along X as in a switchyard single-line:
+!   disconnector (3 phases)  ->  circuit breaker (one pole per phase)  ->  power transformer
+! Every device is a Part built from its own bundled script (box / transformer / circuit-breaker / disconnector, with their default values)
+! and placed by position; there are no mates yet (see sa-docs/gea-language-spec.md, section 11.1).
+!
+! Axes of the assembly: X = direction of the bay, Y = height, Z = across the phases (phase A/B/C at Z = -spacing, 0, +spacing).
+! To use it: import this file on the web (Script order page) or paste it in the Script window of the add-in, then run.
+! The disconnector part builds its three phases 2500 mm apart (its default), so keep SS_PhaseSpacing equal to that value.
+! ============================================================================
+GEA_VERSION 1
+PRODUCT_NAME "Substation bay demo"
+PARAM_PREFIX SS_
+TARGET ASSEMBLY
+
+BEGIN_FORM
+  USER_INPUT_PARAM SS_PhaseSpacing LENGTH 2500 mm MIN 1500 mm MAX 5000 mm LABEL "Phase spacing (Z)"
+  USER_INPUT_PARAM SS_BreakerGap   LENGTH 7000 mm MIN 3000 mm MAX 20000 mm LABEL "Disconnector to circuit breaker (X)"
+  USER_INPUT_PARAM SS_XfmrGap      LENGTH 9000 mm MIN 4000 mm MAX 30000 mm LABEL "Circuit breaker to transformer (X)"
+END_FORM
+
+BEGIN_BUILD
+  DECLARE_REFERENCE c
+  DECLARE_VARIABLE LENGTH breakerX
+  DECLARE_VARIABLE LENGTH xfmrX
+
+  breakerX = -SS_BreakerGap
+  xfmrX = breakerX - SS_XfmrGap
+
+  PROCESSING_BOX_START "Placing the bay"
+
+  ! Disconnector: its three phases are already inside the part, centered on Z = 0
+  ADD_COMPONENT c FROM "disconnector" AT 0, 0, 0
+  SET_REF_NAME c "Disconnector_Q1"
+
+  ! One circuit breaker pole per phase
+  FOR p FROM 0 TO 2
+    ADD_COMPONENT c FROM "circuit-breaker" AT breakerX, 0, (p - 1) * SS_PhaseSpacing
+    SET_REF_NAME c "Breaker_Pole_" + STR(p + 1)
+  END_FOR
+
+  ! Power transformer at the end of the bay
+  ADD_COMPONENT c FROM "transformer" AT xfmrX, 0, 0
+  SET_REF_NAME c "Transformer_T1"
+
+  PRINT "Bay placed."
+  PROCESSING_BOX_END
+END_BUILD

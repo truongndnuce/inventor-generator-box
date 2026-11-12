@@ -20,8 +20,8 @@ public sealed class PresetItem
 }
 
 /// <summary>
-/// ViewModel của dockable window: giữ giá trị thông số, trạng thái hợp lệ và các lệnh. Không biết gì về WPF control hay Inventor
-/// (chỉ qua <see cref="IBoxGateway"/>). Canvas chỉ đọc <see cref="PlanScene"/>/<see cref="SectionScene"/>.
+/// ViewModel of the dockable window: holds the parameter values, the validity state and the commands. It knows nothing about WPF controls or Inventor
+/// (only through <see cref="IBoxGateway"/>). The canvas only reads <see cref="PlanScene"/>/<see cref="SectionScene"/>.
 /// </summary>
 public sealed class PanelViewModel : ObservableObject
 {
@@ -66,7 +66,7 @@ public sealed class PanelViewModel : ObservableObject
         Refresh();
     }
 
-    // ------------------------------------------------------------ Thuộc tính cho View
+    // ------------------------------------------------------------ properties for the View
 
     public IReadOnlyList<ParamGroupViewModel> Groups { get; }
     public ObservableCollection<PresetItem> Presets { get; }
@@ -78,7 +78,7 @@ public sealed class PanelViewModel : ObservableObject
     public Scene SectionScene { get => _sectionScene; private set => Set(ref _sectionScene, value); }
     public IReadOnlySet<string> ErrorParams { get => _errorParams; private set => Set(ref _errorParams, value); }
 
-    /// <summary>Thông số đang focus ở form, canvas tô nổi bật kích thước tương ứng.</summary>
+    /// <summary>The parameter that has focus in the form; the canvas highlights the matching dimension.</summary>
     public string? FocusedParam { get => _focusedParam; set => Set(ref _focusedParam, value); }
 
     public PresetItem? SelectedPreset
@@ -108,7 +108,7 @@ public sealed class PanelViewModel : ObservableObject
     public RelayCommand OverwritePresetCommand { get; }
     public RelayCommand DeletePresetCommand { get; }
 
-    // ------------------------------------------------------------ Giá trị
+    // ------------------------------------------------------------ values
 
     private Dictionary<string, double> Current() => _params.ToDictionary(p => p.Name, p => p.Value);
 
@@ -121,7 +121,7 @@ public sealed class PanelViewModel : ObservableObject
                 if (values.TryGetValue(p.Name, out var v)) p.Value = v;
         }
         finally { _suspend = false; }
-        // Ghi đè Text kể cả khi Value không đổi (ví dụ đang có chữ không hợp lệ)
+        // Overwrite Text even when Value did not change (for example when it holds invalid text)
         foreach (var p in _params) p.Text = p.Value.ToString("0.###", CultureInfo.InvariantCulture);
         Recompute();
     }
@@ -131,7 +131,7 @@ public sealed class PanelViewModel : ObservableObject
         if (!_suspend) Recompute();
     }
 
-    /// <summary>Kiểm tra ràng buộc; chỉ vẽ lại canvas khi hợp lệ (nếu lỗi, canvas giữ hình hợp lệ gần nhất).</summary>
+    /// <summary>Checks the constraints; redraws the canvas only when valid (on an error the canvas keeps the last valid drawing).</summary>
     private void Recompute()
     {
         var values = Current();
@@ -174,9 +174,9 @@ public sealed class PanelViewModel : ObservableObject
         DeletePresetCommand.RaiseCanExecuteChanged();
     }
 
-    // ------------------------------------------------------------ Lệnh với Inventor
+    // ------------------------------------------------------------ commands with Inventor
 
-    /// <summary>Đọc lại trạng thái document và (nếu có hộp) giá trị từ model. Gọi khi mở UI, đổi document hoặc bấm Làm mới.</summary>
+    /// <summary>Re-reads the document state and (if there is a box) the values from the model. Called when the UI opens, the document changes or Refresh is pressed.</summary>
     public void Refresh()
     {
         _docState = _gateway.GetState();

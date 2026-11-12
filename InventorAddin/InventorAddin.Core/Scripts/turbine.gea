@@ -1,15 +1,15 @@
 ! ============================================================================
-! Turbine khí công nghiệp (đơn giản hóa, theo ảnh tham chiếu): cửa hút, vỏ máy nén có vành gân,
-! buồng đốt với vòng ống đốt, tầng turbine, cửa xả, hộp bao (enclosure) trên cửa hút, đế skid.
+! Industrial gas turbine (simplified, from the reference picture): air inlet, compressor casing with rib rings,
+! combustor with a ring of combustion cans, the turbine stages, the exhaust, an enclosure box over the inlet, a skid base.
 !
-! Mỗi bộ phận là một solid body có tên trong cùng một Part. Hệ tọa độ của builder:
-!   X  = trục máy (tâm máy ở X = 0, cửa hút ở phía âm, cửa xả ở phía dương)
-!   D  = chiều ngang (trục máy ở D = 0)
-!   Elevation = cao độ (đáy skid ở 0, mặt trên skid ở GT_BaseHeight)
+! Each part is a named solid body in the same Part. Coordinate system of the builders:
+!   X  = machine axis (machine center at X = 0, inlet on the negative side, exhaust on the positive side)
+!   D  = lateral direction (machine axis at D = 0)
+!   Elevation = height (skid bottom at 0, skid top at GT_BaseHeight)
 !
-! Các vỏ là khối trụ đặc nằm ngang (builder:Cylinder, Axis "X"). Vòng ống đốt đặt quanh buồng đốt
-! bằng xấp xỉ sin/cos (công thức Bhaskara, sai số < 0.2 %) vì ngôn ngữ chưa có hàm lượng giác.
-! Luật ở FORM khớp với TurbineParams.Validate (server dùng bản C# đó).
+! The casings are solid horizontal cylinders (builder:Cylinder, Axis "X"). The ring of combustion cans is placed around the combustor
+! with a sin/cos approximation (Bhaskara formula, error < 0.2 %) because the language has no trigonometric functions yet.
+! The rules in FORM match TurbineParams.Validate (the server uses that C# copy).
 ! ============================================================================
 GEA_VERSION 1
 PRODUCT_NAME "Gas turbine (simplified)"
@@ -40,7 +40,7 @@ BEGIN_FORM
 
   BEGIN_GROUP "Compressor rings"
     USER_INPUT_PARAM GT_FlangeCount INTEGER 6 MIN 0 MAX 12 LABEL "Ring count"
-    ! Không có vành thì ẩn các ô kích thước vành (ô ẩn giữ giá trị mặc định)
+    ! With no rings, hide the ring size fields (hidden fields keep their default value)
     IF GT_FlangeCount > 0
       USER_INPUT_PARAM GT_FlangeThickness LENGTH 40 mm  MIN 15 MAX 120 LABEL "Ring thickness"
       USER_INPUT_PARAM GT_FlangeExtra     LENGTH 100 mm MIN 20 MAX 150 LABEL "Ring radial height"
@@ -59,7 +59,7 @@ BEGIN_FORM
     USER_INPUT_PARAM GT_BaseOverhang LENGTH 200 mm  MIN 0    MAX 600  LABEL "Skid overhang beyond the ends"
   END_GROUP
 
-  ! --- Luật kiểm tra ---
+  ! --- Validation rules ---
   DECLARE_VARIABLE LENGTH maxD
   DECLARE_VARIABLE LENGTH ringR
 
@@ -115,7 +115,7 @@ BEGIN_BUILD
 
   PROCESSING_BOX_START "Building the gas turbine"
 
-  ! --- Skid và các gối đỡ vỏ ---
+  ! --- Skid and the casing supports ---
   PROCESSING_BOX_SET_STATE "Skid and cradles" 10
   CREATE_FEATURE builder:Block
     FEATURE_IN "SizeX"  total + 2 * GT_BaseOverhang
@@ -160,7 +160,7 @@ BEGIN_BUILD
   SET_REF_NAME body "GT_Cradle_Exhaust"
   SET_APPEARANCE body "Grey"
 
-  ! --- Năm vỏ máy dọc trục X ---
+  ! --- The five casings along the X axis ---
   PROCESSING_BOX_SET_STATE "Casing sections" 30
   CREATE_FEATURE builder:Cylinder
     FEATURE_IN "Axis"      "X"
@@ -222,7 +222,7 @@ BEGIN_BUILD
   SET_REF_ATTR body "ROLE" "EXHAUST"
   SET_APPEARANCE body "Grey"
 
-  ! Vành đầu cửa hút (lớn hơn vỏ 300 mm đường kính) và trục ra ở cửa xả
+  ! Inlet end ring (300 mm larger in diameter than the casing) and the output shaft at the exhaust
   CREATE_FEATURE builder:Cylinder
     FEATURE_IN "Axis"      "X"
     FEATURE_IN "CenterX"   xI + 40 mm
@@ -245,7 +245,7 @@ BEGIN_BUILD
   SET_REF_NAME body "GT_Shaft"
   SET_APPEARANCE body "LightGrey"
 
-  ! --- Vành gân quanh vỏ máy nén, chia đều dọc chiều dài ---
+  ! --- Rib rings around the compressor casing, spaced evenly along the length ---
   PROCESSING_BOX_SET_STATE "Compressor rings" 50
   FOR i FROM 0 TO GT_FlangeCount - 1
     CREATE_FEATURE builder:Cylinder
@@ -261,7 +261,7 @@ BEGIN_BUILD
     SET_APPEARANCE body "LightGrey"
   END_FOR
 
-  ! --- Hộp bao trên cửa hút / máy nén ---
+  ! --- Enclosure box over the inlet / compressor ---
   PROCESSING_BOX_SET_STATE "Enclosure" 60
   CREATE_FEATURE builder:Block
     FEATURE_IN "CenterX"      xI + GT_EncStart + GT_EncLength / 2
@@ -276,7 +276,7 @@ BEGIN_BUILD
   SET_REF_ATTR body "ROLE" "ENCLOSURE"
   SET_APPEARANCE body "LightGrey"
 
-  ! --- Vòng ống đốt: hai vòng góp ở hai đầu buồng đốt, các ống nằm giữa hai vòng ---
+  ! --- Ring of combustion cans: two header rings at the two ends of the combustor, the cans sit between the two rings ---
   PROCESSING_BOX_SET_STATE "Combustor cans" 75
   ringR = GT_CombDiameter / 2 + GT_CanOffset + GT_CanDiameter / 2
   canL = GT_CombLength - 120 mm
@@ -294,8 +294,8 @@ BEGIN_BUILD
     SET_APPEARANCE body "LightGrey"
   END_FOR
 
-  ! Mỗi góc phần tư có CanCount/4 ống, đặt ở góc (j + 0.5) * 90 độ / q, rồi lấy đối xứng qua hai trục.
-  ! sin(a) ~ 16 y / (5 pi^2 - 4 y) với y = a (pi - a); cos(a) = sin(pi/2 - a).
+  ! Each quadrant has CanCount/4 cans, placed at the angle (j + 0.5) * 90 degrees / q, then mirrored about the two axes.
+  ! sin(a) ~ 16 y / (5 pi^2 - 4 y) with y = a (pi - a); cos(a) = sin(pi/2 - a).
   q = FLOOR(GT_CanCount / 4)
   index = 0
   FOR j FROM 0 TO q - 1

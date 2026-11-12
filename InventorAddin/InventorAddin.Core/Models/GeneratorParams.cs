@@ -5,11 +5,11 @@ using System.Linq;
 namespace InventorAddin.Models;
 
 /// <summary>
-/// Máy phát điện đồng bộ cỡ lớn làm mát bằng nước (water-cooled generator), mô hình hình khối đơn giản hóa:
-/// thân stator dạng hộp có gân đứng hai bên, hộp làm mát nước thò xuống dưới thân kèm ống nước vào/ra, hộp đầu cực và hai quạt trên đỉnh,
-/// hai nắp ổ trục có gối đỡ, trục rotor xuyên suốt, tủ kích từ ở đầu trục và bệ máy.
-/// Một nơi định nghĩa duy nhất: server (form, kiểm tra luật) và add-in (dựng bằng Scripts\generator.gea) đều đọc từ đây. Đơn vị: mm.
-/// Hệ tọa độ: trục máy là X (tủ kích từ ở -X, đầu trục ra ở +X), tâm thân ở X = 0, đáy bệ ở 0, mặt trên bệ ở BaseHeight.
+/// A large water-cooled synchronous generator, as a simplified block model:
+/// a box-shaped stator body with vertical ribs on both sides, a water cooler box hanging below the body with inlet/outlet pipes, a terminal box and two fans on top,
+/// two bearing end covers with pedestals, a rotor shaft running through, an excitation cabinet at the shaft end and a base frame.
+/// A single place of definition: the server (form, rule checks) and the add-in (built by Scripts\generator.gea) both read from here. Unit: mm.
+/// Coordinate system: the machine axis is X (excitation cabinet at -X, shaft end out at +X), body center at X = 0, base bottom at 0, base top at BaseHeight.
 /// </summary>
 public static class GeneratorParams
 {
@@ -47,17 +47,17 @@ public static class GeneratorParams
     public const string GroupCabinet = "Exciter cabinet";
     public const string GroupBase = "Base frame";
 
-    // Hằng số hình học dùng chung giữa luật kiểm tra và bộ dựng (script đặt cùng giá trị).
-    public const double AxisFraction = 0.55;     // trục máy ở 55 % chiều cao thân tính từ đáy thân
-    public const double CoolerOverlap = 300;     // hộp làm mát chui vào thân 300 mm để hai khối dính nhau
-    public const double PipeStub = 300;          // ống nước nhô ra khỏi mặt hộp làm mát 300 mm
-    public const double PipeBudget = 0.6;        // đường kính ống tối đa = 0.6 x chiều sâu hộp làm mát (mặt bích 1.5 x ống vẫn nằm trên bệ)
-    public const double EndFraction = 0.8;       // nắp ổ trục cao tối đa 80 % chiều cao thân
-    public const double CabGap = 100;         // khe giữa nắp đầu và tủ kích từ (trục nối qua khe này)
-    public const double SideMargin = 300;        // bệ rộng hơn phần rộng nhất của máy ít nhất 300 mm
-    public const double TopBoxHeight = 250;      // hộp đầu cực trên đỉnh thân (chui vào thân 30 mm)
-    public const double FanHeight = 100;         // nắp quạt trên hộp đầu cực
-    public const double CabTopHeight = 300;      // hộp điều khiển trên tủ kích từ
+    // Geometry constants shared between the validation rules and the builder (the script uses the same values).
+    public const double AxisFraction = 0.55;     // the machine axis is at 55 % of the body height, measured from the body bottom
+    public const double CoolerOverlap = 300;     // the cooler box sinks 300 mm into the body so the two blocks join
+    public const double PipeStub = 300;          // the water pipe sticks out 300 mm from the face of the cooler box
+    public const double PipeBudget = 0.6;        // maximum pipe diameter = 0.6 x the depth of the cooler box (a flange of 1.5 x the pipe still sits on the base)
+    public const double EndFraction = 0.8;       // the bearing cover is at most 80 % of the body height
+    public const double CabGap = 100;         // gap between the end cover and the excitation cabinet (the shaft passes through this gap)
+    public const double SideMargin = 300;        // the base is at least 300 mm wider than the widest part of the machine
+    public const double TopBoxHeight = 250;      // the terminal box on top of the body (sinks 30 mm into the body)
+    public const double FanHeight = 100;         // the fan cover on the terminal box
+    public const double CabTopHeight = 300;      // the control box on the excitation cabinet
 
     public static readonly IReadOnlyList<ParameterDef> All = new[]
     {
@@ -91,7 +91,7 @@ public static class GeneratorParams
 
     public static Dictionary<string, double> Defaults() => All.ToDictionary(d => d.Name, d => d.Default);
 
-    /// <summary>Lấy các giá trị có trong <paramref name="partial"/>, thiếu thì dùng mặc định; khóa lạ bị bỏ.</summary>
+    /// <summary>Takes the values present in <paramref name="partial"/>, uses the default for missing ones; unknown keys are dropped.</summary>
     public static Dictionary<string, double> Complete(IReadOnlyDictionary<string, double>? partial)
     {
         var result = Defaults();
@@ -102,18 +102,18 @@ public static class GeneratorParams
         return result;
     }
 
-    /// <summary>Cao độ đáy thân: hộp làm mát nằm giữa bệ và đáy thân.</summary>
+    /// <summary>Elevation of the body bottom: the cooler box sits between the base and the body bottom.</summary>
     public static double FrameBottom(IReadOnlyDictionary<string, double> v) => v[BaseHeight] + v[CoolerDepth];
 
-    /// <summary>Cao độ trục máy.</summary>
+    /// <summary>Elevation of the machine axis.</summary>
     public static double AxisHeight(IReadOnlyDictionary<string, double> v) => FrameBottom(v) + AxisFraction * v[FrameHeight];
 
-    /// <summary>Cao độ điểm cao nhất của máy: nắp quạt trên đỉnh thân, hoặc đỉnh hộp điều khiển trên tủ kích từ.</summary>
+    /// <summary>Elevation of the highest point of the machine: the fan cover on top of the body, or the top of the control box on the excitation cabinet.</summary>
     public static double TopHeight(IReadOnlyDictionary<string, double> v) =>
         Math.Max(FrameBottom(v) + v[FrameHeight] - 30 + TopBoxHeight - 30 + FanHeight,
             v[BaseHeight] + v[CabHeight] + CabTopHeight);
 
-    /// <summary>Kiểm tra khoảng giá trị, số nguyên và các ràng buộc hình học. Rỗng nghĩa là hợp lệ.</summary>
+    /// <summary>Checks value ranges, integers and the geometric constraints. Empty means valid.</summary>
     public static IReadOnlyList<ValidationIssue> Validate(IReadOnlyDictionary<string, double> values)
     {
         var issues = new List<ValidationIssue>();
@@ -136,7 +136,7 @@ public static class GeneratorParams
                 issues.Add(new ValidationIssue($"{d.Label} must be a whole number.", new[] { d.Name }));
             }
         }
-        if (!rangeOk) return issues; // các luật dưới đây chỉ có nghĩa khi từng giá trị đã nằm trong khoảng
+        if (!rangeOk) return issues; // the rules below only make sense once every value is within its range
 
         double frameL = V(FrameLength), frameW = V(FrameWidth), frameH = V(FrameHeight), endD = V(EndDiameter);
         double ribs = V(RibCount);
@@ -154,7 +154,7 @@ public static class GeneratorParams
         if (ribs > 0 && ribs * V(RibThickness) > frameL / 2 + eps)
             issues.Add(new ValidationIssue("The side ribs take more than half of the frame length (reduce count or thickness).", new[] { RibCount, RibThickness, FrameLength }));
 
-        double ribExtra = ribs > 0 ? V(RibExtra) : 0; // không có gân thì ô gân bị ẩn: luật về gân không áp dụng
+        double ribExtra = ribs > 0 ? V(RibExtra) : 0; // with no ribs the rib fields are hidden: the rib rules do not apply
         if (V(BaseWidth) < frameW + 2 * ribExtra + SideMargin - eps)
             issues.Add(new ValidationIssue($"Base width must be at least the frame width + ribs + {SideMargin:0} mm.", new[] { BaseWidth, FrameWidth, RibExtra, RibCount }));
         if (V(BaseWidth) < V(CoolerWidth) + 2 * PipeStub + 100 - eps)

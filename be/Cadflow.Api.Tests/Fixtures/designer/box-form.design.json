@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "product": { "name": "Box with lid", "prefix": "BX_", "target": "PART" },
+  "groups": [
+    { "title": "Box body", "params": [
+      { "name": "BX_Length",       "type": "LENGTH", "default": "100", "unit": "mm", "min": 40, "max": 500, "required": true, "label": "Length" },
+      { "name": "BX_Width",        "type": "LENGTH", "default": "60",  "unit": "mm", "min": 30, "max": 300, "required": true, "label": "Width" },
+      { "name": "BX_Height",       "type": "LENGTH", "default": "40",  "unit": "mm", "min": 20, "max": 200, "required": true, "label": "Body height" },
+      { "name": "BX_Wall",         "type": "LENGTH", "default": "2",   "unit": "mm", "min": 1,  "max": 10,  "required": true, "label": "Wall thickness" },
+      { "name": "BX_Bottom",       "type": "LENGTH", "default": "2",   "unit": "mm", "min": 1,  "max": 10,  "required": true, "label": "Bottom thickness" },
+      { "name": "BX_CornerRadius", "type": "LENGTH", "default": "3",   "unit": "mm", "min": 0,  "max": 20,  "label": "Corner radius" }
+    ] },
+    { "title": "Lid", "params": [
+      { "name": "BX_LidThickness", "type": "LENGTH", "default": "2",   "unit": "mm", "min": 1, "max": 10, "required": true, "label": "Lid thickness" },
+      { "name": "BX_LidLip",       "type": "LENGTH", "default": "4",   "unit": "mm", "min": 2, "max": 15, "required": true, "label": "Lid lip height" },
+      { "name": "BX_LidClearance", "type": "LENGTH", "default": "0.3", "unit": "mm", "min": 0, "max": 1,  "label": "Lid lip clearance" }
+    ] }
+  ],
+  "vars": [
+    { "name": "shortSide",   "type": "LENGTH", "expr": "MIN(BX_Length, BX_Width)" },
+    { "name": "innerHeight", "type": "LENGTH", "expr": "BX_Height - BX_Bottom" }
+  ],
+  "rules": [
+    { "expr": "BX_Wall < shortSide / 2", "message": "Wall thickness must be less than half of the shorter side of the box." },
+    { "expr": "BX_Wall < innerHeight", "message": "Wall thickness must be less than (height - bottom thickness)." },
+    { "expr": "BX_Bottom < BX_Height", "message": "Bottom thickness must be less than the body height." },
+    { "expr": "BX_CornerRadius <= shortSide / 2", "message": "Corner radius must not exceed half of the shorter side of the box." },
+    { "expr": "BX_CornerRadius > BX_Wall + BX_LidClearance", "message": "Corner radius must be greater than (wall thickness + lid clearance) so the inner corners and lid lip can be rounded." },
+    { "expr": "BX_LidLip < innerHeight", "message": "Lid lip must be shorter than (height - bottom thickness) so it does not touch the bottom." },
+    { "expr": "BX_LidClearance < BX_Wall", "message": "Lid clearance must be less than the wall thickness." }
+  ]
+}

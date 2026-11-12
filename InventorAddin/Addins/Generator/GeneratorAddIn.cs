@@ -6,8 +6,8 @@ using InventorAddin.Host;
 namespace InventorAddin.Addins.Generator;
 
 /// <summary>
-/// Add-in Generator: cửa sổ Script (.gea) chỉ có mẫu của sản phẩm này, và web worker dựng job "generator" do web đặt.
-/// Mọi thứ khác (ribbon dùng chung tab Cadflow, cửa sổ, worker) do <see cref="CadflowAddIn"/> lo.
+/// The Generator add-in: the Script (.gea) window has only the templates of this product, and the web worker builds the "generator" jobs placed on the web.
+/// Everything else (the ribbon sharing the Cadflow tab, the window, the worker) is handled by <see cref="CadflowAddIn"/>.
 /// </summary>
 [ComVisible(true)]
 [Guid(ClientId)]

@@ -1,0 +1,99 @@
+! ============================================================================
+! Reusable component: base, tank and cover (the "Tank, base and cover" group of the power transformer).
+!
+! The component builds three solid bodies stacked along the height: the base (a bottom plate that overhangs the tank), the tank (the main box)
+! and the cover (a top plate that overhangs the tank). The seven parameters below control the size of all three.
+!
+! Use it in another script with one INCLUDE line in TWO places (see sa-docs/gea-language-spec.md, section INCLUDE):
+!     BEGIN_FORM   ...  INCLUDE lib:tank-base-cover  ...  END_FORM    ! parameter group TR_Tank*, TR_Base*, TR_Cover*
+!     BEGIN_BUILD  ...  INCLUDE lib:tank-base-cover  ...  END_BUILD   ! builds the three solid bodies TR_Base, TR_Tank, TR_Cover
+!
+! Variables shared with the parent script (readable after INCLUDE): hTank (elevation of the tank bottom), hCover (elevation of the cover bottom),
+! hTop (elevation of the cover top). The parent script must not declare these variables again. The library declares its own reference variable
+! tbcBody so it does not clash with the name `body` of the parent script. Parameters keep the TR_ prefix (PARAM_PREFIX below).
+! Coordinate system as in transformer.gea: tank center at X = 0, D = 0, base sitting on elevation 0.
+! ============================================================================
+GEA_VERSION 1
+PRODUCT_NAME "Tank, base and cover"
+PARAM_PREFIX TR_
+TARGET PART
+
+BEGIN_FORM
+
+  ! Step 1: the input fields of the component, grouped into one group on the order form.
+  ! Each USER_INPUT_PARAM line declares one parameter: name (with the TR_ prefix), type and unit, default value,
+  ! MIN/MAX limits (the form reports an error outside the range), REQUIRED (must be filled in) and LABEL (the label shown on the form).
+  BEGIN_GROUP "Tank, base and cover"
+    ! Tank size: length (along X), width (along D) and height.
+    USER_INPUT_PARAM TR_TankLength     LENGTH 2000 mm MIN 1000 MAX 5000 REQUIRED LABEL "Tank length"
+    USER_INPUT_PARAM TR_TankWidth      LENGTH 1100 mm MIN 600  MAX 2500 REQUIRED LABEL "Tank width"
+    USER_INPUT_PARAM TR_TankHeight     LENGTH 1500 mm MIN 800  MAX 3500 REQUIRED LABEL "Tank height"
+    ! Base: plate thickness and how far the base overhangs each side of the tank wall.
+    USER_INPUT_PARAM TR_BaseThickness  LENGTH 80 mm   MIN 40   MAX 200  LABEL "Base plate thickness"
+    USER_INPUT_PARAM TR_BaseOverhang   LENGTH 120 mm  MIN 40   MAX 300  LABEL "Base plate overhang"
+    ! Cover: plate thickness and how far the cover overhangs each side of the tank wall.
+    USER_INPUT_PARAM TR_CoverThickness LENGTH 50 mm   MIN 20   MAX 150  LABEL "Cover thickness"
+    USER_INPUT_PARAM TR_CoverOverhang  LENGTH 40 mm   MIN 0    MAX 120  LABEL "Cover overhang"
+  END_GROUP
+
+END_FORM
+
+BEGIN_BUILD
+
+  ! Step 1: declare variables. The three elevation variables (measured from the underside of the base, elevation 0) are shared with the parent script
+  ! after INCLUDE, so the parent script must not declare them again. tbcBody is the component's own reference variable
+  ! that receives the solid body just built; it is named differently from `body` so it does not clash with the variable of the parent script.
+  DECLARE_VARIABLE LENGTH hTank
+  DECLARE_VARIABLE LENGTH hCover
+  DECLARE_VARIABLE LENGTH hTop
+  DECLARE_REFERENCE tbcBody
+
+  ! Step 2: compute the elevations of the dividing planes. The base is at the bottom, so the tank bottom sits on top of the base (hTank);
+  ! the cover bottom sits on top of the tank (hCover = base thickness + tank height); the top of the cover is hTop. The parent script can
+  ! use hTop to place more parts on top of the cover.
+  hTank = TR_BaseThickness
+  hCover = TR_BaseThickness + TR_TankHeight
+  hTop = hCover + TR_CoverThickness
+
+  ! Step 3: show a progress box in Inventor so the user can see which step is running (10 is the progress percentage).
+  PROCESSING_BOX_SET_STATE "Base, tank and cover" 10
+
+  ! Step 4: build the BASE with the Block builder (a box). Block is centered at X = 0, D = 0; the base sits at elevation 0 (no
+  ! Elevation needed). Each side is longer than the tank by 2 x the overhang, because it overhangs on both sides. FEATURE_OUT takes the solid body just created.
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "SizeX"  TR_TankLength + 2 * TR_BaseOverhang
+    FEATURE_IN "SizeD"  TR_TankWidth + 2 * TR_BaseOverhang
+    FEATURE_IN "Height" TR_BaseThickness
+    FEATURE_OUT tbcBody "Body"
+  END_CREATE_FEATURE
+  ! Name the body (other scripts look it up by this name), set the ROLE attribute to mark it as the base, and color it grey.
+  SET_REF_NAME tbcBody "TR_Base"
+  SET_REF_ATTR tbcBody "ROLE" "BASE"
+  SET_APPEARANCE tbcBody "Grey"
+
+  ! Step 5: build the TANK. Elevation = hTank lifts the tank so it stands on the base; the size is exactly the three tank parameters.
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "Elevation" hTank
+    FEATURE_IN "SizeX"     TR_TankLength
+    FEATURE_IN "SizeD"     TR_TankWidth
+    FEATURE_IN "Height"    TR_TankHeight
+    FEATURE_OUT tbcBody "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME tbcBody "TR_Tank"
+  SET_REF_ATTR tbcBody "ROLE" "TANK"
+  SET_APPEARANCE tbcBody "Grey"
+
+  ! Step 6: build the COVER. Elevation = hCover puts the cover on top of the tank; the cover is wider than the tank by 2 x the overhang on each side
+  ! (with TR_CoverOverhang = 0 the cover fits the tank exactly).
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "Elevation" hCover
+    FEATURE_IN "SizeX"     TR_TankLength + 2 * TR_CoverOverhang
+    FEATURE_IN "SizeD"     TR_TankWidth + 2 * TR_CoverOverhang
+    FEATURE_IN "Height"    TR_CoverThickness
+    FEATURE_OUT tbcBody "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME tbcBody "TR_Cover"
+  SET_REF_ATTR tbcBody "ROLE" "COVER"
+  SET_APPEARANCE tbcBody "Grey"
+
+END_BUILD

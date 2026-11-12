@@ -7,7 +7,7 @@ namespace InventorAddin.Gea;
 
 public enum GeaFieldKind { Number, Text, Checkbox, Radio }
 
-/// <summary>Một ô trên form, kết quả của lần tính FORM (mục 7.3).</summary>
+/// <summary>One field on the form, the result of one FORM evaluation (section 7.3).</summary>
 public sealed class GeaFormField
 {
     public string Name { get; init; } = "";
@@ -16,7 +16,7 @@ public sealed class GeaFormField
     public string Label { get; init; } = "";
     public string? Tooltip { get; init; }
     public string? Group { get; init; }
-    /// <summary>Đơn vị hiển thị và hệ số đổi từ đơn vị hiển thị sang đơn vị nội bộ (mm, độ).</summary>
+    /// <summary>Display unit and the factor that converts from the display unit to the internal unit (mm, degrees).</summary>
     public string Unit { get; init; } = "";
     public double UnitFactor { get; init; } = 1;
     public double? Min { get; init; }
@@ -31,7 +31,7 @@ public sealed class GeaFormField
     public GeaValue Value { get; internal set; } = GeaValue.Dbl(0);
     public List<string> Errors { get; } = new();
 
-    /// <summary>Giá trị theo đơn vị hiển thị (cho ô nhập số).</summary>
+    /// <summary>Value in the display unit (for numeric input fields).</summary>
     public double DisplayNumber(GeaValue v) => v.Num / UnitFactor;
 }
 
@@ -44,7 +44,7 @@ public sealed class GeaFormResult
     public List<GeaFormMessage> Warnings { get; } = new();
     public List<string> Notes { get; } = new();
 
-    /// <summary>Giá trị cuối của mọi thông số (ô ẩn lấy mặc định), theo thứ tự khai báo. Đây là đầu vào của BUILD.</summary>
+    /// <summary>Final value of every parameter (hidden fields take their default), in declaration order. This is the input of BUILD.</summary>
     public List<KeyValuePair<string, GeaValue>> Values { get; } = new();
 
     public bool Ok => Errors.Count == 0;
@@ -58,42 +58,63 @@ public sealed class GeaRunResult
     public HashSet<int> ExecutedLines { get; } = new();
 }
 
-/// <summary>File .gea đã biên dịch: cây cú pháp, danh sách thông số và chẩn đoán.</summary>
+/// <summary>A compiled .gea file: syntax tree, parameter list and diagnostics.</summary>
 public sealed class GeaScript
 {
-    private GeaScript(GeaProgram program, IReadOnlyList<GeaParamInfo> parameters, IReadOnlyList<GeaDiagnostic> diagnostics, string text)
+    private GeaScript(GeaProgram program, IReadOnlyList<GeaParamInfo> parameters, IReadOnlyList<GeaDiagnostic> diagnostics, string text, string expandedText)
     {
         Program = program;
         Parameters = parameters;
         Diagnostics = diagnostics;
         Text = text;
+        ExpandedText = expandedText;
     }
 
     public GeaProgram Program { get; }
     public IReadOnlyList<GeaParamInfo> Parameters { get; }
     public IReadOnlyList<GeaDiagnostic> Diagnostics { get; }
+    /// <summary>The original text the user supplied (it may still contain <c>INCLUDE</c> lines).</summary>
     public string Text { get; }
+    /// <summary>The text after <c>INCLUDE lib:</c> expansion; equal to <see cref="Text"/> when the script has no INCLUDE. This is the copy to store and to send to the worker.</summary>
+    public string ExpandedText { get; }
     public bool HasErrors => Diagnostics.Any(d => d.Severity == GeaSeverity.Error);
 
-    /// <summary>Lexer, parser và kiểm tra ngữ nghĩa. Lỗi GEA1xxx/GEA2xxx được liệt kê hết một lần.</summary>
-    public static GeaScript Compile(string text)
+    /// <summary>
+    /// Expands <c>INCLUDE lib:</c> (if any), then runs the lexer, the parser and the semantic check. All GEA1xxx/GEA2xxx errors are listed at once.
+    /// <paramref name="resolveLib"/> returns the library content by name (null if there is none). Diagnostics always use the line numbers of the original file;
+    /// an error inside a library gets the file name prefixed to the message.
+    /// </summary>
+    public static GeaScript Compile(string text, Func<string, string?>? resolveLib = null, string fileName = "script")
     {
+        text ??= "";
+        var expansion = GeaIncludes.Expand(text, resolveLib, fileName);
         var diags = new List<GeaDiagnostic>();
-        var program = GeaParser.Parse(text ?? "", diags);
-        // Parser đã tự phục hồi sau lỗi cú pháp nên vẫn kiểm tra ngữ nghĩa, để liệt kê hết lỗi một lần
+        var program = GeaParser.Parse(expansion.Text, diags);
+        program.ExtraParamPrefixes = program.ExtraParamPrefixes.Union(expansion.LibPrefixes).ToList();
+        // The parser recovers from syntax errors on its own, so the semantic check still runs, to list all errors at once
         var pars = GeaChecker.Check(program, diags);
+
+        // Diagnostics of the parser/checker use lines of the expanded text: map them back to the original (file, line).
+        for (var i = 0; i < diags.Count; i++)
+        {
+            var d = diags[i];
+            if (d.Line < 1 || d.Line > expansion.Lines.Count) continue;
+            var src = expansion.Lines[d.Line - 1];
+            diags[i] = d with { Line = src.Line, Message = src.File == fileName ? d.Message : $"{src.File}: {d.Message}" };
+        }
+        diags.AddRange(expansion.Diagnostics);
         diags.Sort((a, b) => a.Line != b.Line ? a.Line.CompareTo(b.Line) : a.Column.CompareTo(b.Column));
-        return new GeaScript(program, pars, diags, text ?? "");
+        return new GeaScript(program, pars, diags, text, expansion.Text);
     }
 
     public GeaFormResult EvaluateForm(IReadOnlyDictionary<string, object?>? inputs) => new GeaInterpreter(this).EvaluateForm(inputs);
 
     /// <summary>
-    /// Tính FORM với giá trị số do web gửi (đơn vị hiển thị của từng ô; ô tích là 1/0). Tên không có trong FORM bị bỏ qua.
+    /// Evaluates the FORM with the numeric values sent by the web (the display unit of each field; checkboxes are 1/0). Names that are not in the FORM are ignored.
     /// </summary>
     public GeaFormResult EvaluateFormNumbers(IReadOnlyDictionary<string, double>? values) => EvaluateFormValues(values, null);
 
-    /// <summary>Như <see cref="EvaluateFormNumbers"/>, thêm giá trị chữ cho ô text và ô chọn một (radio).</summary>
+    /// <summary>Like <see cref="EvaluateFormNumbers"/>, plus text values for text fields and single-choice (radio) fields.</summary>
     public GeaFormResult EvaluateFormValues(IReadOnlyDictionary<string, double>? numbers, IReadOnlyDictionary<string, string>? texts)
     {
         var inputs = new Dictionary<string, object?>(StringComparer.Ordinal);
@@ -118,12 +139,12 @@ public sealed class GeaScript
 }
 
 /// <summary>
-/// Thông dịch khối FORM (hàm thuần) và khối BUILD (gọi Host). Mỗi vòng FOR/WHILE tối đa <see cref="MaxIterations"/> lần.
+/// Interprets the FORM block (a pure function) and the BUILD block (calls the Host). Each FOR/WHILE loop runs at most <see cref="MaxIterations"/> times.
 /// </summary>
 public sealed class GeaInterpreter
 {
     public const int MaxIterations = 10000;
-    /// <summary>Tổng số lệnh thực thi tối đa trong một lần chạy FORM hoặc BUILD. Chặn vòng FOR lồng nhau chạy quá lâu (script do người dùng gửi lên).</summary>
+    /// <summary>Maximum number of statements executed in one FORM or BUILD run. Stops nested FOR loops from running too long (the script is supplied by users).</summary>
     public const int MaxSteps = 1_000_000;
     private const string FailCode = "GEA4000";
 
@@ -155,7 +176,7 @@ public sealed class GeaInterpreter
         _form = new GeaFormResult();
         _fields = new Dictionary<string, GeaFormField>(StringComparer.Ordinal);
 
-        // Dựng danh sách ô theo thứ tự khai báo (kể cả ô nằm trong IF), mặc định là ẩn
+        // Build the list of fields in declaration order (including fields inside IF), hidden by default
         CollectFields(_script.Program.Form, null);
         foreach (var f in _form.Fields)
         {
@@ -165,7 +186,7 @@ public sealed class GeaInterpreter
 
         if (_script.HasErrors)
         {
-            _form.Errors.Add(new GeaFormMessage("GEA1000", "Script còn lỗi cú pháp hoặc ngữ nghĩa; sửa trước khi dùng form.", Array.Empty<string>(), 0));
+            _form.Errors.Add(new GeaFormMessage("GEA1000", "The script still has syntax or semantic errors; fix them before using the form.", Array.Empty<string>(), 0));
         }
         else
         {
@@ -175,7 +196,7 @@ public sealed class GeaInterpreter
             }
             catch (GeaRuntimeException ex)
             {
-                _form.Errors.Add(new GeaFormMessage(ex.Code, $"Dòng {ex.Line}: {ex.Message}", Array.Empty<string>(), ex.Line));
+                _form.Errors.Add(new GeaFormMessage(ex.Code, $"Line {ex.Line}: {ex.Message}", Array.Empty<string>(), ex.Line));
             }
         }
 
@@ -230,7 +251,7 @@ public sealed class GeaInterpreter
         _form!.Fields.Add(f);
     }
 
-    /// <summary>Giá trị nhập cho một ô: lấy từ đầu vào nếu đúng kiểu, nếu không dùng mặc định. Kiểm tra MIN/MAX/REQUIRED.</summary>
+    /// <summary>Input value for one field: taken from the input if the type matches, otherwise the default. Checks MIN/MAX/REQUIRED.</summary>
     private GeaValue InputValue(GeaFormField f)
     {
         _inputs!.TryGetValue(f.Name, out var raw);
@@ -256,17 +277,17 @@ public sealed class GeaInterpreter
                 {
                     if (double.IsNaN(n.Value) || double.IsInfinity(n.Value))
                     {
-                        f.Errors.Add($"{f.Label}: cần nhập một số.");
+                        f.Errors.Add($"{f.Label}: enter a number.");
                         break;
                     }
                     if (f.Type == GeaType.Integer && Math.Abs(n.Value - Math.Round(n.Value)) > 1e-9)
-                        f.Errors.Add($"{f.Label} phải là số nguyên.");
+                        f.Errors.Add($"{f.Label} must be a whole number.");
                     value = GeaValue.Number(f.Type, n.Value * f.UnitFactor);
                 }
                 break;
             case GeaFieldKind.Text:
                 if (raw is string str) value = GeaValue.Text(str);
-                if (f.Required && string.IsNullOrWhiteSpace(value.Str)) f.Errors.Add($"{f.Label} không được để trống.");
+                if (f.Required && string.IsNullOrWhiteSpace(value.Str)) f.Errors.Add($"{f.Label} must not be empty.");
                 break;
             case GeaFieldKind.Checkbox:
                 if (raw is bool b) value = GeaValue.Boolean(b);
@@ -276,7 +297,7 @@ public sealed class GeaInterpreter
                 if (raw is string choice)
                 {
                     if (f.Options.Contains(choice)) value = GeaValue.Text(choice);
-                    else f.Errors.Add($"{f.Label}: \"{choice}\" không phải lựa chọn hợp lệ ({string.Join(", ", f.Options)}).");
+                    else f.Errors.Add($"{f.Label}: \"{choice}\" is not a valid choice ({string.Join(", ", f.Options)}).");
                 }
                 break;
         }
@@ -287,7 +308,7 @@ public sealed class GeaInterpreter
             if ((f.Min.HasValue && value.Num < f.Min.Value - eps) || (f.Max.HasValue && value.Num > f.Max.Value + eps))
             {
                 string Fmt(double? v) => v.HasValue ? (v.Value / f.UnitFactor).ToString("0.###", ci) + (f.Unit.Length > 0 ? " " + f.Unit : "") : "∞";
-                f.Errors.Add($"{f.Label} phải nằm trong [{Fmt(f.Min)}, {Fmt(f.Max)}].");
+                f.Errors.Add($"{f.Label} must be within [{Fmt(f.Min)}, {Fmt(f.Max)}].");
             }
         }
 
@@ -344,7 +365,7 @@ public sealed class GeaInterpreter
         }
         catch (Exception ex)
         {
-            throw new GeaRuntimeException("GEA4099", "Lỗi Inventor: " + ex.Message, line, col, ex);
+            throw new GeaRuntimeException("GEA4099", "Inventor error: " + ex.Message, line, col, ex);
         }
     }
 
@@ -355,7 +376,7 @@ public sealed class GeaInterpreter
         return result;
     }
 
-    // ================================================================ thực thi lệnh
+    // ================================================================ executing statements
 
     private Flow Exec(IReadOnlyList<GeaStmt> stmts)
     {
@@ -363,7 +384,7 @@ public sealed class GeaInterpreter
         {
             _run?.ExecutedLines.Add(s.Line);
             if (++_steps > MaxSteps)
-                throw new GeaRuntimeException("GEA5001", $"Script vượt quá {MaxSteps} lệnh thực thi.", s.Line, s.Col);
+                throw new GeaRuntimeException("GEA5001", $"The script exceeded {MaxSteps} executed statements.", s.Line, s.Col);
             Flow flow;
             try
             {
@@ -408,14 +429,14 @@ public sealed class GeaInterpreter
             {
                 long from = (long)Eval(f.From).Num, to = (long)Eval(f.To).Num;
                 long step = f.Step == null ? 1 : (long)Eval(f.Step).Num;
-                if (step == 0) throw new GeaRuntimeException("GEA5001", "STEP của FOR bằng 0.", f.Line, f.Col);
+                if (step == 0) throw new GeaRuntimeException("GEA5001", "The STEP of the FOR is 0.", f.Line, f.Col);
                 int count = 0;
                 try
                 {
                     for (long i = from; step > 0 ? i <= to : i >= to; i += step)
                     {
                         if (++count > MaxIterations)
-                            throw new GeaRuntimeException("GEA5001", $"Vòng FOR vượt quá {MaxIterations} lần lặp.", f.Line, f.Col);
+                            throw new GeaRuntimeException("GEA5001", $"The FOR loop exceeded {MaxIterations} iterations.", f.Line, f.Col);
                         _env[f.Var] = GeaValue.Int(i);
                         var flow = Exec(f.Body);
                         if (flow == Flow.Break) break;
@@ -434,7 +455,7 @@ public sealed class GeaInterpreter
                 while (Eval(w.Condition).Bool)
                 {
                     if (++count > MaxIterations)
-                        throw new GeaRuntimeException("GEA5001", $"Vòng WHILE vượt quá {MaxIterations} lần lặp.", w.Line, w.Col);
+                        throw new GeaRuntimeException("GEA5001", $"The WHILE loop exceeded {MaxIterations} iterations.", w.Line, w.Col);
                     var flow = Exec(w.Body);
                     if (flow == Flow.Break) break;
                     if (flow == Flow.Return) return flow;
@@ -510,6 +531,15 @@ public sealed class GeaInterpreter
             case CreateFeatureStmt cf:
                 CreateFeature(cf);
                 return Flow.Normal;
+            case AddComponentStmt ac:
+            {
+                var part = Eval(ac.Part).Str ?? "";
+                if (part.Length == 0) throw new GeaRuntimeException("GEA4012", "The part name of ADD_COMPONENT must not be empty.", ac.Line, ac.Col);
+                var at = ac.At == null ? new double[3] : ac.At.Select(e => Eval(e).Num).ToArray();
+                var rot = ac.Rot == null ? new double[3] : ac.Rot.Select(e => Eval(e).Num).ToArray();
+                _env[ac.Var] = GeaValue.Reference(HostCall(ac.Line, ac.Col, () => _host!.AddComponent(part, at, rot)));
+                return Flow.Normal;
+            }
             case SetRefNameStmt rn:
             {
                 var r = Ref(rn.Ref, rn);
@@ -537,7 +567,7 @@ public sealed class GeaInterpreter
                 var key = Eval(ga.Key).Str ?? "";
                 var target = Var(ga.Var, ga).Type;
                 var value = HostCall(ga.Line, ga.Col, () => _host!.GetRefAttr(r, key));
-                if (value == null) throw new GeaRuntimeException("GEA4012", $"Đối tượng không có thuộc tính \"{key}\".", ga.Line, ga.Col);
+                if (value == null) throw new GeaRuntimeException("GEA4012", $"The object has no attribute \"{key}\".", ga.Line, ga.Col);
                 if (value.IsNumeric && target is GeaType.Integer or GeaType.Double or GeaType.Length or GeaType.Angle)
                     value = GeaValue.Number(target, value.Num);
                 _env[ga.Var] = value.CoerceTo(target);
@@ -573,7 +603,7 @@ public sealed class GeaInterpreter
                 return Flow.Normal;
             case CatchStmt c:
             {
-                // Cải tiến so với .tab: vào khối thì ERROR tự về FALSE
+                // Improvement over .tab: entering the block resets ERROR to FALSE
                 _env["ERROR"] = GeaValue.Boolean(false);
                 _env["ERROR_MESSAGE"] = GeaValue.Text("");
                 try
@@ -584,7 +614,7 @@ public sealed class GeaInterpreter
                 {
                     _env["ERROR"] = GeaValue.Boolean(true);
                     _env["ERROR_MESSAGE"] = GeaValue.Text(ex.Message);
-                    _run!.Log.Add($"[{ex.Line}] Lỗi đã bắt: {ex.Code} {ex.Message}");
+                    _run!.Log.Add($"[{ex.Line}] Caught error: {ex.Code} {ex.Message}");
                     return Flow.Normal;
                 }
             }
@@ -595,13 +625,13 @@ public sealed class GeaInterpreter
             case FailStmt fl:
                 throw new GeaRuntimeException(FailCode, Eval(fl.Message).Str ?? "FAIL", fl.Line, fl.Col);
         }
-        throw new GeaRuntimeException("GEA1001", $"Lệnh chưa hỗ trợ: {s.GetType().Name}.", s.Line, s.Col);
+        throw new GeaRuntimeException("GEA1001", $"Statement not supported: {s.GetType().Name}.", s.Line, s.Col);
     }
 
     private void CreateFeature(CreateFeatureStmt cf)
     {
         var m = GeaBuilderCatalog.Find(cf.SourceName)
-                ?? throw new GeaRuntimeException("GEA2013", $"Builder '{cf.SourceName}' không tồn tại.", cf.Line, cf.Col);
+                ?? throw new GeaRuntimeException("GEA2013", $"Builder '{cf.SourceName}' does not exist.", cf.Line, cf.Col);
         GeaRef? on = cf.OnRef == null ? null : Ref(cf.OnRef, cf);
 
         var inputs = new Dictionary<string, GeaValue>(StringComparer.Ordinal);
@@ -610,7 +640,7 @@ public sealed class GeaInterpreter
             var port = m.Input(i.Name)!;
             var v = Eval(i.Value);
             if (port.Type == GeaType.Reference && v.Ref == null)
-                throw new GeaRuntimeException("GEA4012", $"Đầu vào \"{i.Name}\": tham chiếu chưa được gán.", i.Line, i.Col);
+                throw new GeaRuntimeException("GEA4012", $"Input \"{i.Name}\": the reference has not been assigned.", i.Line, i.Col);
             inputs[i.Name] = v.WithDeps(null).CoerceTo(port.Type);
         }
         var complete = GeaBuilderCatalog.CompleteInputs(m, inputs);
@@ -618,7 +648,7 @@ public sealed class GeaInterpreter
         foreach (var o in cf.Outputs)
         {
             if (!outputs.TryGetValue(o.Name, out var r))
-                throw new GeaRuntimeException("GEA2012", $"Builder {m.Name} không trả về đầu ra \"{o.Name}\".", o.Line, o.Col);
+                throw new GeaRuntimeException("GEA2012", $"Builder {m.Name} did not return the output \"{o.Name}\".", o.Line, o.Col);
             _env[o.Var] = GeaValue.Reference(r);
         }
     }
@@ -637,22 +667,22 @@ public sealed class GeaInterpreter
                 : Math.Abs(cell.Num - key.Num) < 1e-9;
             if (match) return row[vi].WithDeps(key.Deps);
         }
-        throw new GeaRuntimeException("GEA4030", $"Bảng {lk.Table} không có hàng {lk.KeyColumn} = {key.Display()}.", lk.Line, lk.Col);
+        throw new GeaRuntimeException("GEA4030", $"Table {lk.Table} has no row with {lk.KeyColumn} = {key.Display()}.", lk.Line, lk.Col);
     }
 
     private GeaValue Var(string name, GeaNode at)
     {
         if (_env.TryGetValue(name, out var v)) return v;
-        throw new GeaRuntimeException("GEA2001", $"'{name}' chưa được khai báo hoặc chưa có giá trị.", at.Line, at.Col);
+        throw new GeaRuntimeException("GEA2001", $"'{name}' is not declared or has no value yet.", at.Line, at.Col);
     }
 
     private GeaRef Ref(string name, GeaNode at)
     {
         var v = Var(name, at);
-        return v.Ref ?? throw new GeaRuntimeException("GEA4012", $"Tham chiếu '{name}' chưa được gán.", at.Line, at.Col);
+        return v.Ref ?? throw new GeaRuntimeException("GEA4012", $"Reference '{name}' has not been assigned.", at.Line, at.Col);
     }
 
-    // ================================================================ biểu thức
+    // ================================================================ expressions
 
     private GeaValue Eval(GeaExpr e)
     {
@@ -684,7 +714,7 @@ public sealed class GeaInterpreter
             }
             case BinaryExpr b:
             {
-                // AND/OR ngắn mạch nhưng vẫn giữ phụ thuộc của vế trái
+                // AND/OR short-circuit but still keep the dependencies of the left side
                 if (b.Op == "AND" || b.Op == "OR")
                 {
                     var l = Eval(b.Left);
@@ -697,8 +727,8 @@ public sealed class GeaInterpreter
             case CallExpr c:
                 return GeaOps.CallFunction(c.Name, c.Args.Select(Eval).ToList());
             case MemberExpr m:
-                throw new GeaRuntimeException("GEA1001", $"'{m.Target}.{m.Member}' chưa hỗ trợ.", m.Line, m.Col);
+                throw new GeaRuntimeException("GEA1001", $"'{m.Target}.{m.Member}' is not supported.", m.Line, m.Col);
         }
-        throw new GeaRuntimeException("GEA1001", "Biểu thức không hỗ trợ.", e.Line, e.Col);
+        throw new GeaRuntimeException("GEA1001", "Expression not supported.", e.Line, e.Col);
     }
 }

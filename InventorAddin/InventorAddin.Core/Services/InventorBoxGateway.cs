@@ -7,12 +7,12 @@ using Inv = Inventor;
 namespace InventorAddin.Services;
 
 /// <summary>
-/// Lớp duy nhất gọi Inventor API. Đơn vị nội bộ của API là cm: mọi chuyển đổi mm↔cm nằm ở <see cref="MmToCm"/>/<see cref="CmToMm"/>.
-/// Mọi thao tác ghi gói trong một Transaction để Ctrl+Z hoàn tác trọn vẹn.
+/// The only class that calls the Inventor API. The internal unit of the API is cm: every mm↔cm conversion lives in <see cref="MmToCm"/>/<see cref="CmToMm"/>.
+/// Every write is wrapped in one Transaction so Ctrl+Z undoes it completely.
 /// </summary>
 public sealed class InventorBoxGateway : IBoxGateway
 {
-    public const int SchemaVersion = 1; // đánh dấu phiên bản cấu trúc dữ liệu Box ghi vào Part
+    public const int SchemaVersion = 1; // marks the version of the data structure Box writes into the Part
 
     private const string MarkerSetName = "BX_Box";
 
@@ -24,13 +24,13 @@ public sealed class InventorBoxGateway : IBoxGateway
 
     public static double CmToMm(double cm) => Math.Round(cm * 10.0, 6);
 
-    // ---------------------------------------------------------------- trạng thái
+    // ---------------------------------------------------------------- state
 
     private Inv.PartDocument? ActivePart(out DocState? state)
     {
         state = null;
         Inv._Document? doc = null;
-        try { doc = _app.ActiveDocument; } catch { /* không có document */ }
+        try { doc = _app.ActiveDocument; } catch { /* no document */ }
 
         if (doc == null)
         {
@@ -96,7 +96,7 @@ public sealed class InventorBoxGateway : IBoxGateway
         }
     }
 
-    // ---------------------------------------------------------------- tạo
+    // ---------------------------------------------------------------- create
 
     public OperationResult Create(IReadOnlyDictionary<string, double> values, bool allowForeignContent)
     {
@@ -125,7 +125,7 @@ public sealed class InventorBoxGateway : IBoxGateway
         }, "Box created.");
     }
 
-    // ---------------------------------------------------------------- chỉnh
+    // ---------------------------------------------------------------- edit
 
     public OperationResult Apply(IReadOnlyDictionary<string, double> values)
     {
@@ -149,9 +149,9 @@ public sealed class InventorBoxGateway : IBoxGateway
         }, "Parameters applied.");
     }
 
-    // ---------------------------------------------------------------- tiện ích
+    // ---------------------------------------------------------------- utilities
 
-    /// <summary>Chạy <paramref name="work"/> trong một Transaction; lỗi hoặc model hỏng thì hoàn tác toàn bộ.</summary>
+    /// <summary>Runs <paramref name="work"/> in one Transaction; on an error or a broken model everything is rolled back.</summary>
     internal OperationResult RunInTransaction(Inv.PartDocument part, string name, Action work, string okMessage) =>
         InventorTransactions.Run(_app, part, name, work, okMessage);
 }

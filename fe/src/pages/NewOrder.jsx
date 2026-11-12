@@ -1,11 +1,11 @@
 ﻿import { useEffect, useRef, useState } from 'react';
 import { Box, Button, Card, Flex, Heading, Select, Separator, Text, TextField } from '@radix-ui/themes';
 import { api, go, postJson } from '../lib.js';
-import { Hero, ImportGeaButton, Notice, ParamField } from '../components.jsx';
+import { Hero, ImportGeaButton, Notice, ParamField, QuickPreview } from '../components.jsx';
 
 export default function NewOrder({ code, configId }) {
   const [products, setProducts] = useState(null);
-  const [configs, setConfigs] = useState([]); // các Configuration đang active của sản phẩm
+  const [configs, setConfigs] = useState([]); // the active Configurations of the product
   const [cfgId, setCfgId] = useState('');
   const [schema, setSchema] = useState(null);
   const [values, setValues] = useState({});
@@ -17,25 +17,25 @@ export default function NewOrder({ code, configId }) {
   const [who, setWho] = useState(() => localStorage.getItem('cadflow.user') || '');
   const seq = useRef(0);
 
-  // Danh sách sản phẩm và schema của sản phẩm đang chọn.
+  // The product list and the schema of the selected product.
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
         const list = await api('/api/products');
         const product = list.find((p) => p.code === code) || list[0];
-        // Configuration: cái được chọn trên URL (nếu còn active), không thì cái mặc định của sản phẩm.
+        // Configuration: the one chosen in the URL (if still active), otherwise the default of the product.
         const all = (await api(`/api/products/${product.code}/configs`)).filter((c) => c.status === 'active');
         const chosen = all.find((c) => c.id === configId) || all.find((c) => c.isDefault) || null;
         const s = await api(`/api/products/${product.code}${chosen ? `?config=${chosen.id}` : ''}`);
         if (!alive) return;
         setConfigs(all); setCfgId(chosen ? chosen.id : '');
         const v = { ...s.defaults };
-        // "Edit and resubmit" từ một job: nạp lại đầu vào cũ (chỉ lấy khóa có trong schema).
+        // "Edit and resubmit" from a job: reload the old input (only keys that are in the schema).
         const retry = sessionStorage.getItem('cadflow.retry');
         sessionStorage.removeItem('cadflow.retry');
         if (retry) {
-          try { for (const [k, x] of Object.entries(JSON.parse(retry))) if (k in v && Number.isFinite(x)) v[k] = x; } catch { /* bỏ qua */ }
+          try { for (const [k, x] of Object.entries(JSON.parse(retry))) if (k in v && Number.isFinite(x)) v[k] = x; } catch { /* ignore */ }
         }
         setProducts(list);
         setSchema({ ...s, description: product.description, name: product.name });
@@ -45,7 +45,7 @@ export default function NewOrder({ code, configId }) {
     return () => { alive = false; };
   }, [code, configId]);
 
-  // Kiểm tra luật ở server sau mỗi lần sửa (đợi 250 ms cho gõ xong).
+  // Check the rules on the server after every edit (wait 250 ms for typing to finish).
   useEffect(() => {
     if (!schema) return undefined;
     setValid(false);
@@ -53,7 +53,7 @@ export default function NewOrder({ code, configId }) {
     const t = setTimeout(async () => {
       try {
         const r = await postJson(`/api/products/${schema.code}/validate`, { values });
-        if (mine !== seq.current) return; // đã có lần sửa mới hơn
+        if (mine !== seq.current) return; // there is already a newer edit
         setValid(r.valid);
         setIssues(r.issues.map((i) => i.message));
         setBad(new Set(r.issues.flatMap((i) => i.params)));
@@ -128,6 +128,8 @@ export default function NewOrder({ code, configId }) {
           <TextField.Root placeholder="Requested by" value={who} onChange={(e) => setWho(e.target.value)} style={{ minWidth: 240 }} />
           <Button size="2" disabled={!valid || busy} onClick={submit}>Submit order</Button>
         </Flex>
+        <QuickPreview disabled={!valid || busy}
+          createJob={() => postJson('/api/jobs', { productCode: schema.code, inputs: values, requestedBy: who, configId: cfgId || undefined, kind: 'preview' })} />
       </Flex>
     </Card>
     </>

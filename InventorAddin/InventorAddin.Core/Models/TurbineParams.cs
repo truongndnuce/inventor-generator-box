@@ -5,10 +5,10 @@ using System.Linq;
 namespace InventorAddin.Models;
 
 /// <summary>
-/// Turbine khí công nghiệp (kiểu máy aero-derivative như ảnh tham chiếu), mô hình hình khối đơn giản hóa:
-/// cửa hút + vỏ máy nén có các vành gân, buồng đốt với vòng ống đốt, tầng turbine, cửa xả, hộp bao (enclosure) trên cửa hút, đế skid.
-/// Một nơi định nghĩa duy nhất: server (form, kiểm tra luật) và add-in (dựng bằng Scripts\turbine.gea) đều đọc từ đây. Đơn vị: mm.
-/// Hệ tọa độ: trục máy là X (cửa hút ở -X, cửa xả ở +X), tâm máy ở gốc, mặt trên skid ở BaseHeight, đáy skid ở 0.
+/// An industrial gas turbine (aero-derivative type as in the reference picture), as a simplified block model:
+/// air inlet + compressor casing with rib rings, a combustor with a ring of combustion cans, the turbine stages, the exhaust, an enclosure box over the inlet, a skid base.
+/// A single place of definition: the server (form, rule checks) and the add-in (built by Scripts\turbine.gea) both read from here. Unit: mm.
+/// Coordinate system: the machine axis is X (inlet at -X, exhaust at +X), machine center at the origin, skid top at BaseHeight, skid bottom at 0.
 /// </summary>
 public static class TurbineParams
 {
@@ -49,9 +49,9 @@ public static class TurbineParams
     public const string GroupCans = "Combustor cans";
     public const string GroupSkid = "Skid";
 
-    // Hằng số hình học dùng chung giữa luật kiểm tra và bộ dựng (script đặt cùng giá trị).
-    public const double CradleGap = 50;           // trục máy cao hơn đỉnh skid: maxD/2 + 50
-    public const double SideMargin = 300;         // skid rộng hơn vỏ lớn nhất ít nhất 300 mm
+    // Geometry constants shared between the validation rules and the builder (the script uses the same values).
+    public const double CradleGap = 50;           // the machine axis is above the skid top: maxD/2 + 50
+    public const double SideMargin = 300;         // the skid is at least 300 mm wider than the largest casing
 
     public static readonly IReadOnlyList<ParameterDef> All = new[]
     {
@@ -88,7 +88,7 @@ public static class TurbineParams
 
     public static Dictionary<string, double> Defaults() => All.ToDictionary(d => d.Name, d => d.Default);
 
-    /// <summary>Lấy các giá trị có trong <paramref name="partial"/>, thiếu thì dùng mặc định; khóa lạ bị bỏ.</summary>
+    /// <summary>Takes the values present in <paramref name="partial"/>, uses the default for missing ones; unknown keys are dropped.</summary>
     public static Dictionary<string, double> Complete(IReadOnlyDictionary<string, double>? partial)
     {
         var result = Defaults();
@@ -102,7 +102,7 @@ public static class TurbineParams
     public static double MaxDiameter(IReadOnlyDictionary<string, double> v) =>
         new[] { v[InletDiameter], v[CompDiameter], v[CombDiameter], v[TurbDiameter], v[ExhDiameter] }.Max();
 
-    /// <summary>Kiểm tra khoảng giá trị, số nguyên và các ràng buộc hình học. Rỗng nghĩa là hợp lệ.</summary>
+    /// <summary>Checks value ranges, integers and the geometric constraints. Empty means valid.</summary>
     public static IReadOnlyList<ValidationIssue> Validate(IReadOnlyDictionary<string, double> values)
     {
         var issues = new List<ValidationIssue>();
@@ -125,7 +125,7 @@ public static class TurbineParams
                 issues.Add(new ValidationIssue($"{d.Label} must be a whole number.", new[] { d.Name }));
             }
         }
-        if (!rangeOk) return issues; // các luật dưới đây chỉ có nghĩa khi từng giá trị đã nằm trong khoảng
+        if (!rangeOk) return issues; // the rules below only make sense once every value is within its range
 
         double maxD = MaxDiameter(Complete(values));
         double canN = V(CanCount), canD = V(CanDiameter), canOff = V(CanOffset), combD = V(CombDiameter);

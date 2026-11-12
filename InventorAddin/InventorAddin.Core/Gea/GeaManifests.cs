@@ -4,12 +4,12 @@ using System.Linq;
 
 namespace InventorAddin.Gea;
 
-/// <summary>Một đầu vào hoặc đầu ra của builder (mục 12 của đặc tả).</summary>
+/// <summary>One input or output of a builder (section 12 of the spec).</summary>
 public sealed record BuilderPort(string Name, GeaType Type, bool Required = true, GeaValue? Default = null, string Description = "");
 
 /// <summary>
-/// Manifest của builder: hợp đồng giữa script và hàm dựng C#. Bước kiểm tra ngữ nghĩa dùng manifest để kiểm tra
-/// CREATE_FEATURE mà không cần Inventor; Inventor Host chạy hàm dựng thật cùng tên.
+/// Manifest of a builder: the contract between the script and the C# build function. The semantic check uses the manifest to check
+/// CREATE_FEATURE without Inventor; the Inventor Host runs the real build function of the same name.
 /// </summary>
 public sealed record BuilderManifest(
     string Name, string Version, string Target, string Description,
@@ -21,8 +21,8 @@ public sealed record BuilderManifest(
 }
 
 /// <summary>
-/// Danh mục builder dựng sẵn. Hệ tọa độ chung (giống mô hình máy biến áp): X dọc chiều dài, "D" theo chiều sâu (trục Z của Inventor),
-/// chiều cao theo trục Y của Inventor ("Elevation" là cao độ đáy, mặt đất là 0). Mọi kích thước tính bằng mm.
+/// Catalog of the built-in builders. Common coordinate system (as in the transformer model): X along the length, "D" along the depth (the Z axis of Inventor),
+/// height along the Y axis of Inventor ("Elevation" is the elevation of the bottom, the ground is 0). All sizes are in mm.
 /// </summary>
 public static class GeaBuilderCatalog
 {
@@ -31,85 +31,85 @@ public static class GeaBuilderCatalog
     private static BuilderPort L(string name, string description, bool required = true) =>
         new(name, GeaType.Length, required, required ? null : Zero, description);
 
-    private static readonly BuilderPort BodyOut = new("Body", GeaType.Reference, Description: "Solid body vừa tạo");
+    private static readonly BuilderPort BodyOut = new("Body", GeaType.Reference, Description: "The solid body just created");
 
     public static readonly IReadOnlyList<BuilderManifest> All = new[]
     {
         new BuilderManifest("Tank", "1.0", "PART",
-            "Thùng rỗng mở nắp: hộp bo góc đứng, thành dày Wall, đáy dày Bottom, chân đế (skirt) phía dưới. Tâm thùng ở gốc.",
+            "Open-top hollow tank: a box with vertical rounded corners, wall thickness Wall, bottom thickness Bottom, and a skirt below. The tank center is at the origin.",
             new[]
             {
-                L("Length", "Chiều dài ngoài (X)"), L("Width", "Chiều rộng ngoài (D)"), L("Height", "Chiều cao thân (chưa tính chân đế)"),
-                L("Wall", "Độ dày thành"), L("Bottom", "Độ dày đáy"),
-                L("CornerRadius", "Bán kính bo góc ngoài", false), L("InnerRadius", "Bán kính bo góc trong", false),
-                L("SkirtHeight", "Chiều cao chân đế", false),
+                L("Length", "Outer length (X)"), L("Width", "Outer width (D)"), L("Height", "Body height (without the skirt)"),
+                L("Wall", "Wall thickness"), L("Bottom", "Bottom thickness"),
+                L("CornerRadius", "Outer corner radius", false), L("InnerRadius", "Inner corner radius", false),
+                L("SkirtHeight", "Skirt height", false),
             },
             new[] { BodyOut }),
 
         new BuilderManifest("Cover", "1.0", "PART",
-            "Nắp phẳng đặt trên miệng thùng, có gờ lồng vào lòng thùng (cách thành trong một khe hở).",
+            "Flat lid placed on the tank opening, with a lip that fits into the tank (separated from the inner wall by a clearance).",
             new[]
             {
-                new BuilderPort("Tank", GeaType.Reference, true, null, "Thùng do builder:Tank tạo"),
-                L("Thickness", "Độ dày nắp"), L("Lip", "Chiều cao gờ"), L("Clearance", "Khe hở giữa gờ và thành trong", false),
-                L("Gap", "Khoảng nâng nắp lên khỏi miệng thùng", false),
+                new BuilderPort("Tank", GeaType.Reference, true, null, "The tank created by builder:Tank"),
+                L("Thickness", "Lid thickness"), L("Lip", "Lip height"), L("Clearance", "Clearance between the lip and the inner wall", false),
+                L("Gap", "Distance the lid is lifted above the tank opening", false),
             },
             new[] { BodyOut }),
 
         new BuilderManifest("Block", "1.0", "PART",
-            "Khối hộp chữ nhật (có thể bo góc đứng).",
+            "A rectangular box (vertical corners can be rounded).",
             new[]
             {
-                L("CenterX", "Tâm theo X", false), L("CenterD", "Tâm theo chiều sâu", false), L("Elevation", "Cao độ mặt đáy", false),
-                L("SizeX", "Kích thước theo X"), L("SizeD", "Kích thước theo chiều sâu"), L("Height", "Chiều cao"),
-                L("CornerRadius", "Bán kính bo góc đứng", false),
+                L("CenterX", "Center along X", false), L("CenterD", "Center along the depth", false), L("Elevation", "Elevation of the bottom face", false),
+                L("SizeX", "Size along X"), L("SizeD", "Size along the depth"), L("Height", "Height"),
+                L("CornerRadius", "Radius of the vertical corners", false),
             },
             new[] { BodyOut }),
 
         new BuilderManifest("Cylinder", "1.0", "PART",
-            "Khối trụ. Axis \"D\" (mặc định): nằm ngang theo chiều sâu, đối xứng quanh CenterD; \"X\": nằm ngang theo X, đối xứng quanh CenterX; " +
-            "\"H\": đứng, đáy ở Elevation. Với trụ nằm ngang, Elevation là cao độ của trục.",
+            "A cylinder. Axis \"D\" (default): horizontal along the depth, symmetric about CenterD; \"X\": horizontal along X, symmetric about CenterX; " +
+            "\"H\": vertical, bottom at Elevation. For a horizontal cylinder, Elevation is the elevation of the axis.",
             new[]
             {
-                L("CenterX", "Tâm theo X", false), L("CenterD", "Tâm theo chiều sâu", false), L("Elevation", "Cao độ trục (ngang) hoặc đáy (đứng)", false),
-                L("Diameter", "Đường kính"), L("Length", "Chiều dài trụ"),
-                new BuilderPort("Axis", GeaType.String, false, GeaValue.Text("D"), "D, X hoặc H"),
+                L("CenterX", "Center along X", false), L("CenterD", "Center along the depth", false), L("Elevation", "Elevation of the axis (horizontal) or of the bottom (vertical)", false),
+                L("Diameter", "Diameter"), L("Length", "Cylinder length"),
+                new BuilderPort("Axis", GeaType.String, false, GeaValue.Text("D"), "D, X or H"),
             },
             new[] { BodyOut }),
 
         new BuilderManifest("Bushing", "1.0", "PART",
-            "Sứ xuyên đứng: chân sứ (turret) hình trụ và thân sứ có các tán thu nhỏ dần lên trên. Một solid tròn xoay.",
+            "Vertical bushing: a cylindrical turret (base) and an insulator body whose sheds shrink going up. One solid of revolution.",
             new[]
             {
-                L("CenterX", "Tâm theo X", false), L("CenterD", "Tâm theo chiều sâu", false), L("Elevation", "Cao độ chân sứ", false),
-                L("Diameter", "Đường kính tán lớn nhất"), L("Length", "Chiều dài thân sứ (trên chân sứ)"),
-                L("TurretHeight", "Chiều cao chân sứ"),
-                new BuilderPort("ShedCount", GeaType.Integer, true, null, "Số tán"),
-                L("TurretDiameter", "Đường kính chân sứ (0: 1.2 x Diameter)", false),
-                L("TurretTaper", "Chiều cao phần vát côn ở đỉnh chân sứ (0: đỉnh phẳng)", false),
-                L("CapHeight", "Chiều cao nắp đầu cực ở đỉnh sứ (0: không có)", false),
+                L("CenterX", "Center along X", false), L("CenterD", "Center along the depth", false), L("Elevation", "Elevation of the turret bottom", false),
+                L("Diameter", "Diameter of the largest shed"), L("Length", "Length of the insulator body (above the turret)"),
+                L("TurretHeight", "Turret height"),
+                new BuilderPort("ShedCount", GeaType.Integer, true, null, "Number of sheds"),
+                L("TurretDiameter", "Turret diameter (0: 1.2 x Diameter)", false),
+                L("TurretTaper", "Height of the tapered part at the top of the turret (0: flat top)", false),
+                L("CapHeight", "Height of the terminal cap at the top of the bushing (0: none)", false),
                 new BuilderPort("SeparateTurret", GeaType.Bool, false, GeaValue.Boolean(false),
-                    "TRUE: chân sứ là body riêng (đầu ra Turret), để tô màu khác thân sứ"),
+                    "TRUE: the turret is a separate body (output Turret), so it can have a different color from the insulator body"),
             },
-            new[] { BodyOut, new BuilderPort("Turret", GeaType.Reference, Description: "Chân sứ (cùng body với Body nếu không tách)") }),
+            new[] { BodyOut, new BuilderPort("Turret", GeaType.Reference, Description: "The turret (the same body as Body if not separated)") }),
 
         new BuilderManifest("Radiator", "1.0", "PART",
-            "Cánh tản nhiệt dạng tấm: hộp góp trên và dưới, các lá tản nhiệt đứng song song chiều sâu, hai tấm bịt hai đầu. Một solid body.",
+            "Plate-type radiator: upper and lower headers, vertical parallel fins along the depth, and two end plates. One solid body.",
             new[]
             {
-                L("CenterX", "Tâm theo X", false), L("CenterD", "Tâm theo chiều sâu", false), L("Elevation", "Cao độ mặt đáy", false),
-                L("SizeX", "Bề rộng theo X"), L("SizeD", "Chiều sâu (vuông góc thành thùng)"), L("Height", "Chiều cao"),
-                new BuilderPort("FinCount", GeaType.Integer, true, null, "Số lá tản nhiệt"),
-                new BuilderPort("FinThickness", GeaType.Length, false, GeaValue.Length(12), "Độ dày lá"),
-                new BuilderPort("HeaderHeight", GeaType.Length, false, GeaValue.Length(80), "Chiều cao hộp góp trên/dưới"),
-                new BuilderPort("EndPlate", GeaType.Length, false, GeaValue.Length(25), "Độ dày tấm bịt hai đầu"),
+                L("CenterX", "Center along X", false), L("CenterD", "Center along the depth", false), L("Elevation", "Elevation of the bottom face", false),
+                L("SizeX", "Width along X"), L("SizeD", "Depth (perpendicular to the tank wall)"), L("Height", "Height"),
+                new BuilderPort("FinCount", GeaType.Integer, true, null, "Number of fins"),
+                new BuilderPort("FinThickness", GeaType.Length, false, GeaValue.Length(12), "Fin thickness"),
+                new BuilderPort("HeaderHeight", GeaType.Length, false, GeaValue.Length(80), "Height of the upper/lower header"),
+                new BuilderPort("EndPlate", GeaType.Length, false, GeaValue.Length(25), "Thickness of the end plates"),
             },
             new[] { BodyOut }),
     };
 
     public static BuilderManifest? Find(string name) => All.FirstOrDefault(m => m.Name == name);
 
-    /// <summary>Đầu vào đầy đủ (thêm mặc định cho đầu vào tùy chọn bị bỏ qua).</summary>
+    /// <summary>Complete inputs (adds the defaults for optional inputs that were left out).</summary>
     public static Dictionary<string, GeaValue> CompleteInputs(BuilderManifest m, IReadOnlyDictionary<string, GeaValue> given)
     {
         var result = new Dictionary<string, GeaValue>(given, StringComparer.Ordinal);

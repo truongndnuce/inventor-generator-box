@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "product": { "name": "Minimal", "prefix": "MN_", "target": "PART" },
+  "groups": [
+    { "title": "Size", "params": [ { "name": "MN_Length", "type": "LENGTH", "default": "100", "min": 10, "max": 500, "required": true, "label": "Length" } ] }
+  ]
+}

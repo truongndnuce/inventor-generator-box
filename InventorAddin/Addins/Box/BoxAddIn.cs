@@ -11,15 +11,15 @@ using Inv = Inventor;
 namespace InventorAddin.Addins.Box;
 
 /// <summary>
-/// Add-in Box: tạo hộp có nắp và sửa thông số trên Part đang mở (preset, xem trước, Apply), đồng thời nhận job "box" từ web.
-/// Ribbon, cửa sổ và web worker do <see cref="CadflowAddIn"/> lo; ở đây chỉ ghép Service → ViewModel → View.
+/// The Box add-in: creates a box with a lid and edits the parameters on the open Part (presets, preview, Apply), and also takes "box" jobs from the web.
+/// The ribbon, the window and the web worker are handled by <see cref="CadflowAddIn"/>; here we only wire Service → ViewModel → View.
 /// </summary>
 [ComVisible(true)]
 [Guid(ClientId)]
 [ClassInterface(ClassInterfaceType.None)]
 public sealed class BoxAddIn : CadflowAddIn
 {
-    // GUID giữ nguyên từ add-in Box gốc để bản cài cũ được thay thế chứ không bị trùng.
+    // The GUID is kept from the original Box add-in so an old installation is replaced instead of duplicated.
     public const string ClientId = "7B5E3A62-4C1D-4F0B-9A27-5D8E1C3F6A94";
 
     private PanelViewModel? _viewModel;

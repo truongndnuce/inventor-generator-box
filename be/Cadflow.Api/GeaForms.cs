@@ -4,9 +4,9 @@ using InventorAddin.Gea;
 namespace Cadflow.Api;
 
 /// <summary>
-/// Cầu nối giữa web và trình thông dịch .gea cho script do người dùng import: kiểm tra script có được phép chạy,
-/// tính FORM (hàm thuần, không đụng Inventor) và đổi kết quả sang JSON cho giao diện.
-/// Giá trị vào/ra theo <b>đơn vị hiển thị của ô</b> (đúng như khai báo trong USER_INPUT_PARAM); ô tích là 1/0.
+/// Bridge between the web and the .gea interpreter for user-imported scripts: checks that the script may run,
+/// computes the FORM (a pure function that never touches Inventor) and converts the result to JSON for the UI.
+/// Values in and out use the <b>display unit of the field</b> (exactly as declared in USER_INPUT_PARAM); checkboxes are 1/0.
 /// </summary>
 public static class GeaForms
 {
@@ -24,11 +24,15 @@ public static class GeaForms
             })
             .ToArray();
 
-    /// <summary>Lý do script không chạy được trên web, hoặc null nếu được phép.</summary>
+    /// <summary>
+    /// Reason the script cannot run on the web, or null if it is allowed. TARGET PART builds one Part; TARGET ASSEMBLY builds an assembly
+    /// (<c>ADD_COMPONENT</c> of the parts that ship with the add-in, see section 11.1 of the language spec).
+    /// </summary>
     public static string? Reject(GeaScript script)
     {
         if (script.HasErrors) return "The script has errors.";
-        if (script.Program.Target != "PART") return $"TARGET {script.Program.Target} is not supported yet (only PART).";
+        if (script.Program.Target is not ("PART" or "ASSEMBLY"))
+            return $"TARGET {script.Program.Target} is not supported.";
         var fields = script.EvaluateForm(null).Fields;
         if (fields.Count > MaxFields) return $"The form has {fields.Count} fields; at most {MaxFields} are allowed.";
         return null;
@@ -36,11 +40,11 @@ public static class GeaForms
 
     public static IReadOnlyList<string> FieldNames(GeaScript script) => script.EvaluateForm(null).Fields.Select(f => f.Name).ToList();
 
-    /// <summary>Tính FORM với giá trị người dùng nhập (ô tích đổi từ 1/0 sang bool; ô text/radio dùng <paramref name="texts"/>). Tên không có trong FORM bị bỏ qua.</summary>
+    /// <summary>Computes the FORM with the values the user entered (checkboxes are converted from 1/0 to bool; text/radio fields use <paramref name="texts"/>). Names that are not in the FORM are ignored.</summary>
     public static GeaFormResult Evaluate(GeaScript script, IReadOnlyDictionary<string, double>? values, IReadOnlyDictionary<string, string>? texts = null) =>
         script.EvaluateFormValues(values, texts);
 
-    /// <summary>Giá trị đầy đủ của mọi ô (ô ẩn lấy mặc định), dùng làm đầu vào đã chuẩn hóa của job.</summary>
+    /// <summary>Complete value of every field (hidden fields take their default), used as the normalized input of the job.</summary>
     public static (Dictionary<string, double> Numbers, Dictionary<string, string> Texts) Complete(GeaFormResult form)
     {
         var numbers = new Dictionary<string, double>(StringComparer.Ordinal);
@@ -80,7 +84,7 @@ public static class GeaForms
         notes = form.Notes,
     };
 
-    /// <summary>Giá trị một ô để gửi ra giao diện: chữ cho text/radio, 1/0 cho ô tích, số (đơn vị hiển thị) cho ô số.</summary>
+    /// <summary>Value of one field to send to the UI: text for text/radio, 1/0 for checkboxes, a number (display unit) for numeric fields.</summary>
     private static object Scalar(GeaFormField f, GeaValue v) => f.Kind switch
     {
         GeaFieldKind.Text or GeaFieldKind.Radio => v.Str ?? "",
@@ -88,5 +92,5 @@ public static class GeaForms
         _ => Round(f.DisplayNumber(v)),
     };
 
-    private static double Round(double v) => double.Parse(v.ToString("G12", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+    internal static double Round(double v) => double.Parse(v.ToString("G12", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
 }

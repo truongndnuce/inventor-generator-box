@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { AlertDialog, Button, Card, Flex, Heading, Link, Text } from '@radix-ui/themes';
-import { API, api, fmtDate, fmtSize, fmtTime, productLabel, reorder, usePolling } from '../lib.js';
-import { ExportGeaLink, OrderAgainButton, StatusBadge } from '../components.jsx';
+import { API, api, fmtDate, fmtSize, fmtTime, go, postJson, productLabel, reorder, usePolling } from '../lib.js';
+import { ExportGeaLink, KindBadge, OrderAgainButton, StatusBadge, queueNote } from '../components.jsx';
 
 const VIEW_LABELS = { front: 'Front', top: 'Top', right: 'Right' };
-/** Tên góc nhìn từ tên file: <id>_front.png -> Front; <id>.png (không hậu tố) là góc iso. */
+const ARTIFACT_LABELS = { ipt: 'Inventor part', iam: 'Inventor assembly', step: 'STEP', pdf: 'PDF drawing', dwg: 'DWG drawing', bom: 'BOM (CSV)' };
+/** View name from the file name: <id>_front.png -> Front; <id>.png (no suffix) is the iso view. */
 const viewLabel = (name) => VIEW_LABELS[(name.match(/_([a-z]+)\.png$/) || [])[1]] || 'Isometric';
 
-/** Thư viện ảnh: ảnh lớn + dải thumbnail; bấm thumbnail để đổi, bấm ảnh lớn để mở bản đầy đủ ở tab mới. */
+/** Image gallery: a large image + a strip of thumbnails; click a thumbnail to switch, click the large image to open the full version in a new tab. */
 function Gallery({ images, url }) {
   const sorted = [...images].sort((a, b) =>
     (viewLabel(a.name) === 'Isometric' ? -1 : viewLabel(b.name) === 'Isometric' ? 1 : a.name.localeCompare(b.name)));
@@ -49,15 +50,17 @@ export default function Job({ id, onNav }) {
   const [job, setJob] = useState(null);
   const [error, setError] = useState(null);
   const [tick, setTick] = useState(0);
+  const [rebuildError, setRebuildError] = useState(null);
+  const [vaultMsg, setVaultMsg] = useState(null);
   const done = job ? ['succeeded', 'failed', 'cancelled'].includes(job.status) : false;
 
-  // Polling đến khi job kết thúc (nâng lên SSE/SignalR khi cần, mục 8 của kế hoạch).
+  // Poll until the job ends (upgrade to SSE/SignalR when needed, section 8 of the plan).
   usePolling(async () => {
     if (done) return;
     try {
       const j = await api(`/api/jobs/${encodeURIComponent(id)}`);
       setJob(j);
-      onNav(['succeeded', 'failed', 'cancelled'].includes(j.status) ? 'dashboard' : 'orders'); // đang chờ/chạy thuộc Ordered, đã xong thuộc Dashboard
+      onNav(['succeeded', 'failed', 'cancelled'].includes(j.status) ? 'dashboard' : 'orders'); // waiting/running belongs to Ordered, finished belongs to Dashboard
     } catch (e) { setError(e.message); }
   }, 1500, [id, done, tick]);
 
@@ -65,7 +68,7 @@ export default function Job({ id, onNav }) {
   if (!job) return <Text color="gray">Loading job...</Text>;
 
   const message = {
-    queued: 'Waiting for an Inventor worker to pick up the job...',
+    queued: queueNote(job),
     running: `The worker is building: ${job.step || '...'}`,
     succeeded: 'Build finished.',
     failed: 'The build failed: ' + (job.error || 'unknown error'),
@@ -75,13 +78,32 @@ export default function Job({ id, onNav }) {
   const pdf = job.artifacts.find((a) => a.kind === 'pdf');
   const dwg = job.artifacts.find((a) => a.kind === 'dwg');
   const url = (a) => `${API}/api/jobs/${encodeURIComponent(job.id)}/artifacts/${encodeURIComponent(a.name)}`;
-  // Tải về: ?download=true để server ký URL R2 với Content-Disposition: attachment (thuộc tính download bị bỏ qua khi redirect sang origin khác).
+  // Download: ?download=true so the server signs the R2 URL with Content-Disposition: attachment (the download attribute is ignored when redirecting to another origin).
   const dl = (a) => `${url(a)}?download=true`;
   const cancel = async () => { await api(`/api/jobs/${job.id}/cancel`, { method: 'POST' }).catch(() => {}); setTick((t) => t + 1); };
   const isImported = job.productCode === 'imported';
+  // Rebuild: queues an `export` job with the same script and values, to get back files the retention policy deleted.
+  const rebuild = async () => {
+    setRebuildError(null);
+    try {
+      const j = await postJson(`/api/jobs/${encodeURIComponent(job.id)}/rebuild`, { requestedBy: localStorage.getItem('cadflow.user') || '' });
+      go(`#/jobs/${j.id}`);
+    } catch (e) { setRebuildError(e.message); }
+  };
+
+  // Save to Smart Vault: copies the result files into the document vault (folder <product>-<job id> with image/drawing/model/bom), where retention does not reach.
+  const saveToVault = async () => {
+    setVaultMsg(null);
+    try {
+      const r = await postJson(`/api/vault/from-job/${encodeURIComponent(job.id)}`, { requestedBy: localStorage.getItem('cadflow.user') || '' });
+      setVaultMsg({ ok: true, folderId: r.folder.id, text: r.added + r.newVersions === 0 ? 'Already saved to Smart Vault.' : `Saved to Smart Vault:${r.added} new file(s), ${r.newVersions} new version(s).` });
+    } catch (e) { setVaultMsg({ ok: false, text: e.message }); }
+  };
 
   const meta = [
     ['Product', isImported ? productLabel(job) : `${job.productCode} v${job.productVersion}`],
+    ['Kind', job.kind || 'generate'],
+    ...(job.sourceJobId ? [['Rebuild of', job.sourceJobId]] : []),
     ['Requested by', job.requestedBy],
     ['Created', fmtDate(job.createdAt)],
     ['Started', fmtDate(job.startedAt)],
@@ -99,6 +121,7 @@ export default function Job({ id, onNav }) {
         <Flex align="center" gap="3" wrap="wrap" mb="2">
           <Heading size="5">{job.id}</Heading>
           <StatusBadge status={job.status} />
+          <KindBadge kind={job.kind} />
           {!done && <CancelButton onConfirm={cancel} />}
           {job.status === 'failed' && <Button variant="soft" onClick={() => reorder(job)}>Edit and resubmit</Button>}
           {(job.status === 'succeeded' || job.status === 'cancelled') && <OrderAgainButton job={job} size="2" />}
@@ -121,7 +144,9 @@ export default function Job({ id, onNav }) {
       {job.artifactsPurgedAt && (
         <Card size="3">
           <Heading size="4" mb="2">Result</Heading>
-          <Text color="gray" size="2">{`The result files were deleted on ${fmtDate(job.artifactsPurgedAt)} (retention policy). Use Order again to rebuild them.`}</Text>
+          <Text as="p" color="gray" size="2" mb="3">{`The result files were deleted on ${fmtDate(job.artifactsPurgedAt)} (retention policy). Rebuild them with the same script and values, or use Order again to change something first.`}</Text>
+          <Button variant="soft" onClick={rebuild}>Rebuild files</Button>
+          {rebuildError && <Text as="p" size="2" color="red" mt="2">{rebuildError}</Text>}
         </Card>
       )}
 
@@ -130,10 +155,18 @@ export default function Job({ id, onNav }) {
           <Heading size="4" mb="3">Result</Heading>
           <Gallery images={job.artifacts.filter((a) => a.kind === 'image')} url={url} />
           <Flex gap="2" wrap="wrap">
-            {job.artifacts.map((a) => (
-              <Button key={a.name} asChild variant="outline" size="2"><a href={dl(a)} download={a.name}>{`${a.name} (${fmtSize(a.size)})`}</a></Button>
+            {/* No file names here: a short label per kind. The pictures are already in the gallery above. */}
+            {job.artifacts.filter((a) => a.kind !== 'image').map((a) => (
+              <Button key={a.name} asChild variant="outline" size="2"><a href={dl(a)} download={a.name}>{`${ARTIFACT_LABELS[a.kind] || a.kind} (${fmtSize(a.size)})`}</a></Button>
             ))}
           </Flex>
+          {job.kind !== 'preview' && (
+            <Flex gap="3" align="center" mt="3" wrap="wrap">
+              <Button variant="soft" onClick={saveToVault}>Save to Smart Vault</Button>
+              {vaultMsg && <Text size="2" color={vaultMsg.ok ? 'green' : 'red'}>{vaultMsg.text}</Text>}
+              {vaultMsg?.ok && <Link href={`/plm/#/files/${vaultMsg.folderId}`}>Open in Smart Vault</Link>}
+            </Flex>
+          )}
         </Card>
       )}
 

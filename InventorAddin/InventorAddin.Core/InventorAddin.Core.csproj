@@ -1,16 +1,20 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <!--
-      Thư viện dùng chung của mọi add-in Cadflow: trình thông dịch .gea, dịch vụ Inventor, web worker, lớp nền CadflowAddIn,
-      định nghĩa thông số (Models) mà server cũng link vào. Không tự là add-in; mỗi add-in nằm ở Addins\<Tên>.
+      The shared library of every Cadflow add-in: the .gea interpreter, the Inventor services, the web worker, the CadflowAddIn base class,
+      the parameter definitions (Models) that the server also links in. It is not an add-in itself; each add-in lives in Addins\<Name>.
     -->
     <PropertyGroup>
         <AssemblyName>InventorAddin.Core</AssemblyName>
     </PropertyGroup>
 
     <ItemGroup>
-        <!-- Script .gea mẫu: đi theo ProjectReference vào thư mục output của từng add-in (web worker dùng Scripts\*.gea để dựng sản phẩm). -->
+        <!-- Sample .gea scripts: they travel through the ProjectReference into the output folder of each add-in (the web worker uses Scripts\*.gea to build products). -->
         <None Include="Scripts\*.gea">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <!-- Component libraries for INCLUDE lib:<name>: Scripts\lib\*.gea next to the add-in. -->
+        <None Include="Scripts\lib\*.gea">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
         <None Update="addin.template">

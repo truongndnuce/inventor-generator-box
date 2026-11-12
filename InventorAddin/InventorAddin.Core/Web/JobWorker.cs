@@ -11,8 +11,8 @@ using Inv = Inventor;
 namespace InventorAddin.Web;
 
 /// <summary>
-/// Vòng lặp nhận job từ web server (chạy nền, không chặn Inventor): hỏi server → chuyển phần dựng về UI thread
-/// của Inventor → tải kết quả lên → báo hoàn thành hoặc lỗi. Mỗi lúc chỉ làm một job (một Inventor = một job).
+/// The loop that takes jobs from the web server (runs in the background, does not block Inventor): ask the server → move the build onto the UI thread
+/// of Inventor → upload the results → report completion or an error. It does one job at a time (one Inventor = one job).
 /// </summary>
 public sealed class JobWorker : IDisposable
 {
@@ -29,10 +29,10 @@ public sealed class JobWorker : IDisposable
     private bool _versionRead;
     private string _status = "";
 
-    /// <summary>Phát khi trạng thái kết nối đổi (chạy trên thread nền; nơi nhận phải tự chuyển về UI thread).</summary>
+    /// <summary>Raised when the connection state changes (runs on a background thread; the receiver must switch to the UI thread itself).</summary>
     public event Action<string>? StatusChanged;
 
-    /// <param name="products">Mã sản phẩm add-in này dựng được (server chỉ giao job thuộc các mã đó); null = tất cả.</param>
+    /// <param name="products">Product codes this add-in can build (the server only hands out jobs of those codes); null = all.</param>
     public JobWorker(Inv.Application app, WorkerSettings settings, Func<Func<object?>, Task<object?>> onUiThread, string[]? products = null)
     {
         _settings = settings;
@@ -51,7 +51,7 @@ public sealed class JobWorker : IDisposable
     {
         _cts.Cancel();
         try { Task.WaitAll(new[] { _loop ?? Task.CompletedTask, _heartbeat ?? Task.CompletedTask }, TimeSpan.FromSeconds(2)); }
-        catch { /* đã hủy */ }
+        catch { /* cancelled */ }
         _client.Dispose();
         _cts.Dispose();
     }
@@ -64,7 +64,7 @@ public sealed class JobWorker : IDisposable
         StatusChanged?.Invoke(status);
     }
 
-    // ---------------------------------------------------------------- nhịp tim
+    // ---------------------------------------------------------------- heartbeat
 
     private async Task HeartbeatLoopAsync(CancellationToken ct)
     {
@@ -72,7 +72,7 @@ public sealed class JobWorker : IDisposable
         {
             try
             {
-                // Đọc phiên bản đúng một lần: nếu hỏi UI thread lúc đang dựng thì nhịp tim sẽ bị kẹt sau job.
+                // Read the version exactly once: asking the UI thread while it is building would leave the heartbeat stuck behind the job.
                 if (!_versionRead)
                 {
                     _versionRead = true;
@@ -96,7 +96,7 @@ public sealed class JobWorker : IDisposable
         }
     }
 
-    // ---------------------------------------------------------------- nhận và xử lý job
+    // ---------------------------------------------------------------- receiving and handling jobs
 
     private async Task LoopAsync(CancellationToken ct)
     {
@@ -134,7 +134,7 @@ public sealed class JobWorker : IDisposable
         _busy = true;
         SetStatus($"building {job.Id}");
 
-        // Báo tiến trình tuần tự qua một kênh, vì phần dựng chạy trên UI thread và không được chờ mạng.
+        // Report progress sequentially through one channel, because the build runs on the UI thread and must not wait on the network.
         var steps = Channel.CreateUnbounded<(string Step, string? Message)>();
         var pump = Task.Run(async () =>
         {

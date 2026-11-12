@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <AssemblyName>InventorAddin.Disconnector</AssemblyName>
+        <AddinClassId>68938A0C-1FB5-4BD7-8131-FDE6676F16A7</AddinClassId>
+        <AddinDisplayName>Cadflow Disconnector</AddinDisplayName>
+        <AddinDescription>Build a high-voltage double-column disconnector (posts, frame, insulator columns, blade arms, control cabinet) from a .gea script.</AddinDescription>
+        <AddinFileName>InventorDisconnectorAddin.addin</AddinFileName>
+    </PropertyGroup>
+
+    <Import Project="..\..\Addin.targets" />
+
+</Project>

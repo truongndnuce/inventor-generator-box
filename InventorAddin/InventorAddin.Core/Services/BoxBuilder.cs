@@ -7,9 +7,9 @@ using Inv = Inventor;
 namespace InventorAddin.Services;
 
 /// <summary>
-/// Dựng hộp parametric: mọi kích thước gắn vào User Parameter BX_*. Thân và nắp là hai solid body trong cùng một Part.
-/// Nắp đặt trên mặt trên của thân (mặt phẳng offset BX_Height), gờ nắp nhô xuống lòng hộp.
-/// Phải chạy bên trong một Transaction do gateway quản lý.
+/// Builds a parametric box: every dimension is bound to a BX_* User Parameter. The body and the lid are two solid bodies in the same Part.
+/// The lid sits on the top face of the body (an offset plane BX_Height), and the lid lip points down into the box.
+/// Must run inside a Transaction managed by the gateway.
 /// </summary>
 internal sealed class BoxBuilder
 {
@@ -48,7 +48,7 @@ internal sealed class BoxBuilder
             pars.AddByValue(d.Name, Cm(d.Name), Inv.UnitsTypeEnum.kMillimeterLengthUnits);
     }
 
-    // ------------------------------------------------------------ Thân
+    // ------------------------------------------------------------ Body
 
     private void BuildBody()
     {
@@ -64,11 +64,11 @@ internal sealed class BoxBuilder
         var body = ext.SurfaceBodies[1];
         body.Name = "BX_Box";
 
-        // Bo góc đứng ngoài
+        // Outer vertical corner fillets
         var fillet = _def.Features.FilletFeatures.AddSimple(VerticalEdges(body, (_, _) => true), "BX_CornerRadius");
         fillet.Name = "BX_BodyFillet";
 
-        // Shell: mở mặt trên, thành BX_Wall, đáy BX_Bottom
+        // Shell: open the top face, wall BX_Wall, bottom BX_Bottom
         body = FindBody("BX_Box");
         FindTopBottomFaces(body, out var top, out var bottom);
         var open = _app.TransientObjects.CreateFaceCollection();
@@ -81,7 +81,7 @@ internal sealed class BoxBuilder
         shell.Name = "BX_BodyShell";
     }
 
-    // ------------------------------------------------------------ Nắp
+    // ------------------------------------------------------------ Lid
 
     private void BuildLid()
     {
@@ -89,7 +89,7 @@ internal sealed class BoxBuilder
         plane.Name = "BX_LidPlane";
         plane.Visible = false;
 
-        // Tấm nắp
+        // Lid plate
         var sk = _def.Sketches.Add(plane);
         sk.Name = "BX_LidSketch";
         CenteredRectangle(sk, BoxParams.Length, BoxParams.Width, Cm(BoxParams.Length), Cm(BoxParams.Width));
@@ -101,7 +101,7 @@ internal sealed class BoxBuilder
         lid.Name = "BX_Lid";
         _def.Features.FilletFeatures.AddSimple(VerticalEdges(lid, (_, _) => true), "BX_CornerRadius").Name = "BX_LidFillet";
 
-        // Gờ nắp nhô xuống, nối vào body nắp (không nối vào thân)
+        // The lid lip points down, joined to the lid body (not to the body)
         var lipSketch = _def.Sketches.Add(plane);
         lipSketch.Name = "BX_LipSketch";
         const string lipLen = "BX_Length - 2 * BX_Wall - 2 * BX_LidClearance";
@@ -117,21 +117,21 @@ internal sealed class BoxBuilder
         var lipExt = _def.Features.ExtrudeFeatures.Add(led);
         lipExt.Name = "BX_LipExtrude";
 
-        // Bo góc gờ: các cạnh đứng của body nắp nằm dưới mặt phẳng nắp (z < BX_Height)
+        // Lip corner fillets: the vertical edges of the lid body that are below the lid plane (z < BX_Height)
         double zPlane = Cm(BoxParams.Height);
         var lipEdges = VerticalEdges(FindBody("BX_Lid"), (a, b) => Math.Min(a.Z, b.Z) < zPlane - Tol);
         _def.Features.FilletFeatures.AddSimple(lipEdges, "BX_CornerRadius - BX_Wall - BX_LidClearance").Name = "BX_LipFillet";
     }
 
-    // ------------------------------------------------------------ Tiện ích
+    // ------------------------------------------------------------ Utilities
 
     /// <summary>
-    /// Hình chữ nhật tâm tại gốc sketch, hai kích thước gắn vào biểu thức (tên Parameter).
-    /// Lưu ý: tham số cuối của AddTwoPointDistance là DrivenDimension; phải là false để kích thước điều khiển được hình (driving).
+    /// A rectangle centered at the sketch origin, with two dimensions bound to expressions (Parameter names).
+    /// Note: the last parameter of AddTwoPointDistance is DrivenDimension; it must be false so the dimension drives the shape (driving).
     /// </summary>
     private void CenteredRectangle(Inv.PlanarSketch sk, string lengthExpr, string widthExpr, double initLenCm, double initWidCm)
     {
-        // Chiếu Center Point của Part vào sketch để có SketchPoint ở gốc (sk.OriginPoint là điểm 3D, không dùng được ở đây).
+        // Project the Center Point of the Part into the sketch to get a SketchPoint at the origin (sk.OriginPoint is a 3D point, it cannot be used here).
         var origin = (Inv.SketchPoint)sk.AddByProjectingEntity(_def.WorkPoints[1]);
         var entities = sk.SketchLines.AddAsTwoPointCenteredRectangle(origin, _tg.CreatePoint2d(initLenCm / 2, initWidCm / 2));
         var lines = new List<Inv.SketchLine>();
@@ -172,7 +172,7 @@ internal sealed class BoxBuilder
         return edges;
     }
 
-    /// <summary>Mặt phẳng ngang cao nhất và thấp nhất của body.</summary>
+    /// <summary>The highest and lowest horizontal planes of the body.</summary>
     private static void FindTopBottomFaces(Inv.SurfaceBody body, out Inv.Face top, out Inv.Face bottom)
     {
         Inv.Face? t = null, b = null;

@@ -9,8 +9,8 @@ using InventorAddin.Models;
 namespace InventorAddin.Views;
 
 /// <summary>
-/// Vẽ một <see cref="Scene"/> lên DrawingContext, co giãn đúng tỷ lệ (không méo) và tự có nền riêng
-/// nên đọc được ở cả theme sáng và tối của Inventor. Chỉ là sơ đồ minh họa, không phải render của Inventor.
+/// Draws a <see cref="Scene"/> onto a DrawingContext, scaled with the right proportions (no distortion) and with its own background
+/// so it is readable in both the light and the dark theme of Inventor. It is only an illustrative diagram, not an Inventor render.
 /// </summary>
 public sealed class PreviewControl : FrameworkElement
 {
@@ -62,7 +62,7 @@ public sealed class PreviewControl : FrameworkElement
         var errors = ErrorParams;
         double pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
 
-        // Hai lượt: hình trước, nhãn sau để chữ không bị che
+        // Two passes: shapes first, labels after so the text is not covered
         foreach (var shape in scene.Shapes)
         {
             bool isHl = shape.Param != null && shape.Param == hl;
@@ -106,7 +106,7 @@ public sealed class PreviewControl : FrameworkElement
 
         var a = p(r.X, r.Y);
         double w = r.W * scale, h = r.H * scale;
-        // Thành và khe hở rất mỏng: vẽ với độ dày tối thiểu vài pixel
+        // Walls and clearances are very thin: draw them with a minimum thickness of a few pixels
         double minPx = r.Style == ShapeStyle.Gap ? 2.5 : r.Style == ShapeStyle.Overlay ? 3 : 0;
         if (minPx > 0)
         {

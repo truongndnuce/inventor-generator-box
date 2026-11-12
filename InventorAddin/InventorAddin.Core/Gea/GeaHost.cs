@@ -7,13 +7,13 @@ namespace InventorAddin.Gea;
 public enum GeaProgressKind { Start, State, End }
 
 /// <summary>
-/// Giao diện Host (mục 14 của mapping, mục 14 của đặc tả). Trình thông dịch gọi Host cho mọi việc đụng tới model.
-/// Hai cài đặt: Inventor Host (add-in, worker) và <see cref="GeaSimulationHost"/> (chạy thử, test).
-/// Lỗi của Host ném <see cref="GeaRuntimeException"/> mã GEA4xxx; ngoại lệ khác được bọc thành GEA4099.
+/// The Host interface (section 14 of the mapping, section 14 of the spec). The interpreter calls the Host for everything that touches the model.
+/// Two implementations: the Inventor Host (add-in, worker) and <see cref="GeaSimulationHost"/> (dry run, tests).
+/// A Host error throws <see cref="GeaRuntimeException"/> with code GEA4xxx; other exceptions are wrapped as GEA4099.
 /// </summary>
 public interface IGeaHost
 {
-    /// <summary>Đồng bộ mọi thông số FORM thành User Parameter trước dòng đầu tiên của BUILD (mục 9.1).</summary>
+    /// <summary>Synchronizes every FORM parameter as a User Parameter before the first line of BUILD (section 9.1).</summary>
     void SyncParameters(IReadOnlyList<KeyValuePair<string, GeaValue>> values);
 
     void SetParam(string name, GeaValue value);
@@ -22,8 +22,15 @@ public interface IGeaHost
 
     GeaValue GetParam(string name, GeaType type);
 
-    /// <summary>Chạy builder; trả về các đầu ra theo tên.</summary>
+    /// <summary>Runs a builder; returns the outputs by name.</summary>
     IReadOnlyDictionary<string, GeaRef> CreateFeature(BuilderManifest builder, GeaRef? on, IReadOnlyDictionary<string, GeaValue> inputs);
+
+    /// <summary>
+    /// ADD_COMPONENT (TARGET ASSEMBLY): inserts a part at a position (mm) with a rotation (degrees) and returns a reference to the occurrence.
+    /// A host that builds a part (not an assembly) does not support it, hence the default that throws GEA4020.
+    /// </summary>
+    GeaRef AddComponent(string part, double[] positionMm, double[] rotationDeg) =>
+        throw new GeaRuntimeException("GEA4020", "ADD_COMPONENT needs an assembly; this host builds a part.");
 
     void SetRefName(GeaRef target, string name);
 
@@ -45,16 +52,16 @@ public interface IGeaHost
 public static class GeaNames
 {
     /// <summary>
-    /// Quy tắc tên của SET_REF_NAME: tên kết thúc bằng <c>*</c> thì thêm hậu tố _1, _2... để duy nhất
-    /// (<c>"TR_Tank*"</c> thành <c>TR_Tank_1</c>). Không có <c>*</c> mà trùng thì lỗi GEA4011.
+    /// Naming rule of SET_REF_NAME: a name ending in <c>*</c> gets a suffix _1, _2... to make it unique
+    /// (<c>"TR_Tank*"</c> becomes <c>TR_Tank_1</c>). Without <c>*</c>, a duplicate is error GEA4011.
     /// </summary>
     public static string Resolve(string pattern, Func<string, bool> taken)
     {
         if (string.IsNullOrWhiteSpace(pattern) || pattern == "*")
-            throw new GeaRuntimeException("GEA4011", "Tên đối tượng không được rỗng.");
+            throw new GeaRuntimeException("GEA4011", "An object name must not be empty.");
         if (!pattern.EndsWith("*", StringComparison.Ordinal))
         {
-            if (taken(pattern)) throw new GeaRuntimeException("GEA4011", $"Tên '{pattern}' đã có đối tượng khác dùng. Thêm '*' ở cuối để tự đánh số.");
+            if (taken(pattern)) throw new GeaRuntimeException("GEA4011", $"The name '{pattern}' is already used by another object. Add '*' at the end to number it automatically.");
             return pattern;
         }
         var stem = pattern.TrimEnd('*').TrimEnd('_');
@@ -63,13 +70,13 @@ public static class GeaNames
             var candidate = $"{stem}_{i}";
             if (!taken(candidate)) return candidate;
         }
-        throw new GeaRuntimeException("GEA4011", $"Không tìm được tên duy nhất cho '{pattern}'.");
+        throw new GeaRuntimeException("GEA4011", $"Could not find a unique name for '{pattern}'.");
     }
 }
 
 /// <summary>
-/// Mô phỏng Host: model ảo trong bộ nhớ, ghi vết lệnh. Dùng để chạy thử BUILD (bắt lỗi thực thi) trước khi đụng tới Inventor,
-/// và để test. Không tái tạo hình học thật.
+/// Simulation Host: a virtual model in memory that records a trace of the commands. Used to dry-run BUILD (catching run-time errors) before touching Inventor,
+/// and for tests. It does not reproduce real geometry.
 /// </summary>
 public sealed class GeaSimulationHost : IGeaHost
 {
@@ -83,6 +90,7 @@ public sealed class GeaSimulationHost : IGeaHost
     }
 
     private int _bodyCounter;
+    private int _componentCounter;
 
     public Dictionary<string, GeaValue> Parameters { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, string> ParameterExpressions { get; } = new(StringComparer.Ordinal);
@@ -110,10 +118,10 @@ public sealed class GeaSimulationHost : IGeaHost
     public GeaValue GetParam(string name, GeaType type)
     {
         if (!Parameters.TryGetValue(name, out var v))
-            throw new GeaRuntimeException("GEA4099", $"Parameter '{name}' không tồn tại.");
+            throw new GeaRuntimeException("GEA4099", $"Parameter '{name}' does not exist.");
         if (v.Type == type) return v;
         if (v.IsNumeric && type is GeaType.Integer or GeaType.Double or GeaType.Length or GeaType.Angle) return GeaValue.Number(type, v.Num);
-        throw new GeaRuntimeException("GEA2002", $"Parameter '{name}' là {GeaUnits.TypeName(v.Type)}, không đọc được thành {GeaUnits.TypeName(type)}.");
+        throw new GeaRuntimeException("GEA2002", $"Parameter '{name}' is {GeaUnits.TypeName(v.Type)}, it cannot be read as {GeaUnits.TypeName(type)}.");
     }
 
     public IReadOnlyDictionary<string, GeaRef> CreateFeature(BuilderManifest builder, GeaRef? on, IReadOnlyDictionary<string, GeaValue> inputs)
@@ -123,7 +131,7 @@ public sealed class GeaSimulationHost : IGeaHost
         Trace.Add($"CREATE_FEATURE builder:{builder.Name} " + string.Join(", ", inputs.Select(kv => $"{kv.Key}={kv.Value}")));
         var props = new Dictionary<string, GeaValue>(inputs, StringComparer.Ordinal);
         var result = builder.Outputs.ToDictionary(o => o.Name, o => new GeaRef("BODY", obj, builder.Name, props));
-        // Giống Inventor Host: chân sứ tách riêng là một body khác
+        // Same as the Inventor Host: a separate turret is another body
         if (builder.Name == "Bushing" && inputs.TryGetValue("SeparateTurret", out var sep) && sep.Bool)
         {
             var turret = new SimObject { Name = $"Body{++_bodyCounter}", Builder = builder.Name + ".Turret", Inputs = inputs };
@@ -131,6 +139,20 @@ public sealed class GeaSimulationHost : IGeaHost
             result["Turret"] = new GeaRef("BODY", turret, builder.Name, props);
         }
         return result;
+    }
+
+    public GeaRef AddComponent(string part, double[] positionMm, double[] rotationDeg)
+    {
+        var inputs = new Dictionary<string, GeaValue>(StringComparer.Ordinal)
+        {
+            ["Part"] = GeaValue.Text(part),
+            ["X"] = GeaValue.Length(positionMm[0]), ["Y"] = GeaValue.Length(positionMm[1]), ["Z"] = GeaValue.Length(positionMm[2]),
+            ["Rx"] = GeaValue.Angle(rotationDeg[0]), ["Ry"] = GeaValue.Angle(rotationDeg[1]), ["Rz"] = GeaValue.Angle(rotationDeg[2]),
+        };
+        var obj = new SimObject { Name = $"Comp{++_componentCounter}", Builder = "component:" + part, Inputs = inputs };
+        Objects.Add(obj);
+        Trace.Add($"ADD_COMPONENT \"{part}\" AT {inputs["X"]}, {inputs["Y"]}, {inputs["Z"]} ROT {inputs["Rx"]}, {inputs["Ry"]}, {inputs["Rz"]}");
+        return new GeaRef("COMPONENT", obj, "component", inputs);
     }
 
     private static SimObject Obj(GeaRef r) => (SimObject)r.Handle;

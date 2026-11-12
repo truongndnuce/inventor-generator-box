@@ -11,11 +11,11 @@ using Inv = Inventor;
 namespace InventorAddin.Host;
 
 /// <summary>
-/// Lớp nền cho mọi add-in của bộ Cadflow (Box, Gas turbine, Transformer, Generator...). Mỗi add-in là một DLL, một file .addin
-/// và một GUID riêng nên bật/tắt độc lập, nhưng chung một tab "Cadflow" trên ribbon của Part: mỗi add-in thêm một panel của mình
-/// vào tab đó (add-in nào nạp trước thì tạo tab).
-/// Lớp con chỉ khai báo tên, icon, mã sản phẩm nhận từ web và nội dung cửa sổ; phần còn lại (ribbon, cửa sổ, web worker,
-/// làm mới khi đổi document, giải phóng COM) làm ở đây. Mọi thứ chạy trên UI thread của Inventor.
+/// Base class for every add-in of the Cadflow suite (Box, Gas turbine, Transformer, Generator...). Each add-in is one DLL, one .addin file
+/// and its own GUID, so they can be turned on/off independently, but they share one "Cadflow" tab on the Part ribbon: each add-in adds its own panel
+/// to that tab (whichever add-in loads first creates the tab).
+/// A subclass only declares the name, icon, the product codes it accepts from the web and the window content; everything else (ribbon, window, web worker,
+/// refreshing when the document changes, releasing COM) is done here. Everything runs on the UI thread of Inventor.
 /// </summary>
 public abstract class CadflowAddIn : Inv.ApplicationAddInServer
 {
@@ -30,29 +30,29 @@ public abstract class CadflowAddIn : Inv.ApplicationAddInServer
     private bool _closing;
     private bool _shownOnce;
 
-    // ---------------------------------------------------------------- lớp con khai báo
+    // ---------------------------------------------------------------- declared by the subclass
 
-    /// <summary>Mã ngắn không dấu, duy nhất cho mỗi add-in ("box", "gas-turbine"...): dùng làm hậu tố id lệnh, panel và tên worker.</summary>
+    /// <summary>A short code without diacritics, unique for each add-in ("box", "gas-turbine"...): used as the suffix of the command id, the panel and the worker name.</summary>
     protected abstract string AddinId { get; }
-    /// <summary>Tên hiện trên nút ribbon và tiêu đề cửa sổ.</summary>
+    /// <summary>Name shown on the ribbon button and in the window title.</summary>
     protected abstract string Title { get; }
     protected abstract string Description { get; }
-    /// <summary>Mã sản phẩm (xem server) mà add-in này dựng khi nhận job từ web. Rỗng = không nhận job.</summary>
+    /// <summary>Product codes (see the server) that this add-in builds when it receives a job from the web. Empty = accepts no jobs.</summary>
     protected abstract string[] JobProducts { get; }
     protected virtual Size WindowSize => new(440, 800);
-    /// <summary>Vẽ icon 16/32 px của nút ribbon.</summary>
+    /// <summary>Draws the 16/32 px icon of the ribbon button.</summary>
     protected abstract void DrawIcon(Graphics g, int size);
-    /// <summary>Tạo nội dung WPF của cửa sổ (service → ViewModel → View).</summary>
+    /// <summary>Creates the WPF content of the window (service → ViewModel → View).</summary>
     protected abstract System.Windows.UIElement CreateContent(Inv.Application app, IDialogService dialogs);
-    /// <summary>Đọc lại trạng thái từ model (khi mở cửa sổ hoặc đổi document).</summary>
+    /// <summary>Re-reads the state from the model (when the window opens or the document changes).</summary>
     protected virtual void OnRefresh() { }
-    /// <summary>Lần đầu cửa sổ được mở trong phiên làm việc.</summary>
+    /// <summary>The first time the window is opened in the session.</summary>
     protected virtual void OnFirstShown() { }
     protected virtual void OnDispose() { }
 
     protected Inv.Application App => _app!;
 
-    // ---------------------------------------------------------------- vòng đời COM
+    // ---------------------------------------------------------------- COM lifetime
 
     public object? Automation => null;
 
@@ -119,7 +119,7 @@ public abstract class CadflowAddIn : Inv.ApplicationAddInServer
             MinimumSize = new Size(340, 520),
         };
         _window.Controls.Add(host);
-        // Đóng cửa sổ chỉ ẩn đi, giữ trạng thái cho lần mở sau
+        // Closing the window only hides it, keeping the state for the next time
         _window.FormClosing += (_, e) =>
         {
             if (_closing) return;
@@ -147,7 +147,7 @@ public abstract class CadflowAddIn : Inv.ApplicationAddInServer
         StartWebWorker(app);
     }
 
-    /// <summary>Tab Cadflow dùng chung: add-in nào nạp trước tạo tab, các add-in sau chỉ thêm panel của mình.</summary>
+    /// <summary>The shared Cadflow tab: whichever add-in loads first creates the tab, the later add-ins only add their own panel.</summary>
     private void AddRibbon(Inv.UserInterfaceManager ui)
     {
         try
@@ -174,9 +174,9 @@ public abstract class CadflowAddIn : Inv.ApplicationAddInServer
     // ---------------------------------------------------------------- web worker
 
     /// <summary>
-    /// Nhận job do web đặt (be/Cadflow.Api) cho các sản phẩm của add-in này. Cấu hình chung ở %AppData%\InventorBoxAddin\worker.json;
-    /// tên worker thêm hậu tố add-in nên mỗi add-in hiện là một worker riêng trên server.
-    /// Handle của cửa sổ (tạo trên UI thread) dùng để đẩy phần gọi Inventor API về đúng UI thread.
+    /// Receives jobs placed on the web (be/Cadflow.Api) for the products of this add-in. Shared settings are in %AppData%\InventorBoxAddin\worker.json;
+    /// the worker name gets the add-in as a suffix, so each add-in appears as its own worker on the server.
+    /// The window handle (created on the UI thread) is used to push the part that calls the Inventor API back onto the right UI thread.
     /// </summary>
     private void StartWebWorker(Inv.Application app)
     {
@@ -191,7 +191,7 @@ public abstract class CadflowAddIn : Inv.ApplicationAddInServer
             }
             settings = settings.ForAddin(AddinId);
 
-            _ = _window!.Handle; // ép tạo handle ngay trên UI thread, kể cả khi cửa sổ đang ẩn
+            _ = _window!.Handle; // force the handle to be created on the UI thread right now, even when the window is hidden
             var ui = _window;
             _worker = new JobWorker(app, settings, work =>
             {
@@ -210,7 +210,7 @@ public abstract class CadflowAddIn : Inv.ApplicationAddInServer
                     if (!ui.IsDisposed && ui.IsHandleCreated)
                         ui.BeginInvoke(new Action(() => ui.Text = Title + " - web: " + status));
                 }
-                catch { /* cửa sổ đang đóng */ }
+                catch { /* the window is closing */ }
             };
             _worker.Start();
             Log.Info($"[{AddinId}] Web worker started: {settings.WorkerName} -> {settings.ServerUrl} ({string.Join(", ", JobProducts)})");
@@ -221,9 +221,9 @@ public abstract class CadflowAddIn : Inv.ApplicationAddInServer
         }
     }
 
-    // ---------------------------------------------------------------- sự kiện
+    // ---------------------------------------------------------------- events
 
-    /// <summary>Wrapper để dùng cửa sổ chính của Inventor làm owner của pop-up.</summary>
+    /// <summary>Wrapper so the main Inventor window can be the owner of pop-ups.</summary>
     private sealed class MainWindow : IWin32Window
     {
         public MainWindow(IntPtr handle) => Handle = handle;
@@ -245,7 +245,7 @@ public abstract class CadflowAddIn : Inv.ApplicationAddInServer
             if (!_window.Visible)
             {
                 var owner = new MainWindow((IntPtr)_app.MainFrameHWND);
-                // Đặt gần mép phải của màn hình chứa Inventor
+                // Place it near the right edge of the screen that holds Inventor
                 var area = Screen.FromHandle(owner.Handle).WorkingArea;
                 _window.Location = new Point(Math.Max(area.Left, area.Right - _window.Width - 40), area.Top + 60);
                 _window.Show(owner);
@@ -273,12 +273,12 @@ public abstract class CadflowAddIn : Inv.ApplicationAddInServer
         {
             if (comObject != null && Marshal.IsComObject(comObject)) Marshal.ReleaseComObject(comObject);
         }
-        catch { /* đã được giải phóng */ }
+        catch { /* already released */ }
         comObject = null;
     }
 }
 
-/// <summary>Vẽ icon đơn giản bằng GDI+ và đổi sang IPictureDisp cho Inventor.</summary>
+/// <summary>Draws a simple icon with GDI+ and converts it to IPictureDisp for Inventor.</summary>
 internal sealed class IconFactory : AxHost
 {
     private IconFactory() : base(string.Empty) { }

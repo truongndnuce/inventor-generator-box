@@ -7,22 +7,22 @@ using Inv = Inventor;
 
 namespace InventorAddin.Services;
 
-/// <summary>Kết quả dựng bản vẽ. Dim hụt (không tìm thấy cạnh) chỉ làm giảm <see cref="Dimensions"/>, không làm hỏng bản vẽ.</summary>
+/// <summary>Result of building a drawing. A missing dimension (an edge not found) only reduces <see cref="Dimensions"/>, it does not spoil the drawing.</summary>
 public sealed record DrawingResult(bool Ok, string Sheet, double ScaleDenominator, int Views, int Dimensions, string? Warning, bool DwgOk = false);
 
 /// <summary>
-/// Dựng bản vẽ 2D của một Part theo quy ước bản vẽ kỹ thuật cơ khí chung (ISO 128 / ISO 129 / ISO 5455 / ISO 5457, TCVN tương đương):
-/// chiếu góc thứ nhất (hình chiếu bằng nằm DƯỚI hình chiếu đứng, hình chiếu cạnh nằm BÊN PHẢI), khổ A4..A0 nhỏ nhất vừa
-/// với tỉ lệ chuẩn không nhỏ hơn 1:20, mặt cắt A-A qua tâm, hình iso, dim kích thước bao và chuỗi dim chiều cao trên mặt cắt.
-/// Nét vẽ, mũi tên, chiều cao chữ do template ISO.idw đảm nhiệm (đúng tiêu chuẩn), code không ghi đè.
-/// Chỉ được gọi trên UI thread của Inventor.
+/// Builds the 2D drawing of a Part following the common mechanical technical drawing conventions (ISO 128 / ISO 129 / ISO 5455 / ISO 5457, with the TCVN equivalents):
+/// first-angle projection (the plan view is BELOW the front view, the side view is on the RIGHT), the smallest sheet from A4 to A0 that fits
+/// with a standard scale not smaller than 1:20, a section A-A through the center, an iso view, overall dimensions and a height dimension chain on the section.
+/// Line types, arrows and text height are handled by the ISO.idw template (so they follow the standard); the code does not override them.
+/// May only be called on the Inventor UI thread.
 /// </summary>
 internal sealed class DrawingBuilder
 {
     private const string PdfTranslatorId = "{0AC6FD96-2F4D-42CE-8BE0-8AEA580399E4}";
-    private const string DwgTranslatorId = "{C24E3AC2-122E-11D5-8E91-0010B541CD80}"; // "Translator: DWG" (Inventor 2027.2), chạy được không cần tùy chọn
+    private const string DwgTranslatorId = "{C24E3AC2-122E-11D5-8E91-0010B541CD80}"; // "Translator: DWG" (Inventor 2027.2), works without extra options
 
-    // ISO 5457 (nằm ngang, cm) và ISO 5455 (tỉ lệ ưu tiên, từ lớn đến nhỏ).
+    // ISO 5457 (landscape, cm) and ISO 5455 (preferred scales, from large to small).
     private static readonly (Inv.DrawingSheetSizeEnum Size, double W, double H, string Name)[] Sheets =
     {
         (Inv.DrawingSheetSizeEnum.kA4DrawingSheetSize, 29.7, 21.0, "A4"),
@@ -33,21 +33,21 @@ internal sealed class DrawingBuilder
     };
     private static readonly double[] Scales = { 5, 2, 1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01, 0.005, 0.002, 0.001 };
 
-    private const double MinPreferredScale = 0.05; // không nhỏ hơn 1:20 nếu còn khổ lớn hơn để chọn
-    private const double ViewGap = 3.0;            // cm giữa các hình chiếu: chừa chỗ cho hai hàng dim
-    private const double LeftRoom = 4.5;           // cm: lề đóng gáy (2) + cột dim bên trái
+    private const double MinPreferredScale = 0.05; // not smaller than 1:20 if a larger sheet is still available
+    private const double ViewGap = 3.0;            // cm between the views: leaves room for two rows of dimensions
+    private const double LeftRoom = 4.5;           // cm: binding margin (2) + the dimension column on the left
     private const double TopRoom = 2.5;
-    private const double FirstDimOffset = 1.5;     // >= 10 mm kể từ hình (ISO 129)
+    private const double FirstDimOffset = 1.5;     // >= 10 mm from the view (ISO 129)
     private const double SecondDimOffset = 2.6;
 
     private readonly Inv.Application _app;
 
     public DrawingBuilder(Inv.Application app) => _app = app;
 
-    /// <param name="part">Part đã dựng và đã lưu, đang mở.</param>
-    /// <param name="zUp">Trục đứng của mô hình là Z (hộp) hay Y (máy biến áp).</param>
-    /// <param name="sectionLevelsMm">Các mức cao (mm từ đáy mô hình) để ghi chuỗi dim trên mặt cắt; rỗng thì bỏ qua.</param>
-    /// <param name="dwgPath">Nếu có, xuất thêm bản vẽ dạng DWG. Lỗi DWG chỉ thành cảnh báo, không làm hỏng PDF.</param>
+    /// <param name="part">The Part, already built and saved, and open.</param>
+    /// <param name="zUp">Whether the vertical axis of the model is Z (box) or Y (transformer).</param>
+    /// <param name="sectionLevelsMm">Height levels (mm from the bottom of the model) to write the dimension chain on the section; empty to skip.</param>
+    /// <param name="dwgPath">If given, also exports the drawing as DWG. A DWG error is only a warning, it does not spoil the PDF.</param>
     public DrawingResult Build(Inv.PartDocument part, bool zUp, IReadOnlyList<double> sectionLevelsMm, string pdfPath, string? dwgPath = null)
     {
         Inv.DrawingDocument? dd = null;
@@ -85,7 +85,7 @@ internal sealed class DrawingBuilder
             Inv.SectionDrawingView? section = null;
             try
             {
-                // Toạ độ sketch của view theo kích thước mô hình (chưa nhân tỉ lệ), gốc ở tâm view.
+                // Sketch coordinates of the view by model size (not yet multiplied by the scale), origin at the view center.
                 var sk = front.Sketches.Add();
                 sk.Edit();
                 double half = (front.Height / 2 + 1) / scale;
@@ -101,7 +101,7 @@ internal sealed class DrawingBuilder
                 warnings.Add("section view failed");
             }
 
-            // Hình iso ở khoảng trống còn lại (dưới mặt cắt, trên khung tên).
+            // The iso view goes in the remaining empty space (below the section, above the title block).
             try
             {
                 sheet.DrawingViews.AddBaseView(model, tg.CreatePoint2d(sheet.Width * 0.72, sheet.Height * 0.3), scale / 2,
@@ -146,12 +146,12 @@ internal sealed class DrawingBuilder
         }
         finally
         {
-            try { dd?.Close(true); } // bỏ qua hỏi lưu: bản vẽ chỉ xuất PDF
+            try { dd?.Close(true); } // skip the save prompt: the drawing is only exported as PDF
             catch (Exception ex) { Log.Warn("Could not close the drawing: " + ex.Message); }
         }
     }
 
-    // ---------------------------------------------------------------- khổ giấy / tỉ lệ
+    // ---------------------------------------------------------------- sheet size / scale
 
     private static ((Inv.DrawingSheetSizeEnum Size, double W, double H, string Name) Sheet, double Scale) ChooseSheet(double l, double h, double d)
     {
@@ -162,7 +162,7 @@ internal sealed class DrawingBuilder
                 if (Fits(sheet.W, sheet.H, scale, l, h, d))
                 {
                     if (scale >= MinPreferredScale) return (sheet, scale);
-                    break; // khổ này chỉ vừa ở tỉ lệ quá nhỏ: thử khổ lớn hơn
+                    break; // this sheet only fits at too small a scale: try a larger sheet
                 }
             }
         }
@@ -188,7 +188,7 @@ internal sealed class DrawingBuilder
         }
     }
 
-    /// <summary>Dim kích thước bao: hai đường ngoài cùng theo mỗi phương (mọi loại curve, kể cả vòng tròn nhìn nghiêng).</summary>
+    /// <summary>Overall dimensions: the two outermost lines along each direction (every kind of curve, including a circle seen at an angle).</summary>
     private static int Overall(Inv.Sheet sheet, Inv.TransientGeometry tg, Inv.DrawingView view, bool vertical, bool horizontal, double offset)
     {
         var (curves, boxes) = ViewCurves(view);
@@ -218,7 +218,7 @@ internal sealed class DrawingBuilder
         return made;
     }
 
-    /// <summary>Chuỗi dim chiều cao ở mép phải mặt cắt (vd. đế, thân, nắp). Mức không có cạnh tương ứng thì bỏ cả chuỗi.</summary>
+    /// <summary>Height dimension chain at the right edge of the section (e.g. base, body, cover). If a level has no matching edge, the whole chain is dropped.</summary>
     private static int HeightChain(Inv.Sheet sheet, Inv.TransientGeometry tg, Inv.DrawingView view, IReadOnlyList<double> levelsMm, double scale, double offset)
     {
         var (curves, boxes) = ViewCurves(view);
@@ -251,7 +251,7 @@ internal sealed class DrawingBuilder
         {
             var a = picks[i];
             var b = picks[i + 1];
-            if (Math.Abs(b.Y - a.Y) < 0.05) continue; // hai mức trùng nhau
+            if (Math.Abs(b.Y - a.Y) < 0.05) continue; // the two levels coincide
             dimensions.AddLinear(tg.CreatePoint2d(xText, (a.Y + b.Y) / 2),
                 sheet.CreateGeometryIntent(a.Curve, tg.CreatePoint2d(a.X, a.Y)), sheet.CreateGeometryIntent(b.Curve, tg.CreatePoint2d(b.X, b.Y)),
                 Inv.DimensionTypeEnum.kVerticalDimensionType, true, Type.Missing, Type.Missing);
@@ -260,7 +260,7 @@ internal sealed class DrawingBuilder
         return made;
     }
 
-    /// <summary>Các curve của view cùng RangeBox; bỏ curve nằm ngoài khung view (đường cắt của sketch).</summary>
+    /// <summary>The curves of the view with the same RangeBox; curves outside the view frame (the cutting line of the sketch) are dropped.</summary>
     private static (List<Inv.DrawingCurve> Curves, List<Inv.Box2d> Boxes) ViewCurves(Inv.DrawingView view)
     {
         double limit = view.Center.Y + view.Height / 2 + 0.01;

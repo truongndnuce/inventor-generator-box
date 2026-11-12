@@ -1,41 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { Box, Button, Card, Checkbox, Flex, Heading, Select, Separator, Tabs, Text, TextField } from '@radix-ui/themes';
+import { Box, Button, Card, Flex, Heading, Separator, Tabs, Text, TextField } from '@radix-ui/themes';
 import { go, postJson } from '../lib.js';
-import { Notice } from '../components.jsx';
+import { Notice, QuickPreview, ScriptField } from '../components.jsx';
 
 const isText = (f) => f.kind === 'radio' || f.kind === 'text';
 
-/** Một ô của form sinh từ khối FORM của script: radio -> Select, text, checkbox, hoặc số. */
-function ScriptField({ f, value, text, invalid, setValue, setText }) {
-  const label = <Text as="label" htmlFor={f.name} size="2" weight="medium" title={f.tooltip || ''}>{f.label}</Text>;
-  const color = invalid ? 'red' : undefined;
-  let control;
-  let hint = null;
-  if (f.kind === 'radio') {
-    control = (
-      <Select.Root value={text} onValueChange={setText}>
-        <Select.Trigger id={f.name} color={color} />
-        <Select.Content>{f.options.map((o) => <Select.Item key={o} value={o}>{o}</Select.Item>)}</Select.Content>
-      </Select.Root>
-    );
-  } else if (f.kind === 'text') {
-    control = <TextField.Root id={f.name} value={text} color={color} onChange={(e) => setText(e.target.value)} />;
-  } else if (f.kind === 'checkbox') {
-    control = <Checkbox id={f.name} checked={value === 1} color={color} onCheckedChange={(c) => setValue(c ? 1 : 0)} />;
-  } else {
-    control = (
-      <TextField.Root id={f.name} type="number" min={f.min} max={f.max} step={f.integer ? 1 : (f.step || 'any')}
-        value={value} color={color} onChange={(e) => e.target.value !== '' && setValue(Number(e.target.value))} />
-    );
-    hint = <span className="range">{f.min != null && f.max != null ? `${f.min}-${f.max} ${f.unit}`.trim() : f.unit}</span>;
-  }
-  return <div className="field script-field">{label}{control}{hint}</div>;
-}
-
 export default function ScriptOrder({ scriptId }) {
   const [state, setState] = useState(null);       // { imported, result }
-  const [values, setValues] = useState({});       // ô số và ô tích (1/0)
-  const [texts, setTexts] = useState({});         // ô text và ô chọn một
+  const [values, setValues] = useState({});       // number and checkbox fields (1/0)
+  const [texts, setTexts] = useState({});         // text and single-choice fields
   const [result, setResult] = useState(null);
   const [note, setNote] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -48,8 +21,8 @@ export default function ScriptOrder({ scriptId }) {
     let alive = true;
     (async () => {
       let imported = {}; let retry = {};
-      try { const s = JSON.parse(sessionStorage.getItem('cadflow.import') || '{}'); if (s.scriptId === scriptId) imported = s; } catch { /* bỏ qua */ }
-      try { const s = JSON.parse(sessionStorage.getItem('cadflow.importRetry') || '{}'); if (s.scriptId === scriptId) retry = s; } catch { /* bỏ qua */ }
+      try { const s = JSON.parse(sessionStorage.getItem('cadflow.import') || '{}'); if (s.scriptId === scriptId) imported = s; } catch { /* ignore */ }
+      try { const s = JSON.parse(sessionStorage.getItem('cadflow.importRetry') || '{}'); if (s.scriptId === scriptId) retry = s; } catch { /* ignore */ }
       sessionStorage.removeItem('cadflow.importRetry');
       const v = { ...(imported.values || {}), ...(retry.values || {}) };
       const t = { ...(imported.texts || {}), ...(retry.texts || {}) };
@@ -67,7 +40,7 @@ export default function ScriptOrder({ scriptId }) {
     return () => { alive = false; };
   }, [scriptId]);
 
-  // Server tính lại ô ẩn/hiện và luật ASSERT mỗi khi giá trị đổi.
+  // The server recomputes which fields are shown/hidden and the ASSERT rules whenever a value changes.
   useEffect(() => {
     if (!ready.current) return undefined;
     const mine = ++seq.current;
@@ -146,6 +119,8 @@ export default function ScriptOrder({ scriptId }) {
           <TextField.Root placeholder="Requested by" value={who} onChange={(e) => setWho(e.target.value)} style={{ minWidth: 240 }} />
           <Button size="2" disabled={!result.form.ok || busy || pending} onClick={submit}>Submit order</Button>
         </Flex>
+        <QuickPreview disabled={!result.form.ok || busy || pending}
+          createJob={() => postJson('/api/jobs', { scriptId, inputs: values, textInputs: texts, requestedBy: who, kind: 'preview' })} />
       </Flex>
     </Card>
   );

@@ -1,11 +1,14 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Npgsql;
+using NpgsqlTypes;
 
 namespace Cadflow.Api;
 
 /// <summary>
-/// Kho job + hàng đợi, giữ trong bộ nhớ và ghi snapshot JSON xuống đĩa mỗi lần đổi.
-/// Bản đầu (W0) đủ cho một server; khi cần thì thay bằng PostgreSQL (nhận job bằng FOR UPDATE SKIP LOCKED) mà không đổi API.
+/// Job store + queue on PostgreSQL (tables jobs, job_artifacts, job_events). Every operation is one short transaction;
+/// workers take jobs with FOR UPDATE SKIP LOCKED, so several backend instances sharing one DB never hand out the same job twice.
+/// Worker state (heartbeat, Busy) lives in memory only because it refreshes itself with every heartbeat.
 /// </summary>
 public sealed class JobStore
 {
@@ -19,45 +22,137 @@ public sealed class JobStore
         Converters = { new JsonStringEnumConverter() },
     };
 
-    private readonly object _gate = new();
-    private readonly List<Job> _jobs = new();
+    private const string Schema = """
+        CREATE TABLE IF NOT EXISTS jobs (
+            id text PRIMARY KEY,
+            product_code text NOT NULL,
+            product_version int NOT NULL DEFAULT 1,
+            status text NOT NULL,
+            step text,
+            error text,
+            requested_by text NOT NULL DEFAULT '',
+            created_at timestamptz NOT NULL,
+            started_at timestamptz,
+            finished_at timestamptz,
+            last_heartbeat timestamptz,
+            worker text,
+            attempts int NOT NULL DEFAULT 0,
+            inputs jsonb NOT NULL DEFAULT '{}',
+            text_inputs jsonb NOT NULL DEFAULT '{}',
+            summary jsonb NOT NULL DEFAULT '{}',
+            script_name text,
+            script_sha256 text,
+            script_source text,
+            artifacts_purged_at timestamptz
+        );
+        ALTER TABLE jobs ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'generate';
+        ALTER TABLE jobs ADD COLUMN IF NOT EXISTS queue text NOT NULL DEFAULT 'build';
+        ALTER TABLE jobs ADD COLUMN IF NOT EXISTS priority int NOT NULL DEFAULT 20;
+        ALTER TABLE jobs ADD COLUMN IF NOT EXISTS source_job_id text;
+        DROP INDEX IF EXISTS ix_jobs_status_created;
+        CREATE INDEX IF NOT EXISTS ix_jobs_queue ON jobs (status, queue, priority, created_at);
+        CREATE INDEX IF NOT EXISTS ix_jobs_requested_by ON jobs (requested_by);
+        CREATE INDEX IF NOT EXISTS ix_jobs_product ON jobs (product_code);
+        CREATE TABLE IF NOT EXISTS job_artifacts (
+            job_id text NOT NULL REFERENCES jobs (id) ON DELETE CASCADE,
+            name text NOT NULL,
+            kind text NOT NULL,
+            size bigint NOT NULL,
+            r2_key text,
+            PRIMARY KEY (job_id, name)
+        );
+        CREATE TABLE IF NOT EXISTS job_events (
+            id bigserial PRIMARY KEY,
+            job_id text NOT NULL REFERENCES jobs (id) ON DELETE CASCADE,
+            time timestamptz NOT NULL,
+            message text NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_job_events_job ON job_events (job_id, time);
+        """;
+
+    private const string JobCols = "id, product_code, product_version, status, step, error, requested_by, created_at, started_at, finished_at, " +
+                                   "last_heartbeat, worker, attempts, inputs, text_inputs, summary, script_name, script_sha256, script_source, artifacts_purged_at, " +
+                                   "kind, queue, priority, source_job_id";
+
+    private readonly NpgsqlDataSource _db;
+    private readonly object _wgate = new();
     private readonly Dictionary<string, WorkerInfo> _workers = new(StringComparer.OrdinalIgnoreCase);
     private readonly string _dataDir;
-    private readonly string _snapshotPath;
 
-    public JobStore(string dataDir)
+    public JobStore(string dataDir, string connectionString)
     {
         _dataDir = dataDir;
-        _snapshotPath = Path.Combine(dataDir, "jobs.json");
         Directory.CreateDirectory(ArtifactsRoot);
-        Load();
+        _db = NpgsqlDataSource.Create(connectionString);
+        Migrate();
+        ImportLegacySnapshot();
     }
 
     public string ArtifactsRoot => Path.Combine(_dataDir, "artifacts");
 
     public string ArtifactDir(string jobId) => Path.Combine(ArtifactsRoot, jobId);
 
-    // ---------------------------------------------------------------- truy vấn
+    // ---------------------------------------------------------------- queries
 
     public IReadOnlyList<Job> List()
     {
-        lock (_gate) return _jobs.OrderByDescending(j => j.CreatedAt).Select(Clone).ToList();
+        using var conn = _db.OpenConnection();
+        return LoadJobs(conn, null, null, "ORDER BY created_at DESC");
     }
 
     public Job? Get(string id)
     {
-        lock (_gate) return _jobs.FirstOrDefault(j => j.Id == id) is { } j ? Clone(j) : null;
+        using var conn = _db.OpenConnection();
+        return LoadJobs(conn, "WHERE id = @id", [("id", id)], "").FirstOrDefault();
+    }
+
+    public sealed record QueueStat(string Queue, int Queued, int Running, double? OldestWaitSeconds, int OnlineWorkers);
+
+    /// <summary>Depth of every queue (both queues are always listed) and how many online workers will take from it.</summary>
+    public IReadOnlyList<QueueStat> QueueStats()
+    {
+        var found = new Dictionary<string, (int Queued, int Running, DateTimeOffset? Oldest)>();
+        using (var conn = _db.OpenConnection())
+        using (var cmd = Command(conn, null, """
+            SELECT queue, count(*) FILTER (WHERE status = 'queued'), count(*) FILTER (WHERE status = 'running'),
+                   min(created_at) FILTER (WHERE status = 'queued')
+            FROM jobs WHERE status IN ('queued', 'running') GROUP BY queue
+            """))
+        using (var r = cmd.ExecuteReader())
+            while (r.Read())
+                found[r.GetString(0)] = ((int)r.GetInt64(1), (int)r.GetInt64(2), r.IsDBNull(3) ? null : r.GetFieldValue<DateTimeOffset>(3));
+
+        var online = Workers().Where(w => w.Online).ToList();
+        var now = DateTimeOffset.UtcNow;
+        return JobQueues.All.Select(q =>
+        {
+            var (queued, running, oldest) = found.TryGetValue(q, out var v) ? v : (0, 0, null);
+            return new QueueStat(q, queued, running, oldest is { } o ? Math.Round((now - o).TotalSeconds, 1) : null,
+                online.Count(w => w.Queues == null || w.Queues.Contains(q)));
+        }).ToList();
+    }
+
+    /// <summary>How many queued jobs of the same queue are handed out before this one (null if the job is not queued).</summary>
+    public int? QueuePosition(string id)
+    {
+        using var conn = _db.OpenConnection();
+        using var cmd = Command(conn, null, """
+            SELECT (SELECT count(*) FROM jobs o WHERE o.status = 'queued' AND o.queue = j.queue
+                    AND (o.priority < j.priority OR (o.priority = j.priority AND o.created_at < j.created_at)))
+            FROM jobs j WHERE j.id = @id AND j.status = 'queued'
+            """, ("id", id));
+        return cmd.ExecuteScalar() is long n ? (int)n : null;
     }
 
     public IReadOnlyList<WorkerInfo> Workers()
     {
-        lock (_gate)
+        lock (_wgate)
         {
             var now = DateTimeOffset.UtcNow;
             return _workers.Values
                 .Select(w => new WorkerInfo
                 {
-                    Name = w.Name, InventorVersion = w.InventorVersion, AddinVersion = w.AddinVersion,
+                    Name = w.Name, Queues = w.Queues, InventorVersion = w.InventorVersion, AddinVersion = w.AddinVersion,
                     Busy = w.Busy, LastSeen = w.LastSeen, Online = now - w.LastSeen < WorkerOnlineWindow,
                 })
                 .OrderBy(w => w.Name).ToList();
@@ -66,17 +161,22 @@ public sealed class JobStore
 
     public bool AnyWorkerOnline()
     {
-        lock (_gate) return _workers.Values.Any(w => DateTimeOffset.UtcNow - w.LastSeen < WorkerOnlineWindow);
+        lock (_wgate) return _workers.Values.Any(w => DateTimeOffset.UtcNow - w.LastSeen < WorkerOnlineWindow);
     }
 
-    // ---------------------------------------------------------------- người đặt hàng
+    // ---------------------------------------------------------------- requesters
 
-    public Job Create(string productCode, Dictionary<string, double> inputs, string requestedBy, string? scriptName = null, string? scriptSha256 = null, string? scriptSource = null, Dictionary<string, string>? textInputs = null)
+    public Job Create(string productCode, Dictionary<string, double> inputs, string requestedBy, string? scriptName = null, string? scriptSha256 = null, string? scriptSource = null, Dictionary<string, string>? textInputs = null,
+        string kind = JobKinds.Generate, string queue = JobQueues.Build, int priority = QueuePolicy.DefaultPriority, string? sourceJobId = null)
     {
         var now = DateTimeOffset.UtcNow;
         var job = new Job
         {
             Id = $"AJ-{now:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N")[..4]}",
+            Kind = kind,
+            Queue = queue,
+            Priority = priority,
+            SourceJobId = sourceJobId,
             ProductCode = productCode,
             Inputs = inputs,
             TextInputs = textInputs ?? new(),
@@ -87,205 +187,198 @@ public sealed class JobStore
             Status = JobStatus.Queued,
             CreatedAt = now,
         };
-        AddEvent(job, "Order received. Waiting for an Inventor worker to pick up the job...");
-        lock (_gate)
-        {
-            _jobs.Add(job);
-            Save();
-            return Clone(job);
-        }
+        job.Events.Add(new JobEvent { Time = now, Message = "Order received. Waiting for an Inventor worker to pick up the job..." });
+        Tx((c, t) => { Insert(c, t, job); return true; });
+        return job;
     }
 
-    public bool Cancel(string id)
+    public bool Cancel(string id) => Tx((c, t) =>
     {
-        lock (_gate)
-        {
-            var job = _jobs.FirstOrDefault(j => j.Id == id);
-            if (job == null || job.Status is JobStatus.Succeeded or JobStatus.Failed or JobStatus.Cancelled) return false;
-            job.Status = JobStatus.Cancelled;
-            job.FinishedAt = DateTimeOffset.UtcNow;
-            AddEvent(job, "Cancelled by the user.");
-            Save();
-            return true;
-        }
-    }
+        var n = Exec(c, t, "UPDATE jobs SET status = 'cancelled', finished_at = @now WHERE id = @id AND status IN ('queued', 'running')",
+            ("id", id), ("now", DateTimeOffset.UtcNow));
+        if (n == 0) return false;
+        AddEvent(c, t, id, "Cancelled by the user.");
+        return true;
+    });
 
     // ---------------------------------------------------------------- worker
 
     public void Heartbeat(WorkerHello hello)
     {
         if (string.IsNullOrWhiteSpace(hello.Worker)) return;
-        lock (_gate)
+        lock (_wgate)
         {
             var w = TouchWorker(hello.Worker!);
             w.InventorVersion = hello.InventorVersion ?? w.InventorVersion;
             w.AddinVersion = hello.AddinVersion ?? w.AddinVersion;
             w.Busy = hello.Busy;
-            // Nhịp tim của worker cũng gia hạn các job nó đang chạy.
-            foreach (var j in _jobs.Where(j => j.Status == JobStatus.Running && j.Worker == hello.Worker))
-                j.LastHeartbeat = DateTimeOffset.UtcNow;
         }
+        // A worker heartbeat also extends the jobs it is running.
+        using var conn = _db.OpenConnection();
+        Exec(conn, null, "UPDATE jobs SET last_heartbeat = @now WHERE status = 'running' AND worker = @w",
+            ("w", hello.Worker!), ("now", DateTimeOffset.UtcNow));
     }
 
-    /// <summary>Giao job Queued cũ nhất cho worker (khóa bằng lock, mỗi job chỉ một worker nhận).</summary>
-    public WorkItem? Claim(string worker, string[]? products = null)
+    /// <summary>
+    /// Hands the next Queued job to a worker. <paramref name="queues"/> is the worker's own order of preference (SDS: node 1-2 take Build first,
+    /// node 3-5 take Filter first): the first queue that has a matching job wins, and inside a queue the lowest <c>priority</c> number goes first,
+    /// then the oldest. Null or empty = every queue, sorted by priority (an old worker that does not send queues).
+    /// FOR UPDATE SKIP LOCKED: each job goes to exactly one worker, even when several backends run in parallel.
+    /// </summary>
+    public WorkItem? Claim(string worker, string[]? products = null, string[]? queues = null)
     {
-        lock (_gate)
+        var order = queues?.Where(q => !string.IsNullOrWhiteSpace(q)).Select(q => q.Trim().ToLowerInvariant()).Distinct().ToArray();
+        lock (_wgate) TouchWorker(worker).Queues = order is { Length: > 0 } ? order : null;
+        var item = Tx((c, t) =>
         {
-            var w = TouchWorker(worker);
-            var job = _jobs
-                .Where(j => j.Status == JobStatus.Queued
-                    && (products == null || products.Length == 0 || products.Contains(j.ProductCode, StringComparer.OrdinalIgnoreCase)))
-                .OrderBy(j => j.CreatedAt).FirstOrDefault();
-            if (job == null) return null;
-
-            var now = DateTimeOffset.UtcNow;
-            job.Status = JobStatus.Running;
-            job.Worker = worker;
-            job.StartedAt ??= now;
-            job.LastHeartbeat = now;
-            job.Attempts++;
-            job.Step = "Starting";
-            w.Busy = true;
-            AddEvent(job, $"Picked up by worker '{worker}' (attempt {job.Attempts}).");
-            Save();
-            return new WorkItem(job.Id, job.ProductCode, job.ProductVersion, new Dictionary<string, double>(job.Inputs),
-                TextInputs: job.TextInputs.Count == 0 ? null : new Dictionary<string, string>(job.TextInputs));
-        }
+            if (order == null || order.Length == 0) return ClaimFrom(c, t, worker, products, null);
+            foreach (var q in order)
+                if (ClaimFrom(c, t, worker, products, q) is { } w) return w;
+            return null;
+        });
+        if (item != null) SetBusy(worker, true);
+        return item;
     }
 
-    public bool Progress(string id, string worker, string? step, string? message)
+    private static WorkItem? ClaimFrom(NpgsqlConnection c, NpgsqlTransaction t, string worker, string[]? products, string? queue)
     {
-        lock (_gate)
-        {
-            var job = OwnedRunning(id, worker);
-            if (job == null) return false;
-            job.LastHeartbeat = DateTimeOffset.UtcNow;
-            if (!string.IsNullOrWhiteSpace(step)) job.Step = step;
-            if (!string.IsNullOrWhiteSpace(message ?? step)) AddEvent(job, message ?? step!);
-            Save();
-            return true;
-        }
+        var all = products == null || products.Length == 0;
+        using var cmd = Command(c, t, """
+            UPDATE jobs SET status = 'running', worker = @w, started_at = COALESCE(started_at, @now), last_heartbeat = @now,
+                            attempts = attempts + 1, step = 'Starting'
+            WHERE id = (SELECT id FROM jobs
+                        WHERE status = 'queued' AND (@anyq OR queue = @q) AND (@all OR lower(product_code) = ANY(@p))
+                        ORDER BY priority, created_at FOR UPDATE SKIP LOCKED LIMIT 1)
+            RETURNING id, product_code, product_version, inputs, text_inputs, attempts, kind
+            """, ("w", worker), ("now", DateTimeOffset.UtcNow), ("all", all), ("anyq", queue == null), ("q", queue ?? ""));
+        cmd.Parameters.Add(new NpgsqlParameter("p", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = (products ?? []).Select(p => p.ToLowerInvariant()).ToArray() });
+        using var r = cmd.ExecuteReader();
+        if (!r.Read()) return null;
+        var id = r.GetString(0);
+        var inputs = JsonSerializer.Deserialize<Dictionary<string, double>>(r.GetString(3), Json) ?? new();
+        var texts = JsonSerializer.Deserialize<Dictionary<string, string>>(r.GetString(4), Json) ?? new();
+        var attempt = r.GetInt32(5);
+        var w = new WorkItem(id, r.GetString(1), r.GetInt32(2), inputs, TextInputs: texts.Count == 0 ? null : texts, Kind: r.GetString(6));
+        r.Close();
+        AddEvent(c, t, id, $"Picked up by worker '{worker}' (attempt {attempt}).");
+        return w;
     }
 
-    public bool AddArtifact(string id, string worker, ArtifactInfo artifact)
+    public bool Progress(string id, string worker, string? step, string? message) => Tx((c, t) =>
     {
-        lock (_gate)
-        {
-            var job = OwnedRunning(id, worker);
-            if (job == null) return false;
-            job.LastHeartbeat = DateTimeOffset.UtcNow;
-            job.Artifacts.RemoveAll(a => a.Name == artifact.Name);
-            job.Artifacts.Add(artifact);
-            Save();
-            return true;
-        }
-    }
+        if (!LockOwned(c, t, id, worker, out _)) return false;
+        Exec(c, t, "UPDATE jobs SET last_heartbeat = @now, step = COALESCE(@step, step) WHERE id = @id",
+            ("id", id), ("now", DateTimeOffset.UtcNow), ("step", string.IsNullOrWhiteSpace(step) ? null : step));
+        if (!string.IsNullOrWhiteSpace(message ?? step)) AddEvent(c, t, id, message ?? step!);
+        return true;
+    });
+
+    public bool AddArtifact(string id, string worker, ArtifactInfo artifact) => Tx((c, t) =>
+    {
+        if (!LockOwned(c, t, id, worker, out _)) return false;
+        Exec(c, t, "UPDATE jobs SET last_heartbeat = @now WHERE id = @id", ("id", id), ("now", DateTimeOffset.UtcNow));
+        Exec(c, t, """
+            INSERT INTO job_artifacts (job_id, name, kind, size, r2_key) VALUES (@id, @name, @kind, @size, @key)
+            ON CONFLICT (job_id, name) DO UPDATE SET kind = EXCLUDED.kind, size = EXCLUDED.size, r2_key = EXCLUDED.r2_key
+            """, ("id", id), ("name", artifact.Name), ("kind", artifact.Kind), ("size", artifact.Size), ("key", artifact.Key));
+        return true;
+    });
 
     public bool Complete(string id, string worker, Dictionary<string, double>? summary)
     {
-        lock (_gate)
+        var ok = Tx((c, t) =>
         {
-            var job = OwnedRunning(id, worker);
-            if (job == null) return false;
-            job.Status = JobStatus.Succeeded;
-            job.Step = "Done";
-            job.FinishedAt = DateTimeOffset.UtcNow;
-            job.Summary = summary ?? new();
-            job.Error = null;
-            AddEvent(job, "Build finished.");
-            FreeWorker(worker);
-            Save();
+            if (!LockOwned(c, t, id, worker, out _)) return false;
+            using var cmd = Command(c, t, "UPDATE jobs SET status = 'succeeded', step = 'Done', finished_at = @now, error = NULL, summary = @summary WHERE id = @id",
+                ("id", id), ("now", DateTimeOffset.UtcNow));
+            cmd.Parameters.Add(Jsonb("summary", summary ?? new Dictionary<string, double>()));
+            cmd.ExecuteNonQuery();
+            AddEvent(c, t, id, "Build finished.");
             return true;
-        }
+        });
+        if (ok) SetBusy(worker, false);
+        return ok;
     }
 
     public bool Fail(string id, string worker, string error, bool retryable)
     {
-        lock (_gate)
+        var ok = Tx((c, t) =>
         {
-            var job = OwnedRunning(id, worker);
-            if (job == null) return false;
-            FreeWorker(worker);
-            if (retryable && job.Attempts < MaxAttempts)
+            if (!LockOwned(c, t, id, worker, out var attempts)) return false;
+            if (retryable && attempts < MaxAttempts)
             {
-                job.Status = JobStatus.Queued;
-                job.Worker = null;
-                job.Step = null;
-                AddEvent(job, $"Attempt {job.Attempts} failed: {error}. Re-queued.");
+                Exec(c, t, "UPDATE jobs SET status = 'queued', worker = NULL, step = NULL WHERE id = @id", ("id", id));
+                AddEvent(c, t, id, $"Attempt {attempts} failed: {error}. Re-queued.");
             }
             else
             {
-                job.Status = JobStatus.Failed;
-                job.FinishedAt = DateTimeOffset.UtcNow;
-                job.Error = error;
-                AddEvent(job, "Failed: " + error);
+                Exec(c, t, "UPDATE jobs SET status = 'failed', finished_at = @now, error = @error WHERE id = @id",
+                    ("id", id), ("now", DateTimeOffset.UtcNow), ("error", error));
+                AddEvent(c, t, id, "Failed: " + error);
             }
-            Save();
             return true;
-        }
+        });
+        if (ok) SetBusy(worker, false);
+        return ok;
     }
 
-    /// <summary>Job Running mà quá hạn không có nhịp tim: trả về hàng đợi hoặc đánh dấu lỗi.</summary>
+    /// <summary>Running jobs that passed their deadline without a heartbeat: returns them to the queue or marks them failed.</summary>
     public int ReapStale()
     {
-        lock (_gate)
+        var freed = new List<string>();
+        var count = Tx((c, t) =>
         {
-            var now = DateTimeOffset.UtcNow;
-            var count = 0;
-            foreach (var job in _jobs.Where(j => j.Status == JobStatus.Running && now - (j.LastHeartbeat ?? j.StartedAt ?? j.CreatedAt) > HeartbeatTimeout))
+            var stale = new List<(string Id, string? Worker, int Attempts)>();
+            using (var cmd = Command(c, t, """
+                SELECT id, worker, attempts FROM jobs
+                WHERE status = 'running' AND COALESCE(last_heartbeat, started_at, created_at) < @cutoff
+                FOR UPDATE SKIP LOCKED
+                """, ("cutoff", DateTimeOffset.UtcNow - HeartbeatTimeout)))
+            using (var r = cmd.ExecuteReader())
+                while (r.Read()) stale.Add((r.GetString(0), r.IsDBNull(1) ? null : r.GetString(1), r.GetInt32(2)));
+
+            foreach (var (id, worker, attempts) in stale)
             {
-                count++;
-                if (job.Worker != null) FreeWorker(job.Worker);
-                if (job.Attempts < MaxAttempts)
+                if (worker != null) freed.Add(worker);
+                if (attempts < MaxAttempts)
                 {
-                    job.Status = JobStatus.Queued;
-                    AddEvent(job, $"Worker '{job.Worker}' stopped responding. Re-queued.");
-                    job.Worker = null;
-                    job.Step = null;
+                    Exec(c, t, "UPDATE jobs SET status = 'queued', worker = NULL, step = NULL WHERE id = @id", ("id", id));
+                    AddEvent(c, t, id, $"Worker '{worker}' stopped responding. Re-queued.");
                 }
                 else
                 {
-                    job.Status = JobStatus.Failed;
-                    job.FinishedAt = now;
-                    job.Error = $"Worker '{job.Worker}' stopped responding too many times.";
-                    AddEvent(job, job.Error);
+                    var msg = $"Worker '{worker}' stopped responding too many times.";
+                    Exec(c, t, "UPDATE jobs SET status = 'failed', finished_at = @now, error = @error WHERE id = @id",
+                        ("id", id), ("now", DateTimeOffset.UtcNow), ("error", msg));
+                    AddEvent(c, t, id, msg);
                 }
             }
-            if (count > 0) Save();
-            return count;
-        }
+            return stale.Count;
+        });
+        foreach (var w in freed) SetBusy(w, false);
+        return count;
     }
 
-    /// <summary>Job đã kết thúc trước <paramref name="cutoff"/> mà vẫn còn file kết quả.</summary>
+    /// <summary>Jobs finished before <paramref name="cutoff"/> that still have result files.</summary>
     public IReadOnlyList<Job> ExpiredWithArtifacts(DateTimeOffset cutoff)
     {
-        lock (_gate)
-            return _jobs.Where(j => j.Status is JobStatus.Succeeded or JobStatus.Failed or JobStatus.Cancelled
-                                    && j.Artifacts.Count > 0 && (j.FinishedAt ?? j.CreatedAt) < cutoff).Select(Clone).ToList();
+        using var conn = _db.OpenConnection();
+        return LoadJobs(conn, """
+            WHERE status IN ('succeeded', 'failed', 'cancelled') AND COALESCE(finished_at, created_at) < @cutoff
+              AND EXISTS (SELECT 1 FROM job_artifacts a WHERE a.job_id = jobs.id)
+            """, [("cutoff", cutoff.ToUniversalTime())], "");
     }
 
-    /// <summary>Bỏ danh sách file của job sau khi file thật đã bị xóa.</summary>
-    public void MarkArtifactsPurged(string id, int days)
+    /// <summary>Drops the file list of a job after the real files were deleted.</summary>
+    public void MarkArtifactsPurged(string id, int days) => Tx((c, t) =>
     {
-        lock (_gate)
-        {
-            var job = _jobs.FirstOrDefault(j => j.Id == id);
-            if (job == null) return;
-            job.Artifacts.Clear();
-            job.ArtifactsPurgedAt = DateTimeOffset.UtcNow;
-            AddEvent(job, $"Result files deleted after {days} days (retention policy).");
-            Save();
-        }
-    }
+        if (Exec(c, t, "UPDATE jobs SET artifacts_purged_at = @now WHERE id = @id", ("id", id), ("now", DateTimeOffset.UtcNow)) == 0) return false;
+        Exec(c, t, "DELETE FROM job_artifacts WHERE job_id = @id", ("id", id));
+        AddEvent(c, t, id, $"Result files deleted after {days} days (retention policy).");
+        return true;
+    });
 
-    // ---------------------------------------------------------------- nội bộ
-
-    private Job? OwnedRunning(string id, string worker)
-    {
-        var job = _jobs.FirstOrDefault(j => j.Id == id);
-        return job is { Status: JobStatus.Running } && string.Equals(job.Worker, worker, StringComparison.OrdinalIgnoreCase) ? job : null;
-    }
+    // ---------------------------------------------------------------- internal: in-memory workers
 
     private WorkerInfo TouchWorker(string name)
     {
@@ -294,52 +387,175 @@ public sealed class JobStore
         return w;
     }
 
-    private void FreeWorker(string name)
+    private void SetBusy(string name, bool busy)
     {
-        if (_workers.TryGetValue(name, out var w)) w.Busy = false;
+        lock (_wgate)
+            if (_workers.TryGetValue(name, out var w)) w.Busy = busy;
     }
 
-    private static void AddEvent(Job job, string message) =>
-        job.Events.Add(new JobEvent { Time = DateTimeOffset.UtcNow, Message = message });
+    // ---------------------------------------------------------------- internal: SQL
 
-    private static Job Clone(Job j) =>
-        JsonSerializer.Deserialize<Job>(JsonSerializer.Serialize(j, Json), Json)!;
-
-    private void Load()
+    /// <summary>Locks the job row if it is Running and belongs to this worker.</summary>
+    private static bool LockOwned(NpgsqlConnection c, NpgsqlTransaction t, string id, string worker, out int attempts)
     {
+        using var cmd = Command(c, t, "SELECT attempts FROM jobs WHERE id = @id AND status = 'running' AND lower(worker) = lower(@w) FOR UPDATE", ("id", id), ("w", worker));
+        var o = cmd.ExecuteScalar();
+        attempts = o is int n ? n : 0;
+        return o != null;
+    }
+
+    private T Tx<T>(Func<NpgsqlConnection, NpgsqlTransaction, T> work)
+    {
+        using var conn = _db.OpenConnection();
+        using var tx = conn.BeginTransaction();
+        var result = work(conn, tx);
+        tx.Commit();
+        return result;
+    }
+
+    private static NpgsqlCommand Command(NpgsqlConnection c, NpgsqlTransaction? t, string sql, params (string Name, object? Value)[] ps)
+    {
+        var cmd = new NpgsqlCommand(sql, c, t);
+        foreach (var (name, value) in ps)
+            cmd.Parameters.Add(new NpgsqlParameter(name, value switch
+            {
+                null => DBNull.Value,
+                DateTimeOffset d => d.ToUniversalTime(),
+                _ => value,
+            }));
+        return cmd;
+    }
+
+    private static int Exec(NpgsqlConnection c, NpgsqlTransaction? t, string sql, params (string Name, object? Value)[] ps)
+    {
+        using var cmd = Command(c, t, sql, ps);
+        return cmd.ExecuteNonQuery();
+    }
+
+    private static NpgsqlParameter Jsonb(string name, object value) =>
+        new(name, NpgsqlDbType.Jsonb) { Value = JsonSerializer.Serialize(value, Json) };
+
+    private static void AddEvent(NpgsqlConnection c, NpgsqlTransaction t, string jobId, string message) =>
+        Exec(c, t, "INSERT INTO job_events (job_id, time, message) VALUES (@id, @time, @msg)",
+            ("id", jobId), ("time", DateTimeOffset.UtcNow), ("msg", message));
+
+    private static void Insert(NpgsqlConnection c, NpgsqlTransaction t, Job j)
+    {
+        using (var cmd = Command(c, t, $"""
+            INSERT INTO jobs ({JobCols}) VALUES
+            (@id, @product, @version, @status, @step, @error, @by, @created, @started, @finished, @hb, @worker, @attempts,
+             @inputs, @texts, @summary, @sname, @ssha, @ssrc, @purged, @kind, @queue, @prio, @src)
+            ON CONFLICT (id) DO NOTHING
+            """,
+            ("kind", j.Kind), ("queue", j.Queue), ("prio", j.Priority), ("src", j.SourceJobId),
+            ("id", j.Id), ("product", j.ProductCode), ("version", j.ProductVersion), ("status", j.Status.ToString().ToLowerInvariant()),
+            ("step", j.Step), ("error", j.Error), ("by", j.RequestedBy ?? ""), ("created", j.CreatedAt), ("started", j.StartedAt),
+            ("finished", j.FinishedAt), ("hb", j.LastHeartbeat), ("worker", j.Worker), ("attempts", j.Attempts),
+            ("sname", j.ScriptName), ("ssha", j.ScriptSha256), ("ssrc", j.ScriptSource), ("purged", j.ArtifactsPurgedAt)))
+        {
+            cmd.Parameters.Add(Jsonb("inputs", j.Inputs));
+            cmd.Parameters.Add(Jsonb("texts", j.TextInputs));
+            cmd.Parameters.Add(Jsonb("summary", j.Summary));
+            if (cmd.ExecuteNonQuery() == 0) return; // already there (re-import)
+        }
+        foreach (var a in j.Artifacts)
+            Exec(c, t, "INSERT INTO job_artifacts (job_id, name, kind, size, r2_key) VALUES (@id, @name, @kind, @size, @key) ON CONFLICT DO NOTHING",
+                ("id", j.Id), ("name", a.Name), ("kind", a.Kind), ("size", a.Size), ("key", a.Key));
+        foreach (var e in j.Events)
+            Exec(c, t, "INSERT INTO job_events (job_id, time, message) VALUES (@id, @time, @msg)", ("id", j.Id), ("time", e.Time), ("msg", e.Message));
+    }
+
+    private static List<Job> LoadJobs(NpgsqlConnection conn, string? where, (string, object?)[]? ps, string order)
+    {
+        var jobs = new List<Job>();
+        using (var cmd = Command(conn, null, $"SELECT {JobCols} FROM jobs {where} {order}", ps ?? []))
+        using (var r = cmd.ExecuteReader())
+            while (r.Read()) jobs.Add(ReadJob(r));
+        if (jobs.Count == 0) return jobs;
+
+        var byId = jobs.ToDictionary(j => j.Id);
+        var ids = byId.Keys.ToArray();
+        using (var cmd = Command(conn, null, "SELECT job_id, name, kind, size, r2_key FROM job_artifacts WHERE job_id = ANY(@ids) ORDER BY name"))
+        {
+            cmd.Parameters.Add(new NpgsqlParameter("ids", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = ids });
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+                byId[r.GetString(0)].Artifacts.Add(new ArtifactInfo { Name = r.GetString(1), Kind = r.GetString(2), Size = r.GetInt64(3), Key = r.IsDBNull(4) ? null : r.GetString(4) });
+        }
+        using (var cmd = Command(conn, null, "SELECT job_id, time, message FROM job_events WHERE job_id = ANY(@ids) ORDER BY id"))
+        {
+            cmd.Parameters.Add(new NpgsqlParameter("ids", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = ids });
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+                byId[r.GetString(0)].Events.Add(new JobEvent { Time = r.GetFieldValue<DateTimeOffset>(1), Message = r.GetString(2) });
+        }
+        return jobs;
+    }
+
+    private static Job ReadJob(NpgsqlDataReader r)
+    {
+        static string? S(NpgsqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i);
+        static DateTimeOffset? D(NpgsqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetFieldValue<DateTimeOffset>(i);
+        return new Job
+        {
+            Id = r.GetString(0),
+            ProductCode = r.GetString(1),
+            ProductVersion = r.GetInt32(2),
+            Status = Enum.Parse<JobStatus>(r.GetString(3), ignoreCase: true),
+            Step = S(r, 4),
+            Error = S(r, 5),
+            RequestedBy = r.GetString(6),
+            CreatedAt = r.GetFieldValue<DateTimeOffset>(7),
+            StartedAt = D(r, 8),
+            FinishedAt = D(r, 9),
+            LastHeartbeat = D(r, 10),
+            Worker = S(r, 11),
+            Attempts = r.GetInt32(12),
+            Inputs = JsonSerializer.Deserialize<Dictionary<string, double>>(r.GetString(13), Json) ?? new(),
+            TextInputs = JsonSerializer.Deserialize<Dictionary<string, string>>(r.GetString(14), Json) ?? new(),
+            Summary = JsonSerializer.Deserialize<Dictionary<string, double>>(r.GetString(15), Json) ?? new(),
+            ScriptName = S(r, 16),
+            ScriptSha256 = S(r, 17),
+            ScriptSource = S(r, 18),
+            ArtifactsPurgedAt = D(r, 19),
+            Kind = r.GetString(20),
+            Queue = r.GetString(21),
+            Priority = r.GetInt32(22),
+            SourceJobId = S(r, 23),
+        };
+    }
+
+    private void Migrate()
+    {
+        using var conn = _db.OpenConnection();
+        // Advisory lock: two backends starting at the same time do not race to create the tables.
+        Exec(conn, null, "SELECT pg_advisory_lock(727001)");
+        try { Exec(conn, null, Schema); }
+        finally { Exec(conn, null, "SELECT pg_advisory_unlock(727001)"); }
+    }
+
+    /// <summary>First run with Postgres: imports jobs from the old jobs.json (if present), then renames the file so it is not imported again.</summary>
+    private void ImportLegacySnapshot()
+    {
+        var path = Path.Combine(_dataDir, "jobs.json");
+        if (!File.Exists(path)) return;
         try
         {
-            if (!File.Exists(_snapshotPath)) return;
-            var jobs = JsonSerializer.Deserialize<List<Job>>(File.ReadAllText(_snapshotPath), Json);
-            if (jobs != null) _jobs.AddRange(jobs);
+            var jobs = JsonSerializer.Deserialize<List<Job>>(File.ReadAllText(path), Json) ?? new();
+            Tx((c, t) => { foreach (var j in jobs) Insert(c, t, j); return true; });
+            File.Move(path, path + ".migrated", overwrite: true);
+            Console.WriteLine($"Imported {jobs.Count} job(s) from jobs.json into PostgreSQL (file renamed to jobs.json.migrated).");
         }
         catch (Exception ex)
         {
-            // File hỏng: giữ bản hỏng để xem lại, chạy tiếp với kho rỗng thay vì không khởi động được.
-            Console.Error.WriteLine("Could not read jobs.json: " + ex.Message);
-            try { File.Move(_snapshotPath, _snapshotPath + ".corrupt-" + DateTime.UtcNow.Ticks); } catch { /* bỏ qua */ }
-        }
-    }
-
-    /// <summary>Gọi trong lock. Ghi file tạm rồi đổi tên để không hỏng file nếu bị ngắt giữa chừng.</summary>
-    private void Save()
-    {
-        try
-        {
-            var tmp = _snapshotPath + ".tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(_jobs, Json));
-            File.Move(tmp, _snapshotPath, overwrite: true);
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine("Could not write jobs.json: " + ex.Message);
+            Console.Error.WriteLine("Could not import jobs.json: " + ex.Message);
         }
     }
 }
 
 /// <summary>
-/// Xóa file kết quả (R2 và đĩa) của job đã kết thúc quá <c>Retention:Days</c> ngày. Mặc định 0 = giữ mãi.
-/// Chỉ xóa file: bản ghi job, thông số và script vẫn còn nên Dashboard và "Nhân bản đơn" không mất.
+/// Deletes the result files (R2 and disk) of jobs finished more than <c>Retention:Days</c> days ago. Default 0 = keep forever.
+/// Only files are deleted: the job record, parameters and script remain, so the Dashboard and "Duplicate order" keep working.
 /// </summary>
 public sealed class RetentionService(JobStore store, R2Store r2, IConfiguration config, ILogger<RetentionService> log) : BackgroundService
 {

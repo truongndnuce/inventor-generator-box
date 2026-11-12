@@ -1,10 +1,10 @@
 <Project>
 
     <!--
-      Dùng chung cho các csproj add-in (import ở cuối file csproj). Mỗi csproj khai báo:
-        AddinClassId (GUID, trùng [Guid] của lớp add-in), AddinDisplayName, AddinDescription, AddinFileName.
-      Sau build, sinh file .addin trỏ tới DLL vừa build và đặt vào thư mục Addins của người dùng (regfree, không cần quyền admin).
-      Đặt -p:DeployAddin=false để không ghi vào %AppData%.
+      Shared by the add-in csproj files (imported at the end of the csproj). Each csproj declares:
+        AddinClassId (a GUID, equal to the [Guid] of the add-in class), AddinDisplayName, AddinDescription, AddinFileName.
+      After the build, generates the .addin file that points to the DLL just built and puts it in the user's Addins folder (regfree, no admin rights needed).
+      Set -p:DeployAddin=false to not write into %AppData%.
     -->
     <PropertyGroup>
         <EnableDynamicLoading>true</EnableDynamicLoading>
@@ -23,7 +23,7 @@
         </PropertyGroup>
         <MakeDir Directories="$(InventorAddinsDir)" />
         <WriteLinesToFile File="$(InventorAddinsDir)$(AddinFileName)" Lines="$(AddinText)" Overwrite="true" Encoding="UTF-8" />
-        <Message Importance="high" Text="Đã ghi $(InventorAddinsDir)$(AddinFileName)" />
+        <Message Importance="high" Text="Wrote $(InventorAddinsDir)$(AddinFileName)" />
     </Target>
 
 </Project>

@@ -2,17 +2,17 @@ using System.Collections.Generic;
 
 namespace InventorAddin.Gea;
 
-// Cây cú pháp của file .gea. Mỗi nút giữ dòng/cột để báo lỗi và ghi vết thực thi.
+// Syntax tree of a .gea file. Every node keeps its line/column to report errors and to trace execution.
 
 public enum GeaBlockKind { Form, Tables, Build }
 
 public abstract record GeaNode(int Line, int Col);
 
-// ---------------------------------------------------------------- biểu thức
+// ---------------------------------------------------------------- expressions
 
 public abstract record GeaExpr(int Line, int Col) : GeaNode(Line, Col);
 
-/// <summary>Số (có thể có đơn vị). <see cref="Value"/> đã đổi về mm hoặc độ.</summary>
+/// <summary>A number (possibly with a unit). <see cref="Value"/> is already converted to mm or degrees.</summary>
 public sealed record NumberExpr(int Line, int Col, double Value, GeaType Type, string Source) : GeaExpr(Line, Col)
 {
     public bool IsZero => Value == 0;
@@ -32,7 +32,7 @@ public sealed record BinaryExpr(int Line, int Col, string Op, GeaExpr Left, GeaE
 
 public sealed record CallExpr(int Line, int Col, string Name, IReadOnlyList<GeaExpr> Args) : GeaExpr(Line, Col);
 
-// ---------------------------------------------------------------- lệnh
+// ---------------------------------------------------------------- statements
 
 public abstract record GeaStmt(int Line, int Col) : GeaNode(Line, Col);
 
@@ -60,7 +60,7 @@ public sealed record ReturnStmt(int Line, int Col) : GeaStmt(Line, Col);
 
 public sealed record GroupStmt(int Line, int Col, string Title, IReadOnlyList<GeaStmt> Body) : GeaStmt(Line, Col);
 
-/// <summary>USER_INPUT_PARAM. Default/Min/Max/Step đã đổi về đơn vị nội bộ; <see cref="Unit"/> là đơn vị hiển thị.</summary>
+/// <summary>USER_INPUT_PARAM. Default/Min/Max/Step are converted to the internal unit; <see cref="Unit"/> is the display unit.</summary>
 public sealed record InputParamStmt(
     int Line, int Col, string Name, GeaType Type, GeaValue Default, string Unit,
     double? Min, double? Max, double? Step, bool Required, string? Label, string? Tooltip) : GeaStmt(Line, Col);
@@ -89,6 +89,10 @@ public sealed record CreateFeatureStmt(
     int Line, int Col, string SourceKind, string SourceName, string? OnRef,
     IReadOnlyList<FeatureInput> Inputs, IReadOnlyList<FeatureOutput> Outputs) : GeaStmt(Line, Col);
 
+/// <summary>ADD_COMPONENT (TARGET ASSEMBLY): inserts the part <see cref="Part"/> at <see cref="At"/> (3 lengths) rotated by <see cref="Rot"/> (3 angles); either may be null (origin, no rotation).</summary>
+public sealed record AddComponentStmt(
+    int Line, int Col, string Var, GeaExpr Part, IReadOnlyList<GeaExpr>? At, IReadOnlyList<GeaExpr>? Rot) : GeaStmt(Line, Col);
+
 public sealed record SetRefNameStmt(int Line, int Col, string Ref, GeaExpr Name) : GeaStmt(Line, Col);
 
 public sealed record GetRefNameStmt(int Line, int Col, string Ref, string Var) : GeaStmt(Line, Col);
@@ -113,19 +117,29 @@ public sealed record ClearCatchStmt(int Line, int Col) : GeaStmt(Line, Col);
 
 public sealed record FailStmt(int Line, int Col, GeaExpr Message) : GeaStmt(Line, Col);
 
-// ---------------------------------------------------------------- bảng (TABLES)
+// ---------------------------------------------------------------- tables (TABLES)
 
 public sealed record TableColumn(string Name, GeaType Type, double Factor);
 
 public sealed record GeaTable(int Line, int Col, string Name, IReadOnlyList<TableColumn> Columns, IReadOnlyList<IReadOnlyList<GeaValue>> Rows) : GeaNode(Line, Col);
 
-// ---------------------------------------------------------------- cả file
+// ---------------------------------------------------------------- whole file
 
 public sealed class GeaProgram
 {
     public int Version { get; init; }
     public string ProductName { get; init; } = "";
     public string? ParamPrefix { get; init; }
+    /// <summary>Prefixes of the libraries that were <c>INCLUDE</c>d: parameters starting with these prefixes are valid too.</summary>
+    public IReadOnlyList<string> ExtraParamPrefixes { get; internal set; } = new List<string>();
+    public bool HasAllowedPrefix(string name)
+    {
+        if (string.IsNullOrEmpty(ParamPrefix)) return true;
+        if (name.StartsWith(ParamPrefix, System.StringComparison.Ordinal)) return true;
+        foreach (var p in ExtraParamPrefixes)
+            if (name.StartsWith(p, System.StringComparison.Ordinal)) return true;
+        return false;
+    }
     public string Target { get; init; } = "PART";
     public IReadOnlyList<GeaStmt> Form { get; init; } = new List<GeaStmt>();
     public bool HasForm { get; init; }

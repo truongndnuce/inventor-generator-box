@@ -1,6 +1,10 @@
 ﻿using System.Text.Json;
 using System.Text.RegularExpressions;
 using Cadflow.Api;
+using Cadflow.Api.Chat;
+using Cadflow.Api.Mcp;
+using Cadflow.Api.Vault;
+using System.Threading.RateLimiting;
 using InventorAddin.Gea;
 using InventorAddin.Models;
 using Microsoft.AspNetCore.Http.Json;
@@ -8,22 +12,71 @@ using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// .env next to the server (ignored by git): KEY__SUB=value -> configuration KEY:SUB. Real environment variables still win.
+var envFile = Path.Combine(builder.Environment.ContentRootPath, ".env");
+if (File.Exists(envFile))
+{
+    var fromEnvFile = File.ReadAllLines(envFile)
+        .Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith('#') && l.Contains('='))
+        .Select(l => (Key: l[..l.IndexOf('=')].Trim().Replace("__", ":"), Value: l[(l.IndexOf('=') + 1)..].Trim()))
+        .Where(kv => kv.Key.Length > 0 && kv.Value.Length > 0 && Environment.GetEnvironmentVariable(kv.Key.Replace(":", "__")) == null)
+        .ToDictionary(kv => kv.Key, kv => (string?)kv.Value);
+    builder.Configuration.AddInMemoryCollection(fromEnvFile);
+}
+
 var dataDir = Path.GetFullPath(builder.Configuration["DataDir"] ?? Path.Combine(builder.Environment.ContentRootPath, "data"));
 var workerKey = builder.Configuration["Worker:Key"] ?? "dev-worker-key";
-var frontendDir = Path.GetFullPath(builder.Configuration["Frontend:Path"] ?? Path.Combine(builder.Environment.ContentRootPath, "..", "..", "fe", "dist")); // front-end React: chạy `npm run build` trong fe/
+var frontendDir = Path.GetFullPath(builder.Configuration["Frontend:Path"] ?? Path.Combine(builder.Environment.ContentRootPath, "..", "..", "fe", "dist")); // React front-end: run `npm run build` in fe/
 
-builder.Services.AddSingleton(new JobStore(dataDir));
+var dbConn = builder.Configuration.GetConnectionString("Cadflow")
+    ?? throw new InvalidOperationException("Missing ConnectionStrings:Cadflow (PostgreSQL). Set it in appsettings.json or .env (ConnectionStrings__Cadflow).");
+builder.Services.AddSingleton(new JobStore(dataDir, dbConn));
+builder.Services.AddSingleton(new Cadflow.Api.Chat.ChatStore(dbConn));
 builder.Services.AddSingleton(new ScriptStore(dataDir));
 builder.Services.AddSingleton(new ConfigStore(dataDir));
+builder.Services.AddSingleton(new QueuePolicy(builder.Configuration));
+builder.Services.AddSingleton<JobService>();
+builder.Services.AddSingleton<DraftStore>();
+builder.Services.AddSingleton<ComponentCatalog>();
+builder.Services.AddSingleton<CadTools>();
+// MCP server (/mcp): the same CadTools tool set as chat.
+builder.Services.AddMcpServer().WithHttpTransport().WithTools<CadTools>();
+// Rate limit for chat (it costs LLM money): per IP.
+builder.Services.AddRateLimiter(o =>
+{
+    o.RejectionStatusCode = 429;
+    o.AddPolicy("chat", ctx => RateLimitPartition.GetFixedWindowLimiter(
+        ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1) }));
+});
 builder.Services.AddSingleton(new R2Store(builder.Configuration.GetSection("R2").Get<R2Options>() ?? new R2Options()));
+builder.Services.AddSingleton(new Cadflow.Api.Vault.VaultStore(dbConn));
+builder.Services.AddSingleton(sp => new Cadflow.Api.Vault.VaultFiles(dataDir, sp.GetRequiredService<R2Store>(), sp.GetRequiredService<JobStore>()));
+builder.Services.AddSingleton<Cadflow.Api.Vault.VaultJobSaver>();
+builder.Services.AddSingleton<Cadflow.Api.Vault.ApsClient>();
 builder.Services.AddHostedService<StaleJobReaper>();
 builder.Services.AddHostedService<RetentionService>();
 builder.Services.Configure<JsonOptions>(o => o.SerializerOptions.PropertyNameCaseInsensitive = true);
-// Cho phép front-end chạy riêng (dev server) gọi API; bản chạy chung một origin thì không cần.
+// Lets the front-end run separately (dev server) and call the API; the single-origin deployment does not need it.
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
 
 var app = builder.Build();
 app.UseCors();
+app.UseRateLimiter();
+
+// /mcp: key in the X-Api-Key header (Mcp:Key). If no key is configured, only calls from the server machine itself (loopback) are allowed.
+var mcpKey = app.Configuration["Mcp:Key"];
+app.Use(async (ctx, next) =>
+{
+    if (ctx.Request.Path.StartsWithSegments("/mcp"))
+    {
+        var ok = string.IsNullOrEmpty(mcpKey)
+            ? System.Net.IPAddress.IsLoopback(ctx.Connection.RemoteIpAddress ?? System.Net.IPAddress.None)
+            : ctx.Request.Headers["X-Api-Key"] == mcpKey;
+        if (!ok) { ctx.Response.StatusCode = 401; return; }
+    }
+    await next();
+});
 
 if (Directory.Exists(frontendDir))
 {
@@ -36,19 +89,27 @@ else
     app.Logger.LogWarning("Frontend build not found: {Dir}. Run 'npm install' and 'npm run build' in fe/ (or use 'npm run dev'). Only the API is served.", frontendDir);
 }
 
+// The Smart Vault front-end (fe-plm/, built with base /plm/) is served next to the main one.
+var plmDir = Path.GetFullPath(app.Configuration["FrontendPlm:Path"] ?? Path.Combine(app.Environment.ContentRootPath, "..", "..", "fe-plm", "dist"));
+if (Directory.Exists(plmDir))
+{
+    var plmFiles = new PhysicalFileProvider(plmDir);
+    app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = plmFiles, RequestPath = "/plm" });
+    app.UseStaticFiles(new StaticFileOptions { FileProvider = plmFiles, RequestPath = "/plm" });
+}
+
 var store = app.Services.GetRequiredService<JobStore>();
 var scripts = app.Services.GetRequiredService<ScriptStore>();
 var configs = app.Services.GetRequiredService<ConfigStore>();
 var r2 = app.Services.GetRequiredService<R2Store>();
 app.Logger.LogInformation("Artifact storage: {Mode}", r2.IsConfigured ? "Cloudflare R2" : "local disk (R2 not configured)");
 var safeName = new Regex(@"^[A-Za-z0-9][A-Za-z0-9._\- ]{0,119}$", RegexOptions.Compiled);
-const string ImportedProduct = "imported"; // mã sản phẩm của job đặt từ script .gea do người dùng import
 
-// ================================================================= sản phẩm
+// ================================================================= products
 
 app.MapGet("/api/products", () => Products.All.Select(p => new { code = p.Code, name = p.Name, description = p.Description, version = p.Version }));
 
-// `defaults` = giá trị của Configuration mặc định (hoặc ?config=<id>); `factory` = mặc định gốc trong code.
+// `defaults` = values of the default Configuration (or ?config=<id>); `factory` = the factory defaults in code.
 app.MapGet("/api/products/{code}", (string code, string? config) =>
 {
     if (Products.Find(code) is not { } p) return Results.NotFound(new { error = $"Unknown product '{code}'." });
@@ -65,9 +126,9 @@ app.MapPost("/api/products/{code}/validate", (string code, ValidateRequest req) 
     return Results.Ok(new { valid = issues.Count == 0, values, issues });
 });
 
-// ================================================================= Configuration theo sản phẩm (tab Config)
-// Mỗi sản phẩm có nhiều Configuration (tên, trạng thái, Operation, CAD design condition, giá trị component).
-// Đơn đặt hàng chọn một Configuration (configId) hoặc dùng cái mặc định.
+// ================================================================= Configuration per product (Config tab)
+// Each product has several Configurations (name, status, Operation, CAD design condition, component values).
+// An order picks one Configuration (configId) or uses the default one.
 
 app.MapGet("/api/config-schema", () => new { statuses = ConfigSchema.Statuses, groups = ConfigSchema.Groups });
 
@@ -89,113 +150,52 @@ app.MapDelete("/api/products/{code}/configs/{id}", (string code, string id) =>
     Products.Find(code) is not { } p ? Results.NotFound(new { error = $"Unknown product '{code}'." })
     : configs.Delete(p, id) ? Results.NoContent() : Results.NotFound(new { error = "Unknown configuration." }));
 // ================================================================= script .gea (import)
-// Import: nhận nội dung file .gea (có thể kèm khối giá trị !@ do CADFlow export), biên dịch, lưu theo mã băm và trả form.
-// Form của script có thể ẩn/hiện ô theo giá trị, nên giao diện gọi lại /form mỗi khi giá trị đổi.
+// Import: takes the content of a .gea file (it may carry a !@ value block exported by CADFlow), compiles it, stores it by hash and returns the form.
+// The form of a script can show/hide fields depending on the values, so the UI calls /form again whenever a value changes.
 
-app.MapPost("/api/gea/import", (GeaTextRequest req) =>
+app.MapPost("/api/gea/import", (GeaTextRequest req, JobService jobs) =>
 {
-    var text = req.Text ?? "";
-    if (text.Trim().Length == 0) return Results.BadRequest(new { error = "The file is empty." });
-    if (System.Text.Encoding.UTF8.GetByteCount(text) > GeaForms.MaxScriptBytes)
-        return Results.BadRequest(new { error = $"The file is larger than {GeaForms.MaxScriptBytes / 1024} KB." });
-
-    var block = GeaExport.ParseBlock(text);
-    var clean = GeaExport.StripBlock(text); // lưu bản không có khối giá trị: cùng script thì cùng mã băm
-    var script = GeaScript.Compile(clean);
-    if (GeaForms.Reject(script) is { } why)
-        return Results.BadRequest(new { error = why, diagnostics = GeaForms.Diagnostics(script) });
-
-    var names = GeaForms.FieldNames(script).ToHashSet(StringComparer.Ordinal);
-    var values = block?.Values.Where(kv => names.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value) ?? new Dictionary<string, double>();
-    var texts = block?.Texts.Where(kv => names.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value) ?? new Dictionary<string, string>();
-    var ignored = (block?.Values.Keys.Concat(block.Texts.Keys) ?? Enumerable.Empty<string>()).Where(k => !names.Contains(k)).OrderBy(k => k, StringComparer.Ordinal).ToArray();
-
-    var warnings = new List<string>();
-    if (block?.ScriptSha256 is { } exportedSha && exportedSha != ScriptStore.Sha256(clean))
-        warnings.Add("The script was modified after this file was exported; the values may no longer fit it.");
-    if (ignored.Length > 0)
-        warnings.Add($"{ignored.Length} value(s) in the file do not match any parameter of the script and were ignored: {string.Join(", ", ignored.Take(5))}{(ignored.Length > 5 ? ", ..." : "")}.");
-
-    var id = scripts.Save(clean);
-    return Results.Ok(new
-    {
-        scriptId = id,
-        name = script.Program.ProductName,
-        hasValues = block != null,
-        values,
-        texts,
-        ignored,
-        warnings,
-        diagnostics = GeaForms.Diagnostics(script),
-        form = GeaForms.Describe(GeaForms.Evaluate(script, values, texts)),
-    });
+    var r = jobs.Import(req.Text);
+    return Results.Json(r.Body, statusCode: r.Status);
 });
 
-app.MapPost("/api/gea/{id}/form", (string id, GeaFormRequest req) =>
+app.MapPost("/api/gea/{id}/form", (string id, GeaFormRequest req, JobService jobs) =>
 {
-    if (scripts.Get(id) is not { } text) return Results.NotFound(new { error = "Unknown script. Import the .gea file again." });
-    var script = GeaScript.Compile(text);
-    if (GeaForms.Reject(script) is { } why) return Results.BadRequest(new { error = why });
-    return Results.Ok(new { scriptId = id, name = script.Program.ProductName, form = GeaForms.Describe(GeaForms.Evaluate(script, req.Values, req.Texts)) });
+    var r = jobs.ScriptForm(id, req.Values, req.Texts);
+    return Results.Json(r.Body, statusCode: r.Status);
 });
 
-// ================================================================= đơn hàng / job
+// ================================================================= script designer
+// The Designer page builds a design model (JSON) and gets the .gea text back. The logic is in DesignerApi; problems with the model come back as data (200), not as 400.
 
-app.MapPost("/api/jobs", (CreateJobRequest req) =>
+app.MapGet("/api/gea/builders", () => Results.Json(DesignerApi.Builders().Body));
+
+static async Task<IResult> DesignerCall(HttpRequest http, Func<string, DesignerApi.Reply> action)
 {
-    var requestedByName = string.IsNullOrWhiteSpace(req.RequestedBy) ? "anonymous" : req.RequestedBy.Trim();
-    if (requestedByName.Length > 80) requestedByName = requestedByName[..80];
+    var (body, err) = await DesignerApi.ReadBody(http.Body, http.ContentLength);
+    var r = err ?? action(body!);
+    return Results.Json(r.Body, statusCode: r.Status);
+}
 
-    // Đặt hàng từ script .gea đã import: server biên dịch lại và tính FORM lần cuối (không tin trình duyệt).
-    if (!string.IsNullOrWhiteSpace(req.ScriptId))
-    {
-        if (scripts.Get(req.ScriptId) is not { } scriptSource)
-            return Results.NotFound(new { error = "Unknown script. Import the .gea file again." });
-        var script = GeaScript.Compile(scriptSource);
-        if (GeaForms.Reject(script) is { } why)
-            return Results.BadRequest(new { error = why, diagnostics = GeaForms.Diagnostics(script, errorsOnly: true) });
-        var form = GeaForms.Evaluate(script, req.Inputs, req.TextInputs);
-        if (!form.Ok)
-            return Results.BadRequest(new { error = "The order violates the script's rules.", issues = form.Errors.Select(e => new { message = e.Message, @params = e.Params }) });
+app.MapPost("/api/gea/designer/generate", (HttpRequest http) => DesignerCall(http, DesignerApi.Generate));
+app.MapPost("/api/gea/designer/parse", (HttpRequest http) => DesignerCall(http, DesignerApi.Parse));
+app.MapPost("/api/gea/designer/dryrun", (HttpRequest http) => DesignerCall(http, DesignerApi.DryRun));
 
-        var name = string.IsNullOrWhiteSpace(script.Program.ProductName) ? "imported.gea" : script.Program.ProductName;
-        var (numbers, texts) = GeaForms.Complete(form);
-        var scriptJob = store.Create(ImportedProduct, numbers, requestedByName, name, req.ScriptId, "imported", texts);
-        return Results.Created($"/api/jobs/{scriptJob.Id}", scriptJob);
-    }
+// ================================================================= orders / jobs
 
-    var product = Products.Find(string.IsNullOrWhiteSpace(req.ProductCode) ? "box" : req.ProductCode);
-    if (product == null) return Results.NotFound(new { error = $"Unknown product '{req.ProductCode}'." });
+/// <summary>"generate,export" -> a set of lowercase names; null when the parameter is missing (no filter).</summary>
+static HashSet<string>? ParseList(string? s) => string.IsNullOrWhiteSpace(s) ? null
+    : s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(x => x.ToLowerInvariant()).ToHashSet();
 
-    // Server luôn kiểm tra lại lần cuối (là bản chuẩn), không tin form ở trình duyệt.
-    ProductConfig? chosen = null;
-    if (!string.IsNullOrWhiteSpace(req.ConfigId))
-    {
-        chosen = configs.Get(product, req.ConfigId);
-        if (chosen == null) return Results.NotFound(new { error = "Unknown configuration." });
-        if (chosen.Status != "active") return Results.BadRequest(new { error = $"Configuration '{chosen.Name}' is {chosen.Status}; only active configurations can be ordered." });
-    }
-    var values = configs.Effective(product, req.Inputs, chosen); // thông số đơn không nêu thì lấy từ Configuration đã chọn (hoặc mặc định)
-    var issues = product.Validate(values);
-    if (issues.Count > 0)
-        return Results.BadRequest(new { error = "The order violates product rules.", issues });
-
-    // Ghi lại đúng bản script .gea dùng cho job này (để export sau này khớp với những gì đã chạy).
-    string? scriptSha = null;
-    if (product.ScriptFile != null)
-    {
-        if (ScriptStore.ReadBundled(product.ScriptFile) is { } scriptText) scriptSha = scripts.Save(scriptText);
-        else app.Logger.LogWarning("Bundled script {File} for product {Product} was not found; the job will have no .gea export.", product.ScriptFile, product.Code);
-    }
-
-    var job = store.Create(product.Code, values, requestedByName,
-        scriptSha == null ? null : product.ScriptFile, scriptSha, scriptSha == null ? null : "bundled");
-    return Results.Created($"/api/jobs/{job.Id}", job);
+app.MapPost("/api/jobs", (CreateJobRequest req, JobService jobs) =>
+{
+    var r = jobs.Create(req);
+    return r.Ok ? Results.Created($"/api/jobs/{r.Job!.Id}", r.Job) : Results.Json(r.Error, statusCode: r.Status);
 });
 
-// Danh sách có lọc: ?status=queued,running &product=box &requestedBy=ten &from=2026-11-01 &to=2026-11-08 &limit=100
-// Không có tham số thì trả toàn bộ (tương thích bản cũ). Mới nhất trước.
-app.MapGet("/api/jobs", (string? status, string? product, string? requestedBy, DateTimeOffset? from, DateTimeOffset? to, int? limit) =>
+// Filtered list: ?status=queued,running &kind=generate,export &queue=filter &product=box &requestedBy=name &from=2026-11-01 &to=2026-11-08 &limit=100
+// Without parameters it returns everything (compatible with the old version). Newest first.
+app.MapGet("/api/jobs", (string? status, string? product, string? requestedBy, DateTimeOffset? from, DateTimeOffset? to, int? limit, string? kind, string? queue) =>
 {
     IEnumerable<Job> jobs = store.List();
 
@@ -212,6 +212,10 @@ app.MapGet("/api/jobs", (string? status, string? product, string? requestedBy, D
     }
     if (!string.IsNullOrWhiteSpace(product))
         jobs = jobs.Where(j => string.Equals(j.ProductCode, product.Trim(), StringComparison.OrdinalIgnoreCase));
+    if (ParseList(kind) is { } kinds)
+        jobs = jobs.Where(j => kinds.Contains(j.Kind));
+    if (!string.IsNullOrWhiteSpace(queue))
+        jobs = jobs.Where(j => string.Equals(j.Queue, queue.Trim(), StringComparison.OrdinalIgnoreCase));
     if (!string.IsNullOrWhiteSpace(requestedBy))
         jobs = jobs.Where(j => string.Equals(j.RequestedBy, requestedBy.Trim(), StringComparison.OrdinalIgnoreCase));
     if (from is { } f) jobs = jobs.Where(j => j.CreatedAt >= f);
@@ -221,22 +225,24 @@ app.MapGet("/api/jobs", (string? status, string? product, string? requestedBy, D
     return Results.Ok(jobs.ToList());
 });
 
-// Thống kê cho Dashboard: đếm theo trạng thái, tỉ lệ thành công, thời gian build, và theo ngày (giờ máy chủ).
-// ?days=14 (1-90) &product= &requestedBy=. Thống kê tính trên job tạo trong khoảng `days` ngày gần nhất.
-app.MapGet("/api/stats", (int? days, string? product, string? requestedBy) =>
+// Statistics for the Dashboard: counts by status, success rate, build time, and per day (server time).
+// ?days=14 (1-90) &product= &requestedBy=. Statistics are computed over jobs created within the last `days` days.
+app.MapGet("/api/stats", (int? days, string? product, string? requestedBy, string? kind) =>
 {
     int span = Math.Clamp(days ?? 14, 1, 90);
     var today = DateTimeOffset.Now.Date;
     var firstDay = today.AddDays(-(span - 1));
 
     IEnumerable<Job> jobs = store.List().Where(j => j.CreatedAt.ToLocalTime().Date >= firstDay);
+    if (ParseList(kind) is { } kinds)
+        jobs = jobs.Where(j => kinds.Contains(j.Kind));
     if (!string.IsNullOrWhiteSpace(product))
         jobs = jobs.Where(j => string.Equals(j.ProductCode, product.Trim(), StringComparison.OrdinalIgnoreCase));
     if (!string.IsNullOrWhiteSpace(requestedBy))
         jobs = jobs.Where(j => string.Equals(j.RequestedBy, requestedBy.Trim(), StringComparison.OrdinalIgnoreCase));
     var list = jobs.ToList();
 
-    // Thời gian build = từ lúc worker nhận đến lúc xong, chỉ tính job thành công.
+    // Build time = from when the worker took the job until it finished, counting successful jobs only.
     static double? BuildSeconds(Job j) =>
         j.Status == JobStatus.Succeeded && j.StartedAt is { } s && j.FinishedAt is { } f && f >= s ? (f - s).TotalSeconds : null;
     static double? Avg(IEnumerable<double?> xs) { var v = xs.Where(x => x.HasValue).Select(x => x!.Value).ToList(); return v.Count == 0 ? null : Math.Round(v.Average(), 1); }
@@ -270,7 +276,22 @@ app.MapGet("/api/stats", (int? days, string? product, string? requestedBy) =>
     });
 });
 
-app.MapGet("/api/jobs/{id}",(string id) => store.Get(id) is { } j ? Results.Ok(j) : Results.NotFound());
+app.MapGet("/api/jobs/{id}", (string id) =>
+{
+    if (store.Get(id) is not { } j) return Results.NotFound();
+    if (j.Status == JobStatus.Queued) j.QueuePosition = store.QueuePosition(id);
+    return Results.Ok(j);
+});
+
+// Rebuild an older job (same script and values) as an `export` job, for example to get back files removed by the retention policy.
+app.MapPost("/api/jobs/{id}/rebuild", (string id, RebuildRequest? req, JobService jobs) =>
+{
+    var r = jobs.Rebuild(id, req?.RequestedBy);
+    return r.Ok ? Results.Created($"/api/jobs/{r.Job!.Id}", r.Job) : Results.Json(r.Error, statusCode: r.Status);
+});
+
+// Depth of the build and filter queues, the oldest wait and the online workers that take from each.
+app.MapGet("/api/queues", () => store.QueueStats());
 
 app.MapPost("/api/jobs/{id}/cancel", (string id) =>
     store.Cancel(id) ? Results.NoContent() : Results.Conflict(new { error = "The job is not found or already finished." }));
@@ -279,20 +300,20 @@ app.MapGet("/api/jobs/{id}/artifacts/{name}", (string id, string name, bool? dow
 {
     var job = store.Get(id);
     if (job == null || !job.Artifacts.Any(a => a.Name == name) || !safeName.IsMatch(name)) return Results.NotFound();
-    // Job chưa xong thì chưa cho xem/tải kết quả (artifact được đăng ký dần trong lúc job còn 'running').
+    // A job that is not finished cannot show/download its results yet (artifacts are registered gradually while the job is still 'running').
     if (job.Status != JobStatus.Succeeded)
         return Results.Conflict(new { error = "Results are available only after the job has succeeded." });
-    // File ở R2: chuyển hướng sang URL ký sẵn, hạn ngắn (bucket private, khóa R2 không rời server).
+    // File on R2: redirect to a short-lived presigned URL (private bucket, the R2 key never leaves the server).
     if (job.Artifacts.First(a => a.Name == name).Key is { } key && r2.IsConfigured)
         return Results.Redirect(r2.PresignGet(key, name, ContentTypeFor(name), download == true, DateTime.UtcNow));
     var path = Path.Combine(store.ArtifactDir(id), name);
     if (!File.Exists(path)) return Results.NotFound();
-    // Trả inline để trình duyệt hiển thị ảnh/PDF trong trang; nút tải ở front-end dùng thuộc tính download.
+    // Returned inline so the browser shows images/PDFs in the page; the download button in the front-end uses the download attribute.
     return Results.File(path, ContentTypeFor(name));
 });
 
-// Export .gea: script đã dùng cho job + giá trị đầu vào (khối chú thích !@, xem GeaExport). Là đơn hàng chứ không phải kết quả,
-// nên xuất được ở mọi trạng thái.
+// Export .gea: the script used for the job + the input values (the !@ comment block, see GeaExport). It is an order, not a result,
+// so it can be exported in every status.
 app.MapGet("/api/jobs/{id}/export.gea", (string id) =>
 {
     var job = store.Get(id);
@@ -303,10 +324,26 @@ app.MapGet("/api/jobs/{id}/export.gea", (string id) =>
     return Results.File(bytes, "text/plain; charset=utf-8", fileDownloadName: job.Id + ".gea");
 });
 
+// Component catalog (INCLUDE lib: libraries): view, download the original file, download a starter script. Read-only, see docs/superpowers/specs/2026-11-10-component-catalog-design.md.
+app.MapGet("/api/components", (ComponentCatalog catalog) => catalog.List());
+
+app.MapGet("/api/components/{name}/gea", (string name, ComponentCatalog catalog) =>
+    catalog.Raw(name) is { } text
+        ? Results.File(new System.Text.UTF8Encoding(false).GetBytes(text), "text/plain; charset=utf-8", fileDownloadName: name + ".gea")
+        : Results.NotFound(new { error = $"Unknown component '{name}'." }));
+
+app.MapGet("/api/components/{name}/starter", (string name, string? productName, string? prefix, ComponentCatalog catalog) =>
+{
+    var r = catalog.Starter(name, productName, prefix);
+    return r.Text != null
+        ? Results.File(new System.Text.UTF8Encoding(false).GetBytes(r.Text), "text/plain; charset=utf-8", fileDownloadName: name + "-starter.gea")
+        : Results.Json(new { error = r.Error }, statusCode: r.Status);
+});
+
 app.MapGet("/api/workers", () => store.Workers());
 
 // ================================================================= worker (Inventor)
-// Worker chủ động hỏi server; server không gọi worker. Xác thực bằng khóa dùng chung (mỗi máy một khóa khi triển khai thật).
+// The worker asks the server; the server never calls the worker. Authenticated with a shared key (one key per machine in a real deployment).
 
 var worker = app.MapGroup("/api/worker").AddEndpointFilter(async (ctx, next) =>
 {
@@ -325,8 +362,8 @@ worker.MapPost("/heartbeat", (WorkerHello hello) =>
 worker.MapPost("/claim", (ClaimRequest req) =>
 {
     if (string.IsNullOrWhiteSpace(req.Worker)) return Results.BadRequest(new { error = "worker is required." });
-    if (store.Claim(req.Worker!, req.Products) is not { } item) return Results.NoContent();
-    // Kèm đúng bản script đã ghi cho job (bản đi kèm sản phẩm hoặc bản người dùng import).
+    if (store.Claim(req.Worker!, req.Products, req.Queues) is not { } item) return Results.NoContent();
+    // Includes exactly the script recorded for the job (the one that ships with the product or the one the user imported).
     var scriptJob = store.Get(item.Id);
     return Results.Ok(scriptJob?.ScriptSha256 != null && scripts.Get(scriptJob.ScriptSha256) is { } text
         ? item with { ScriptText = text, ScriptName = scriptJob.ScriptName }
@@ -336,7 +373,7 @@ worker.MapPost("/claim", (ClaimRequest req) =>
 worker.MapPost("/jobs/{id}/progress", (string id, string worker, ProgressRequest req) =>
     store.Progress(id, worker, req.Step, req.Message) ? Results.NoContent() : Results.Conflict(new { error = "The job is not running on this worker." }));
 
-// Bước 1 của upload qua R2: worker xin URL PUT. Chưa cấu hình R2 thì mode = "direct" (worker dùng upload thân file như cũ).
+// Step 1 of the upload through R2: the worker asks for a PUT URL. If R2 is not configured, mode = "direct" (the worker uploads the file body as before).
 worker.MapPost("/jobs/{id}/artifacts/presign", (string id, string worker, string name) =>
 {
     if (!safeName.IsMatch(name)) return Results.BadRequest(new { error = "Invalid file name." });
@@ -348,7 +385,7 @@ worker.MapPost("/jobs/{id}/artifacts/presign", (string id, string worker, string
     return Results.Ok(new { mode = "r2", url = r2.PresignPut(key, DateTime.UtcNow), key });
 });
 
-// Bước 2: worker báo đã PUT xong; server kiểm tra object có thật trên R2 rồi mới ghi vào job.
+// Step 2: the worker reports the PUT is done; the server checks the object really exists on R2 before recording it on the job.
 worker.MapPost("/jobs/{id}/artifacts/commit", async (string id, string worker, string name, string? kind) =>
 {
     if (!safeName.IsMatch(name)) return Results.BadRequest(new { error = "Invalid file name." });
@@ -381,17 +418,41 @@ worker.MapPost("/jobs/{id}/artifacts", async (string id, string worker, string n
     return Results.NoContent();
 });
 
-worker.MapPost("/jobs/{id}/complete", (string id, string worker, CompleteRequest req) =>
-    store.Complete(id, worker, req.Summary) ? Results.NoContent() : Results.Conflict(new { error = "The job is not running on this worker." }));
+worker.MapPost("/jobs/{id}/complete", (string id, string worker, CompleteRequest req, Cadflow.Api.Vault.VaultJobSaver vaultSaver) =>
+{
+    if (!store.Complete(id, worker, req.Summary)) return Results.Conflict(new { error = "The job is not running on this worker." });
+
+    // Save the results (model, drawing, images, BOM) into Smart Vault right away, in the background so the worker is not kept waiting.
+    // A failure is only logged: the job stays succeeded and "Save to Smart Vault" on the job page can retry. Turn off with Vault:AutoSave=false.
+    if (app.Configuration.GetValue("Vault:AutoSave", true) && store.Get(id) is { Kind: not JobKinds.Preview, ArtifactsPurgedAt: null } done)
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var r = vaultSaver.Save(done, done.RequestedBy);
+                app.Logger.LogInformation("Job {Job} saved to Smart Vault:{Added} new, {Versions} new versions, {Unchanged} unchanged, {Skipped} skipped.",
+                    id, r.Added, r.NewVersions, r.Unchanged, r.Skipped.Count);
+                // Also have Autodesk prepare the models for the 3D viewer, so they open instantly later.
+                if (app.Configuration.GetValue("Aps:AutoTranslate", true)) await vaultSaver.PrepareViewsAsync(r, app.Logger);
+            }
+            catch (Exception ex) { app.Logger.LogWarning(ex, "Could not save job {Job} to Smart Vault.", id); }
+        });
+    return Results.NoContent();
+});
 
 worker.MapPost("/jobs/{id}/fail", (string id, string worker, FailRequest req) =>
     store.Fail(id, worker, string.IsNullOrWhiteSpace(req.Error) ? "Unknown error." : req.Error!, req.Retryable)
         ? Results.NoContent()
         : Results.Conflict(new { error = "The job is not running on this worker." }));
 
+app.MapVault();
+app.MapMcp("/mcp");
+app.MapChat(app.Configuration["Anthropic:ApiKey"] ?? Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY"),
+    app.Configuration["Anthropic:Model"] ?? "claude-sonnet-5-5", app.Configuration["Anthropic:BaseUrl"], app.Configuration.GetValue("Chat:AutoCreate", true));
+
 app.Run();
 
-// ================================================================= tiện ích
+// ================================================================= utilities
 
 static string ContentTypeFor(string name) => Path.GetExtension(name).ToLowerInvariant() switch
 {

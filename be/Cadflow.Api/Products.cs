@@ -3,8 +3,8 @@ using InventorAddin.Models;
 namespace Cadflow.Api;
 
 /// <summary>
-/// Một sản phẩm đặt hàng được: mô tả, danh sách thông số và luật kiểm tra. Server và add-in dùng chung các định nghĩa
-/// này (file nguồn được link từ add-in), nên form web, kiểm tra ở server và kiểm tra lại ở worker không bao giờ lệch nhau.
+/// An orderable product: description, list of parameters and validation rules. The server and the add-in share these definitions
+/// (the source file is linked from the add-in), so the web form, the server check and the re-check at the worker never drift apart.
 /// </summary>
 public sealed record Product(
     string Code,
@@ -14,9 +14,9 @@ public sealed record Product(
     IReadOnlyList<ParameterDef> Parameters,
     Func<IReadOnlyDictionary<string, double>?, Dictionary<string, double>> Complete,
     Func<IReadOnlyDictionary<string, double>, IReadOnlyList<ValidationIssue>> Validate,
-    string? ScriptFile = null) // file .gea đi kèm (trong thư mục Scripts cạnh server); null = sản phẩm dựng không qua .gea
+    string? ScriptFile = null) // the .gea file that ships with it (in the Scripts folder next to the server); null = product not built through .gea
 {
-    /// <param name="defaults">Mặc định đang áp dụng (đã gồm cấu hình của tab Config); null = mặc định gốc.</param>
+    /// <param name="defaults">Defaults currently applied (including the Config tab); null = factory defaults.</param>
     public object Schema(IReadOnlyDictionary<string, double>? defaults = null) => new
     {
         code = Code,
@@ -48,6 +48,12 @@ public static class Products
         new Product(GeneratorParams.Code, "Water-cooled generator",
             "Simplified large water-cooled synchronous generator: box stator frame with side ribs, water cooler with pipes under the frame, top box with fans, bearing housings, rotor shaft, exciter cabinet and base frame.", 1,
             GeneratorParams.All, GeneratorParams.Complete, GeneratorParams.Validate, ScriptFile: "generator.gea"),
+        new Product(CircuitBreakerParams.Code, "Circuit breaker",
+            "Simplified high-voltage live-tank circuit breaker: concrete pad and pier, lattice steel stand, control cabinet and two stacked ribbed insulator columns with a collar.", 1,
+            CircuitBreakerParams.All, CircuitBreakerParams.Complete, CircuitBreakerParams.Validate, ScriptFile: "circuit-breaker.gea"),
+        new Product(DisconnectorParams.Code, "Disconnector",
+            "Simplified high-voltage double-column disconnector (1 to 3 phases): steel posts with base plates, frame beams, two ribbed insulator columns per phase, blade arms and a control cabinet.", 1,
+            DisconnectorParams.All, DisconnectorParams.Complete, DisconnectorParams.Validate, ScriptFile: "disconnector.gea"),
     };
 
     public static Product? Find(string? code) =>

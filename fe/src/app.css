@@ -1,6 +1,6 @@
 ﻿body { margin: 0; }
 
-/* Bảng màu GE Vernova: teal #005F60 (màu nền logo). Ghi đè thang accent của Radix. */
+/* GE Vernova palette: teal #005F60 (the logo background color). Overrides the Radix accent scale. */
 .radix-themes {
   --accent-1: #f5fbfa; --accent-2: #eaf6f5; --accent-3: #d4ecea; --accent-4: #bfe1de; --accent-5: #a5d3cf;
   --accent-6: #84c0bb; --accent-7: #5aa8a2; --accent-8: #2b8c86; --accent-9: #005f60; --accent-10: #004f50;
@@ -21,7 +21,7 @@
   --focus-8: #329e97;
 }
 
-/* Hiệu ứng nút: nâng nhẹ khi rê chuột, nhấn lún xuống, ánh sáng quét qua nút đặc */
+/* Button effects: a slight lift on hover, pressed down on click, a light sweep across solid buttons */
 .rt-Button, .rt-IconButton {
   transition: transform .15s ease, box-shadow .2s ease, background-color .2s ease, filter .2s ease;
   position: relative; overflow: hidden;
@@ -41,7 +41,7 @@
   .rt-Button.rt-variant-solid::after { display: none; }
 }
 
-/* Giao diện tối kiểu OneWind: nền đen, bề mặt than, viền mảnh, nhấn teal */
+/* OneWind-style dark theme: black background, charcoal surfaces, thin borders, teal accents */
 .radix-themes:is(.dark, .dark-theme) {
   --color-background: #050808; --color-panel-solid: #0d1313; --color-surface: #0a0f0f; --color-panel: #0d1313;
   --gray-1: #070b0b; --gray-2: #0d1313; --gray-3: #131b1b; --gray-4: #182222; --gray-5: #1e2a2a; --gray-6: #263434;
@@ -50,7 +50,7 @@
 .radix-themes:is(.dark, .dark-theme) .rt-Card { border: 1px solid #1a2626; box-shadow: none; }
 .radix-themes:is(.dark, .dark-theme) .rt-Card:where(.rt-variant-surface)::before { box-shadow: inset 0 0 0 1px #1a2626; }
 
-/* Header đen, mục đang chọn gạch chân teal */
+/* Black header, the selected item underlined in teal */
 .topbar { position: sticky; top: 0; z-index: 10; background: rgba(0, 0, 0, .92); backdrop-filter: blur(8px); border-bottom: 1px solid #0e3a39; box-shadow: 0 1px 0 rgba(25, 195, 184, .18); }
 .brand { text-decoration: none; color: #fff; white-space: nowrap; letter-spacing: .12em; }
 .brand .rt-Text:first-child { text-transform: uppercase; }
@@ -64,7 +64,7 @@
 .topbar .rt-IconButton { color: #fff; }
 .topbar .rt-IconButton:hover { background: rgba(255, 255, 255, .16); box-shadow: none; }
 
-/* Dải tiêu đề trang: ảnh sản phẩm trên nền đen, chữ nằm bên trái */
+/* Page title strip: the product image on a black background, text on the left */
 .hero { position: relative; min-height: 280px; margin-bottom: 20px; border-radius: var(--radius-4); overflow: hidden; background: #000 right center / auto 100% no-repeat; border: 1px solid #12302f; display: flex; align-items: center; }
 .hero::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, #000 0%, rgba(0, 0, 0, .9) 38%, rgba(0, 0, 0, 0) 66%); }
 .hero::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: linear-gradient(90deg, #19c3b8, transparent 60%); }
@@ -74,7 +74,7 @@
 .hero p { margin: 10px 0 0; color: rgba(255, 255, 255, .72); font-size: 14px; line-height: 1.5; }
 @media (max-width: 760px) { .hero { min-height: 200px; background-size: cover; } .hero::before { background: rgba(0, 0, 0, .7); } .hero h1 { font-size: 26px; } }main { min-height: calc(100vh - 57px); }
 
-/* Form đặt hàng */
+/* Order form */
 .field { display: grid; grid-template-columns: 200px 120px minmax(120px, 1fr) 110px; gap: 12px; align-items: center; padding: 6px 0; }
 .field.script-field { grid-template-columns: 240px minmax(120px, 280px) 1fr; }
 .field[hidden] { display: none; }
@@ -84,7 +84,7 @@
   .field .slider, .field .range { grid-column: 1 / -1; }
 }
 
-/* Thẻ thống kê và biểu đồ */
+/* Statistic cards and charts */
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .tile-value { font-size: 28px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
 .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-bottom: 16px; }
@@ -119,7 +119,7 @@ dl.meta dd { margin: 0; word-break: break-word; }
 
 .hero.cutout { background-size: auto 112%; background-position: right 6% center; }
 
-/* Màn hình Config: ma trận so sánh các Configuration (cột = configuration, hàng = nhóm tham số) */
+/* Config screen: a matrix comparing the Configurations (column = configuration, row = parameter group) */
 .cfg-card { padding: 0; overflow: hidden; }
 .cfg-scroll { overflow: auto; max-height: calc(100vh - 260px); }
 .cfg-grid { display: grid; min-width: max-content; font-size: 13px; }
@@ -144,3 +144,74 @@ button.cfg-label.gh:hover { color: var(--accent-11); }
 
 .hero.wide { background-size: auto 86%; background-position: right 3% center; }
 
+
+/* ---- Chat (Claude style: history sidebar + a conversation column in the middle) ---- */
+.chat-shell { display: flex; height: calc(100vh - 150px); min-height: 480px; border: 1px solid var(--gray-a5); border-radius: var(--radius-4); overflow: hidden; background: var(--color-panel-solid); position: relative; }
+.chat-side { width: 270px; flex: none; display: flex; flex-direction: column; gap: 8px; padding: 12px; background: var(--gray-2); border-right: 1px solid var(--gray-a5); }
+.chat-new { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: var(--radius-3); border: 1px solid var(--gray-a6); background: transparent; color: var(--gray-12); font: inherit; font-weight: 500; cursor: pointer; }
+.chat-new:hover { background: var(--accent-a3); }
+.chat-new span { color: var(--accent-11); }
+.chat-search { padding: 7px 10px; border-radius: var(--radius-3); border: 1px solid var(--gray-a5); background: var(--color-surface); color: var(--gray-12); font: inherit; font-size: var(--font-size-2); outline: none; }
+.chat-search:focus { border-color: var(--accent-8); }
+.chat-history { flex: 1; overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
+.chat-group { padding: 12px 8px 4px; font-size: var(--font-size-1); color: var(--gray-10); }
+.chat-empty-hist { padding: 16px 8px; font-size: var(--font-size-2); color: var(--gray-10); }
+.chat-item { display: flex; align-items: center; gap: 4px; padding: 7px 8px; border-radius: var(--radius-3); cursor: pointer; color: var(--gray-12); font-size: var(--font-size-2); }
+.chat-item:hover { background: var(--gray-a3); }
+.chat-item.active { background: var(--accent-a4); }
+.chat-item-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-item input { flex: 1; min-width: 0; font: inherit; color: inherit; background: var(--color-surface); border: 1px solid var(--accent-8); border-radius: 4px; padding: 1px 4px; outline: none; }
+.chat-del { opacity: 0; border: 0; background: transparent; cursor: pointer; font-size: 12px; padding: 2px 4px; border-radius: 4px; filter: grayscale(1); }
+.chat-item:hover .chat-del, .chat-item.active .chat-del { opacity: .7; }
+.chat-del:hover { opacity: 1 !important; background: var(--red-a4); }
+
+.chat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.chat-bar { display: none; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--gray-a5); }
+.chat-burger { border: 0; background: transparent; color: var(--gray-12); font-size: 18px; cursor: pointer; }
+.chat-bar-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-scroll { flex: 1; overflow-y: auto; padding: 24px 16px 8px; }
+.chat-col { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; min-height: 100%; }
+.chat-row { display: flex; gap: 12px; align-items: flex-start; }
+.chat-avatar { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-a4); color: var(--accent-11); font-size: 14px; }
+.chat-avatar.pulse { animation: chat-pulse 1.2s ease-in-out infinite; }
+@keyframes chat-pulse { 50% { opacity: .35; transform: scale(.9); } }
+.chat-status { color: var(--gray-10); font-size: var(--font-size-2); line-height: 28px; }
+.chat-msg { white-space: pre-wrap; line-height: 1.65; overflow-wrap: anywhere; }
+.chat-msg.user { align-self: flex-end; max-width: 85%; padding: 10px 16px; border-radius: 18px; background: var(--gray-a4); }
+.chat-msg.assistant { flex: 1; min-width: 0; padding-top: 2px; }
+.chat-hero { margin: auto; text-align: center; padding: 32px 0; }
+.chat-hero-mark { font-size: 34px; color: var(--accent-10); }
+.chat-hero h2 { margin: 8px 0 6px; font-size: 26px; font-weight: 500; }
+.chat-hero p { margin: 0 0 22px; color: var(--gray-10); }
+.chat-chips { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.chat-chips button { max-width: 100%; padding: 9px 16px; border-radius: 999px; border: 1px solid var(--gray-a6); background: transparent; color: var(--gray-12); font: inherit; font-size: var(--font-size-2); cursor: pointer; }
+.chat-chips button:hover { background: var(--accent-a3); border-color: var(--accent-8); }
+
+.chat-composer-wrap { padding: 8px 16px 12px; }
+.chat-composer { max-width: 720px; margin: 0 auto; display: flex; align-items: flex-end; gap: 8px; padding: 10px 10px 10px 16px; border: 1px solid var(--gray-a6); border-radius: 22px; background: var(--color-surface); box-shadow: 0 2px 10px rgba(0, 0, 0, .12); }
+.chat-composer:focus-within { border-color: var(--accent-8); }
+.chat-composer textarea { flex: 1; resize: none; border: 0; outline: none; background: transparent; color: var(--gray-12); font: inherit; line-height: 1.5; padding: 6px 0; max-height: 200px; }
+.chat-send { flex: none; width: 34px; height: 34px; border-radius: 50%; border: 0; background: var(--accent-9); color: #fff; font-size: 16px; font-weight: 700; cursor: pointer; }
+.chat-send:disabled { background: var(--gray-a5); color: var(--gray-9); cursor: not-allowed; }
+.chat-send.stop { font-size: 12px; background: var(--gray-12); color: var(--gray-1); }
+.chat-hint { max-width: 720px; margin: 6px auto 0; text-align: center; font-size: var(--font-size-1); color: var(--gray-9); }
+
+@media (max-width: 760px) {
+  .chat-shell { height: calc(100vh - 120px); }
+  .chat-bar { display: flex; }
+  .chat-side { position: absolute; z-index: 5; inset: 0 auto 0 0; transform: translateX(-100%); transition: transform .2s ease; box-shadow: 4px 0 20px rgba(0, 0, 0, .3); }
+  .chat-side.open { transform: none; }
+}
+.chat-proposal { align-self: stretch; border-left: 3px solid #19c3b8; }
+.chat-values { border-collapse: collapse; font-size: var(--font-size-2); }
+.chat-values td { padding: 2px 16px 2px 0; }
+.chat-values td:last-child { font-variant-numeric: tabular-nums; font-weight: 500; }
+
+/* Trang Components */
+.comp-more { margin-top: 10px; }
+.comp-more summary { cursor: pointer; }
+.comp-pre { margin: 8px 0 0; padding: 10px 12px; white-space: pre-wrap; font: inherit; font-size: var(--font-size-2); color: var(--gray-11); background: var(--gray-a2); border-radius: var(--radius-3); }
+.comp-code { padding: 4px 8px; border-radius: var(--radius-2); background: var(--gray-a3); font-size: var(--font-size-2); }
+
+/* Designer: generated .gea text and the dry-run trace */
+.gea-text { margin: 0 0 8px; padding: 10px 12px; max-height: 520px; overflow: auto; white-space: pre; font-family: var(--code-font-family, ui-monospace, monospace); font-size: 12.5px; line-height: 1.5; background: var(--gray-2); border: 1px solid var(--gray-5); border-radius: var(--radius-3); }

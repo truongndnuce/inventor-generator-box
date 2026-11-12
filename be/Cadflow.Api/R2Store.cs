@@ -5,14 +5,14 @@ using Amazon.S3.Model;
 
 namespace Cadflow.Api;
 
-/// <summary>Cấu hình Cloudflare R2. Đặt qua user-secrets hoặc biến môi trường (<c>R2__AccountId</c>...), không ghi vào appsettings.json.</summary>
+/// <summary>Cloudflare R2 configuration. Set it through user-secrets or environment variables (<c>R2__AccountId</c>...), not in appsettings.json.</summary>
 public sealed class R2Options
 {
     public string? AccountId { get; set; }
     public string? Bucket { get; set; }
     public string? AccessKeyId { get; set; }
     public string? SecretAccessKey { get; set; }
-    /// <summary>Mặc định <c>https://&lt;AccountId&gt;.r2.cloudflarestorage.com</c>; đổi khi dùng jurisdiction EU/FedRAMP.</summary>
+    /// <summary>Default <c>https://&lt;AccountId&gt;.r2.cloudflarestorage.com</c>; change it when using the EU/FedRAMP jurisdiction.</summary>
     public string? Endpoint { get; set; }
 
     public bool IsConfigured =>
@@ -21,8 +21,8 @@ public sealed class R2Options
 }
 
 /// <summary>
-/// Kho tài liệu trên R2 (S3 API). Worker tải thẳng lên bằng presigned PUT, người dùng tải xuống bằng presigned GET có hạn ngắn;
-/// bucket để private và khóa R2 chỉ nằm ở server.
+/// Document store on R2 (S3 API). The worker uploads straight to it with a presigned PUT, users download with a short-lived presigned GET;
+/// the bucket stays private and the R2 key lives only on the server.
 /// </summary>
 public sealed class R2Store : IDisposable
 {
@@ -41,7 +41,7 @@ public sealed class R2Store : IDisposable
             ServiceURL = options.Endpoint?.TrimEnd('/') ?? $"https://{options.AccountId}.r2.cloudflarestorage.com",
             AuthenticationRegion = "auto",
             ForcePathStyle = true,
-            // R2 chưa hỗ trợ checksum mặc định mới của SDK (CRC32 trailer): chỉ tính khi giao thức bắt buộc.
+            // R2 does not support the SDK's new default checksum (CRC32 trailer): compute it only when the protocol requires it.
             RequestChecksumCalculation = RequestChecksumCalculation.WHEN_REQUIRED,
             ResponseChecksumValidation = ResponseChecksumValidation.WHEN_REQUIRED,
         };
@@ -52,10 +52,10 @@ public sealed class R2Store : IDisposable
 
     public static string KeyFor(string jobId, string name) => $"jobs/{jobId}/{name}";
 
-    /// <summary>URL PUT có hạn để worker tải file lên. Worker gửi đúng thân file, không cần header đặc biệt.</summary>
+    /// <summary>Short-lived PUT URL for the worker to upload a file. The worker sends the file body as is, no special header needed.</summary>
     public string PresignPut(string key, DateTime utcNow) => Presign(key, HttpVerb.PUT, PutLifetime, utcNow, null);
 
-    /// <summary>URL GET có hạn. <paramref name="download"/> = true thì trình duyệt lưu file thay vì hiển thị.</summary>
+    /// <summary>Short-lived GET URL. With <paramref name="download"/> = true the browser saves the file instead of displaying it.</summary>
     public string PresignGet(string key, string fileName, string contentType, bool download, DateTime utcNow) =>
         Presign(key, HttpVerb.GET, GetLifetime, utcNow, new ResponseHeaderOverrides
         {
@@ -73,7 +73,7 @@ public sealed class R2Store : IDisposable
         return _s3!.GetPreSignedURL(request);
     }
 
-    /// <summary>Kích thước object, hoặc null nếu chưa có.</summary>
+    /// <summary>Size of the object, or null if it does not exist yet.</summary>
     public async Task<long?> SizeAsync(string key, CancellationToken ct = default)
     {
         try
@@ -86,6 +86,17 @@ public sealed class R2Store : IDisposable
             return null;
         }
     }
+
+    /// <summary>Key of a document-vault file. Outside <c>jobs/</c>, so the retention policy never touches it.</summary>
+    public static string KeyForVault(string itemId, int version, string name) => $"vault/{itemId}/v{version}/{name}";
+
+    /// <summary>Uploads a local file (the server has the bytes, e.g. a vault upload).</summary>
+    public async Task PutFileAsync(string key, string path, string contentType, CancellationToken ct = default) =>
+        await _s3!.PutObjectAsync(new PutObjectRequest { BucketName = _options.Bucket, Key = key, FilePath = path, ContentType = contentType }, ct);
+
+    /// <summary>Copies an object inside the bucket without downloading it (job result -> vault).</summary>
+    public async Task CopyAsync(string sourceKey, string destKey, CancellationToken ct = default) =>
+        await _s3!.CopyObjectAsync(new CopyObjectRequest { SourceBucket = _options.Bucket, SourceKey = sourceKey, DestinationBucket = _options.Bucket, DestinationKey = destKey }, ct);
 
     public async Task DeleteAsync(string key, CancellationToken ct = default) =>
         await _s3!.DeleteObjectAsync(new DeleteObjectRequest { BucketName = _options.Bucket, Key = key }, ct);

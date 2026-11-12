@@ -6,8 +6,8 @@ using System.Text.Json;
 namespace Cadflow.Api;
 
 /// <summary>
-/// Kho script .gea theo nội dung: <c>data\scripts\&lt;sha256&gt;.gea</c>. Job chỉ giữ mã băm, nên nhiều job dùng chung một bản
-/// mà jobs.json không phình, và vẫn export đúng bản đã chạy dù script gốc đổi sau đó.
+/// Content-addressed store of .gea scripts: <c>data\scripts\&lt;sha256&gt;.gea</c>. A job keeps only the hash, so many jobs share one copy
+/// without growing jobs.json, and the exact script that ran can still be exported even if the original script changes later.
 /// </summary>
 public sealed class ScriptStore
 {
@@ -34,7 +34,7 @@ public sealed class ScriptStore
 
     private string PathFor(string sha) => Path.Combine(_dir, sha + ".gea");
 
-    /// <summary>Script đi kèm server (thư mục Scripts cạnh file chạy), hoặc null nếu thiếu.</summary>
+    /// <summary>Script that ships with the server (Scripts folder next to the executable), or null if missing.</summary>
     public static string? ReadBundled(string file)
     {
         var path = Path.Combine(AppContext.BaseDirectory, "Scripts", Path.GetFileName(file));
@@ -43,31 +43,31 @@ public sealed class ScriptStore
 }
 
 /// <summary>
-/// Định dạng file .gea khi export/import hai chiều (xem sa-docs\gea-language-spec.md, mục "Giá trị đi kèm của CADFlow").
-/// File vẫn là .gea hợp lệ: phần thêm vào chỉ là dòng chú thích bắt đầu bằng <c>!@</c>, nên trình thông dịch và add-in bỏ qua.
+/// Format of the .gea file for two-way export/import (see sa-docs\gea-language-spec.md, section "Values that travel with CADFlow").
+/// The file is still valid .gea: the added part is only comment lines starting with <c>!@</c>, so the interpreter and the add-in ignore it.
 /// <code>
 /// !@CADFLOW 1
 /// !@JOB AJ-20261108-111053-402e
 /// !@PRODUCT transformer 1
-/// !@SCRIPT_SHA256 &lt;sha của script không có khối này&gt;
+/// !@SCRIPT_SHA256 &lt;sha of the script without this block&gt;
 /// !@VALUE TR_TankLength 2000
 /// </code>
-/// Giá trị theo đơn vị nội bộ của form: LENGTH tính bằng mm, ANGLE bằng độ, số lượng là số nguyên.
+/// Values use the internal unit of the form: LENGTH in mm, ANGLE in degrees, counts as integers.
 /// </summary>
 public static class GeaExport
 {
     public const string Tag = "!@";
 
-    // Không escape ký tự Unicode (tiếng Việt giữ nguyên dạng đọc được); vẫn escape nháy kép, xuống dòng và ký tự điều khiển.
+    // Unicode characters are not escaped (non-ASCII text stays readable); double quotes, line breaks and control characters are still escaped.
     private static readonly JsonSerializerOptions TextJson = new() { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     public sealed record Block(string? Job, string? Product, int? ProductVersion, string? ScriptSha256,
         IReadOnlyDictionary<string, double> Values, IReadOnlyDictionary<string, string> Texts);
 
-    /// <summary>Script gốc + khối giá trị của job. Khối cũ (nếu script từng được export/import) bị thay bằng khối mới.</summary>
+    /// <summary>Original script + the value block of the job. An old block (if the script was exported/imported before) is replaced by the new one.</summary>
     public static string Build(Job job, string scriptText)
     {
-        var script = StripBlock(scriptText); // LF, cuối file có đúng một dấu xuống dòng
+        var script = StripBlock(scriptText); // LF line endings, exactly one newline at the end of the file
         var nl = scriptText.Contains("\r\n") ? "\r\n" : "\n";
         var sb = new StringBuilder(script.TrimEnd().Replace("\n", nl));
         sb.Append(nl).Append(nl);
@@ -80,7 +80,7 @@ public static class GeaExport
         sb.Append(Tag).Append("SCRIPT_SHA256 ").Append(ScriptStore.Sha256(script)).Append(nl);
         foreach (var (name, value) in job.Inputs.OrderBy(k => k.Key, StringComparer.Ordinal))
             sb.Append(Tag).Append("VALUE ").Append(name).Append(' ').Append(value.ToString("R", CultureInfo.InvariantCulture)).Append(nl);
-        // Giá trị chữ (ô text/radio) viết dạng chuỗi JSON để giữ được khoảng trắng, dấu nháy và ký tự Unicode trên một dòng.
+        // Text values (text/radio fields) are written as JSON strings so spaces, quotes and Unicode characters stay on one line.
         foreach (var (name, text) in job.TextInputs.OrderBy(k => k.Key, StringComparer.Ordinal))
             sb.Append(Tag).Append("TEXT ").Append(name).Append(' ').Append(JsonSerializer.Serialize(text, TextJson)).Append(nl);
         return sb.ToString();
@@ -89,8 +89,8 @@ public static class GeaExport
     private const string BlockHeader = "! CADFlow export:";
 
     /// <summary>
-    /// Script gốc, không có khối export: xuống dòng LF, đúng một dấu xuống dòng ở cuối. Khối export luôn nằm cuối file
-    /// (từ dòng gạch ngang trước <c>! CADFlow export:</c> đến hết), và mọi dòng <c>!@</c> lẻ cũng bị bỏ.
+    /// Original script without the export block: LF line endings, exactly one newline at the end. The export block is always at the end of the file
+    /// (from the dashed line before <c>! CADFlow export:</c> to the end), and any stray <c>!@</c> lines are removed as well (except the three lines of the Designer block, which start in column 0).
     /// </summary>
     public static string StripBlock(string text)
     {
@@ -101,11 +101,15 @@ public static class GeaExport
             if (cut > 0 && lines[cut - 1].StartsWith("! ----", StringComparison.Ordinal)) cut--;
             lines.RemoveRange(cut, lines.Count - cut);
         }
-        lines.RemoveAll(l => l.TrimStart().StartsWith(Tag, StringComparison.Ordinal));
+        // The Designer keeps its model in lines of the same kind (!@DESIGNER, !@BODY_SHA256, !@MODEL, in column 0); they are part of the script, not stray lines.
+        lines.RemoveAll(l => l.TrimStart().StartsWith(Tag, StringComparison.Ordinal) && !IsDesignerLine(l));
         return string.Join("\n", lines).TrimEnd() + "\n";
     }
 
-    /// <summary>Đọc khối <c>!@</c> từ file .gea; trả null nếu file không có khối (file .gea thường, chưa từng qua CADFlow).</summary>
+    private static bool IsDesignerLine(string line) =>
+        line.StartsWith("!@DESIGNER", StringComparison.Ordinal) || line.StartsWith("!@BODY_SHA256", StringComparison.Ordinal) || line.StartsWith("!@MODEL", StringComparison.Ordinal);
+
+    /// <summary>Reads the <c>!@</c> block from a .gea file; returns null if the file has no block (a plain .gea file that never went through CADFlow).</summary>
     public static Block? ParseBlock(string text)
     {
         string? job = null, product = null, sha = null;
@@ -123,10 +127,10 @@ public static class GeaExport
             {
                 case "TEXT" when parts.Length >= 3:
                 {
-                    // Giá trị là phần còn lại của dòng sau tên thông số: một chuỗi JSON (có thể chứa khoảng trắng).
+                    // The value is the rest of the line after the parameter name: a JSON string (it may contain spaces).
                     var afterName = line[(Tag.Length + "TEXT".Length)..].TrimStart()[parts[1].Length..].Trim();
                     try { if (JsonSerializer.Deserialize<string>(afterName) is { } s) texts[parts[1]] = s; }
-                    catch (JsonException) { /* dòng hỏng: bỏ qua, import sẽ dùng giá trị mặc định */ }
+                    catch (JsonException) { /* broken line: skip it, import will use the default value */ }
                     break;
                 }
                 case "CADFLOW": found = true; break;

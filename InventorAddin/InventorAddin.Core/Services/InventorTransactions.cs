@@ -6,7 +6,7 @@ using Inv = Inventor;
 
 namespace InventorAddin.Services;
 
-/// <summary>Chạy một thao tác ghi trong một Transaction: lỗi hoặc model có feature hỏng thì hoàn tác toàn bộ.</summary>
+/// <summary>Runs a write operation in one Transaction: on an error or a model with a broken feature, everything is rolled back.</summary>
 internal static class InventorTransactions
 {
     public static OperationResult Run(Inv.Application app, Inv.PartDocument part, string name, Action work, string okMessage)

@@ -10,23 +10,26 @@ using System.Threading.Tasks;
 
 namespace InventorAddin.Web;
 
-/// <summary>Job server giao xuống worker: chỉ những gì cần để dựng.</summary>
-public sealed record WorkItem(string Id, string ProductCode, int ProductVersion, Dictionary<string, double> Inputs, string? ScriptText = null, string? ScriptName = null, Dictionary<string, string>? TextInputs = null);
+/// <summary>A job the server hands down to the worker: only what is needed to build. Kind: "generate" (full), "preview" (one picture only) or "export" (full rebuild of an older job).</summary>
+public sealed record WorkItem(string Id, string ProductCode, int ProductVersion, Dictionary<string, double> Inputs, string? ScriptText = null, string? ScriptName = null, Dictionary<string, string>? TextInputs = null,
+    string Kind = "generate");
 
-/// <summary>Gọi API worker của web server (xem be/Cadflow.Api). Worker chỉ kết nối đi ra, không mở cổng.</summary>
+/// <summary>Calls the worker API of the web server (see be/Cadflow.Api). The worker only connects outward, it opens no port.</summary>
 public sealed class ServerClient : IDisposable
 {
     private readonly HttpClient _http;
-    // HttpClient riêng cho R2: không mang X-Worker-Key sang máy chủ khác.
+    // A separate HttpClient for R2: do not carry X-Worker-Key to another server.
     private readonly HttpClient _r2Http = new() { Timeout = TimeSpan.FromMinutes(10) };
     private readonly string _worker;
     private readonly string[]? _products;
+    private readonly string[] _queues;
 
-    /// <param name="products">Mã sản phẩm worker này nhận; null = nhận mọi sản phẩm.</param>
+    /// <param name="products">Product codes this worker accepts; null = accepts every product.</param>
     public ServerClient(WorkerSettings settings, string[]? products = null)
     {
         _worker = settings.WorkerName;
         _products = products;
+        _queues = settings.Queues ?? Array.Empty<string>();
         _http = new HttpClient { BaseAddress = new Uri(settings.ServerUrl.TrimEnd('/') + "/"), Timeout = TimeSpan.FromMinutes(5) };
         _http.DefaultRequestHeaders.Add("X-Worker-Key", settings.WorkerKey);
     }
@@ -38,10 +41,10 @@ public sealed class ServerClient : IDisposable
         res.EnsureSuccessStatusCode();
     }
 
-    /// <summary>Nhận job tiếp theo, null nếu hàng đợi trống.</summary>
+    /// <summary>Takes the next job, null if the queue is empty.</summary>
     public async Task<WorkItem?> ClaimAsync(CancellationToken ct)
     {
-        using var res = await _http.PostAsJsonAsync("api/worker/claim", new { worker = _worker, products = _products }, ct);
+        using var res = await _http.PostAsJsonAsync("api/worker/claim", new { worker = _worker, products = _products, queues = _queues }, ct);
         if (res.StatusCode == HttpStatusCode.NoContent) return null;
         res.EnsureSuccessStatusCode();
         return await res.Content.ReadFromJsonAsync<WorkItem>(cancellationToken: ct);
@@ -54,7 +57,7 @@ public sealed class ServerClient : IDisposable
     {
         var name = Path.GetFileName(filePath);
 
-        // Server có R2: tải thẳng lên R2 bằng URL ký sẵn rồi báo commit. Server cũ (404) hoặc chưa cấu hình R2 ("direct"): upload qua server.
+        // If the server has R2: upload straight to R2 with a presigned URL, then report the commit. An old server (404) or R2 not configured ("direct"): upload through the server.
         using (var pre = await _http.PostAsync(
             $"api/worker/jobs/{jobId}/artifacts/presign?worker={Uri.EscapeDataString(_worker)}&name={Uri.EscapeDataString(name)}", null, ct))
         {
@@ -67,7 +70,7 @@ public sealed class ServerClient : IDisposable
                     var url = doc.RootElement.GetProperty("url").GetString()!;
                     await using var src = File.OpenRead(filePath);
                     using var put = new StreamContent(src);
-                    // Không có header nào ngoài thân file: chữ ký URL không ràng buộc Content-Type.
+                    // No header besides the file body: the URL signature does not bind Content-Type.
                     using var putRes = await _r2Http.PutAsync(url, put, ct);
                     putRes.EnsureSuccessStatusCode();
                     using var commit = await _http.PostAsync(
@@ -92,7 +95,7 @@ public sealed class ServerClient : IDisposable
     public Task<bool> FailAsync(string jobId, string error, bool retryable, CancellationToken ct) =>
         PostAsync($"api/worker/jobs/{jobId}/fail?worker={Uri.EscapeDataString(_worker)}", new { error, retryable }, ct);
 
-    /// <summary>True nếu server nhận (2xx). 409 nghĩa là job không còn chạy trên worker này (bị hủy hoặc trả về hàng đợi).</summary>
+    /// <summary>True if the server accepted it (2xx). 409 means the job no longer runs on this worker (cancelled or returned to the queue).</summary>
     private async Task<bool> PostAsync(string url, object body, CancellationToken ct)
     {
         using var res = await _http.PostAsJsonAsync(url, body, ct);

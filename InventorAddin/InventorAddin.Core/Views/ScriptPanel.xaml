@@ -5,7 +5,7 @@
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolVis" />
 
-        <!-- Không thừa hưởng style ComboBoxItem của tab Box (binding vào preset) -->
+        <!-- Do not inherit the ComboBoxItem style of the Box tab (it binds to presets) -->
         <Style TargetType="ComboBoxItem" />
 
         <Style x:Key="ActionButton" TargetType="Button">
@@ -26,7 +26,7 @@
             </Style.Triggers>
         </Style>
 
-        <!-- Một dòng thông báo: đỏ cho lỗi, cam cho cảnh báo, xám cho ghi chú -->
+        <!-- One message line: red for errors, orange for warnings, grey for notes -->
         <DataTemplate x:Key="MessageRow">
             <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Margin="0,1">
                 <TextBlock.Style>
@@ -45,7 +45,7 @@
             </TextBlock>
         </DataTemplate>
 
-        <!-- Một ô của form: DataContext là ScriptFieldViewModel -->
+        <!-- One field of the form: the DataContext is ScriptFieldViewModel -->
         <DataTemplate x:Key="FieldRow">
             <Grid Margin="0,2" Visibility="{Binding Visible, Converter={StaticResource BoolVis}}" ToolTip="{Binding ToolTip}">
                 <Grid.ColumnDefinitions>
@@ -142,7 +142,7 @@
             </TabItem>
         </TabControl>
 
-        <!-- Hành động + trạng thái -->
+        <!-- Action + status -->
         <StackPanel Grid.Row="4" Margin="0,6,0,0">
             <WrapPanel>
                 <Button Style="{StaticResource ActionButton}" Content="Apply" Command="{Binding ApplyCommand}" FontWeight="SemiBold"

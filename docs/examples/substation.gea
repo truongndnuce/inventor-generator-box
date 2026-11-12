@@ -1,0 +1,57 @@
+! ============================================================================
+! Substation (TARGET ASSEMBLY), after the reference picture: a gravel yard with two portal gantries, and one or two parallel bays, each with
+!   power transformer  ->  circuit breaker (3 poles)  ->  disconnector (3 phases)  ->  second disconnector (3 phases)
+! all along X, toward the gantries. Every device is a Part built from its bundled script with default values, placed by position
+! (no mates yet, see sa-docs/gea-language-spec.md section 11.1).
+!
+! Axes of the assembly: X = along the yard (the transformers at the negative end, the gantries at the positive end), Y = height,
+! Z = across the yard (bays at Z = +-SS_BaySpacing / 2 when there are two).
+! The yard part is an internal part (substation-yard) with its default size 44000 x 30000 mm; the gantries stand at X = 14000 and 18500 mm.
+! ============================================================================
+GEA_VERSION 1
+PRODUCT_NAME "Substation"
+PARAM_PREFIX SS_
+TARGET ASSEMBLY
+
+BEGIN_FORM
+  USER_INPUT_PARAM SS_BayCount   INTEGER 2 MIN 1 MAX 2 LABEL "Number of bays"
+  USER_INPUT_PARAM SS_BaySpacing LENGTH 15000 mm MIN 10000 mm MAX 20000 mm LABEL "Bay spacing (Z)"
+  USER_INPUT_PARAM SS_PoleSpacing LENGTH 2500 mm MIN 2500 mm MAX 4000 mm LABEL "Phase spacing (Z)"
+END_FORM
+
+BEGIN_BUILD
+  DECLARE_REFERENCE c
+  DECLARE_VARIABLE LENGTH bayZ
+  DECLARE_VARIABLE LENGTH ground
+  DECLARE_VARIABLE INTEGER index
+
+  ground = 150 mm   ! the top of the gravel (YD_GravelHeight default)
+
+  PROCESSING_BOX_START "Building the substation"
+
+  ! --- The yard: gravel, walkway and the two gantries ---
+  ADD_COMPONENT c FROM "substation-yard" AT 0, 0, 0
+  SET_REF_NAME c "Yard"
+
+  ! --- The bays ---
+  FOR b FROM 0 TO SS_BayCount - 1
+    bayZ = (2 * b - SS_BayCount + 1) * SS_BaySpacing / 2
+
+    ADD_COMPONENT c FROM "transformer" AT -17000 mm, ground, bayZ
+    SET_REF_NAME c "Transformer_T" + STR(b + 1)
+
+    FOR p FROM 0 TO 2
+      ADD_COMPONENT c FROM "circuit-breaker" AT -9000 mm, ground, bayZ + (p - 1) * SS_PoleSpacing
+      SET_REF_NAME c "Breaker_B" + STR(b + 1) + "_Pole_" + STR(p + 1)
+    END_FOR
+
+    ADD_COMPONENT c FROM "disconnector" AT -2500 mm, ground, bayZ
+    SET_REF_NAME c "Disconnector_B" + STR(b + 1) + "_Q1"
+
+    ADD_COMPONENT c FROM "disconnector" AT 6500 mm, ground, bayZ
+    SET_REF_NAME c "Disconnector_B" + STR(b + 1) + "_Q2"
+  END_FOR
+
+  PRINT "Substation built."
+  PROCESSING_BOX_END
+END_BUILD

@@ -11,8 +11,8 @@ namespace InventorAddin.Services;
 public sealed record PresetLoadResult(IReadOnlyList<Preset> Presets, string? Warning);
 
 /// <summary>
-/// Đọc/ghi presets.json (xem mục 5b). File của người dùng nằm dưới %AppData%\InventorBoxAddin;
-/// lần đầu chạy sao chép file mẫu đi kèm add-in sang đó. Không dùng BinaryFormatter.
+/// Reads/writes presets.json (see section 5b). The user's file lives under %AppData%\InventorBoxAddin;
+/// on the first run it copies the sample file that ships with the add-in there. It does not use BinaryFormatter.
 /// </summary>
 public sealed class PresetStore
 {
@@ -94,7 +94,7 @@ public sealed class PresetStore
             foreach (var p in dto.Presets)
             {
                 if (string.IsNullOrWhiteSpace(p.Name)) continue;
-                var values = BoxParams.Complete(p.Values); // khóa lạ bỏ, thiếu thì mặc định
+                var values = BoxParams.Complete(p.Values); // unknown keys dropped, missing ones get the default
                 var issues = BoxParams.Validate(values);
                 list.Add(new Preset(p.Name.Trim(), values, issues.Count == 0 ? null : issues[0].Message));
             }
@@ -108,7 +108,7 @@ public sealed class PresetStore
         }
     }
 
-    /// <summary>Ghi qua file tạm rồi đổi tên để không hỏng file nếu bị ngắt giữa chừng.</summary>
+    /// <summary>Writes through a temporary file, then renames, so the file is not corrupted if interrupted midway.</summary>
     public void Save(IEnumerable<Preset> presets)
     {
         var dto = new FileDto

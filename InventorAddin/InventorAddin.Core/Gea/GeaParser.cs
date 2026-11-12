@@ -6,21 +6,21 @@ using System.Linq;
 namespace InventorAddin.Gea;
 
 /// <summary>
-/// Parser viết tay theo dòng (mục 15 của đặc tả). Mỗi dòng logic là một lệnh; khối lồng nhau
-/// (IF, FOR, WHILE, BEGIN_GROUP, BEGIN_CATCH_ERROR, CREATE_FEATURE) đọc đệ quy tới END_* tương ứng.
-/// Gặp lỗi thì ghi chẩn đoán, bỏ qua dòng đó và đọc tiếp để báo được nhiều lỗi một lần.
+/// Hand-written line-based parser (section 15 of the spec). Each logical line is one statement; nested blocks
+/// (IF, FOR, WHILE, BEGIN_GROUP, BEGIN_CATCH_ERROR, CREATE_FEATURE) are read recursively up to the matching END_*.
+/// On an error it records a diagnostic, skips that line and keeps reading, so several errors can be reported at once.
 /// </summary>
 public sealed class GeaParser
 {
     public const int SupportedVersion = 1;
 
-    /// <summary>Lệnh đã đặt chỗ cho P1-P3 (mục 11): nhận ra nhưng chưa hỗ trợ.</summary>
+    /// <summary>Statements reserved for P1-P3 (section 11): recognized but not supported yet.</summary>
     private static readonly HashSet<string> Reserved = new()
     {
         "INCLUDE", "CHOICE_PARAM", "MESSAGE_BOX", "MESSAGE_BOX_EX", "SET_OUTPUT", "JSON_LOAD_DOCUMENT", "JSON_GET_VALUE",
         "JSON_SET_VALUE", "ADD_ARRAY_ELEM", "GET_ARRAY_ELEM", "GET_ARRAY_SIZE", "CLEAR_ARRAY", "SET_MAP_VALUE",
         "GET_MAP_VALUE", "HAS_MAP_KEY", "DECLARE_ARRAY", "DECLARE_MAP", "REF_VALID", "SEARCH_MDL_REF", "SEARCH_MDL_REFS",
-        "INVALIDATE_REF", "COPY_REF", "REF_EQUAL", "ADD_COMPONENT", "BEGIN_ASSEMBLE", "END_ASSEMBLE", "MATE", "FLUSH", "INSERT",
+        "INVALIDATE_REF", "COPY_REF", "REF_EQUAL", "BEGIN_ASSEMBLE", "END_ASSEMBLE", "MATE", "FLUSH", "INSERT",
         "ANGLE_CONSTRAINT", "EXPORT_STEP", "EXPORT_IMAGE", "EXPORT_PDF", "DRW_NEW", "DRW_ADD_VIEW", "DRW_ADD_SECTION",
         "DRW_ADD_BALLOONS", "DRW_ADD_PARTSLIST", "DRW_ADD_NOTE", "DECLARE_STRUCT", "START_STOPWATCH", "GET_STOPWATCH_TIME",
         "FILE_OPEN", "FILE_READ_LINE", "FILE_WRITE_LINE", "FILE_CLOSE", "USER_SELECT", "USER_SELECT_MULTIPLE",
@@ -28,7 +28,7 @@ public sealed class GeaParser
         "VECTOR_NORMALIZE", "VECTOR_FROM_POINTS", "FIX_FAIL_FEATURE",
     };
 
-    /// <summary>Từ khóa (không dùng làm tên biến hoặc thông số).</summary>
+    /// <summary>Keywords (not usable as variable or parameter names).</summary>
     public static readonly HashSet<string> Keywords = new(Reserved)
     {
         "GEA_VERSION", "PRODUCT_NAME", "PARAM_PREFIX", "TARGET", "PART", "ASSEMBLY",
@@ -40,27 +40,28 @@ public sealed class GeaParser
         "CREATE_FEATURE", "END_CREATE_FEATURE", "FEATURE_IN", "FEATURE_OUT", "ON", "SET_REF_NAME", "GET_REF_NAME",
         "SET_REF_ATTR", "GET_REF_ATTR", "SET_APPEARANCE", "REGEN_MDL", "PROCESSING_BOX_START", "PROCESSING_BOX_SET_STATE",
         "PROCESSING_BOX_END", "BEGIN_CATCH_ERROR", "END_CATCH_ERROR", "CLEAR_CATCH_ERROR", "FAIL",
+        "ADD_COMPONENT", "AT", "ROT",
         "TRUE", "FALSE", "AND", "OR", "NOT", "ERROR", "ERROR_MESSAGE",
         "INTEGER", "DOUBLE", "BOOL", "STRING", "LENGTH", "ANGLE", "REFERENCE",
         "mm", "cm", "m", "in", "deg", "rad",
     };
 
-    /// <summary>Lệnh dùng được ở FORM (ngoài khai báo, gán, luồng điều khiển).</summary>
+    /// <summary>Statements usable in FORM (besides declarations, assignments and control flow).</summary>
     private static readonly HashSet<string> FormOnly = new() { "BEGIN_GROUP", "USER_INPUT_PARAM", "CHECKBOX_PARAM", "RADIOBUTTON_PARAM" };
 
     private static readonly HashSet<string> BuildOnly = new()
     {
         "WHILE", "SET_PARAM", "SET_PARAM_EXPR", "GET_PARAM", "CREATE_FEATURE", "SET_REF_NAME", "GET_REF_NAME", "SET_REF_ATTR",
         "GET_REF_ATTR", "SET_APPEARANCE", "REGEN_MDL", "PROCESSING_BOX_START", "PROCESSING_BOX_SET_STATE", "PROCESSING_BOX_END",
-        "BEGIN_CATCH_ERROR", "CLEAR_CATCH_ERROR", "FAIL",
+        "BEGIN_CATCH_ERROR", "CLEAR_CATCH_ERROR", "FAIL", "ADD_COMPONENT",
     };
 
     private readonly List<GeaLine> _lines;
     private readonly List<GeaDiagnostic> _diags;
-    private readonly List<string[]> _open = new(); // các khối đang mở (từ kết thúc của từng khối)
+    private readonly List<string[]> _open = new(); // the blocks currently open (the end keyword of each block)
     private int _li;
 
-    // Con trỏ trong dòng hiện tại
+    // Cursor inside the current line
     private IReadOnlyList<GeaToken> _toks = Array.Empty<GeaToken>();
     private int _ti;
     private int _lineNo;
@@ -83,9 +84,10 @@ public sealed class GeaParser
     {
         int version = 0;
         string? product = null, prefix = null, target = null;
+        var extraPrefixes = new List<string>();
         bool sawVersion = false;
 
-        // Header: các lệnh trước khối đầu tiên
+        // Header: the statements before the first block
         while (_li < _lines.Count)
         {
             var head = _lines[_li].Tokens[0];
@@ -98,37 +100,39 @@ public sealed class GeaParser
                 {
                     case "GEA_VERSION":
                         if (product != null || prefix != null || target != null)
-                            Error("GEA1001", kw, "GEA_VERSION phải là lệnh đầu tiên của file.");
-                        var v = Expect(TokKind.Number, "số phiên bản");
+                            Error("GEA1001", kw, "GEA_VERSION must be the first statement of the file.");
+                        var v = Expect(TokKind.Number, "version number");
                         if (!int.TryParse(v.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out version))
-                            Error("GEA1003", v, "Phiên bản phải là số nguyên.");
+                            Error("GEA1003", v, "The version must be an integer.");
                         else if (version > SupportedVersion)
-                            Error("GEA1001", v, $"File dùng GEA_VERSION {version}, trình thông dịch chỉ hỗ trợ tới {SupportedVersion}.");
+                            Error("GEA1001", v, $"The file uses GEA_VERSION {version}, the interpreter only supports up to {SupportedVersion}.");
                         sawVersion = true;
                         break;
                     case "PRODUCT_NAME":
-                        product = Expect(TokKind.String, "tên sản phẩm (chuỗi)").Text;
+                        product = Expect(TokKind.String, "product name (string)").Text;
                         break;
                     case "PARAM_PREFIX":
-                        prefix = Expect(TokKind.Word, "tiền tố thông số").Text;
+                        prefix = Expect(TokKind.Word, "parameter prefix").Text;
+                        // The second and later prefixes (added by INCLUDE lib: into the expanded copy, or listed by the author).
+                        while (!AtEnd && Peek().Kind == TokKind.Word) extraPrefixes.Add(Next().Text);
                         break;
                     case "TARGET":
-                        var t = Expect(TokKind.Word, "PART hoặc ASSEMBLY");
-                        if (t.Text is not ("PART" or "ASSEMBLY")) Error("GEA1003", t, "TARGET phải là PART hoặc ASSEMBLY.");
+                        var t = Expect(TokKind.Word, "PART or ASSEMBLY");
+                        if (t.Text is not ("PART" or "ASSEMBLY")) Error("GEA1003", t, "TARGET must be PART or ASSEMBLY.");
                         target = t.Text;
                         break;
                     default:
-                        Error("GEA1001", kw, $"Lệnh '{kw.Text}' không được dùng ở phần đầu file (chỉ GEA_VERSION, PRODUCT_NAME, PARAM_PREFIX, TARGET).");
+                        Error("GEA1001", kw, $"Statement '{kw.Text}' is not allowed in the header (only GEA_VERSION, PRODUCT_NAME, PARAM_PREFIX, TARGET).");
                         continue;
                 }
                 EndOfLine();
             }
-            catch (ParseError) { /* đã ghi chẩn đoán */ }
+            catch (ParseError) { /* diagnostic already recorded */ }
         }
 
-        if (!sawVersion) _diags.Add(new GeaDiagnostic("GEA1001", GeaSeverity.Error, 1, 1, "Thiếu GEA_VERSION ở đầu file."));
-        if (product == null) _diags.Add(new GeaDiagnostic("GEA1001", GeaSeverity.Error, 1, 1, "Thiếu PRODUCT_NAME."));
-        if (target == null) _diags.Add(new GeaDiagnostic("GEA1001", GeaSeverity.Error, 1, 1, "Thiếu TARGET (PART hoặc ASSEMBLY)."));
+        if (!sawVersion) _diags.Add(new GeaDiagnostic("GEA1001", GeaSeverity.Error, 1, 1, "GEA_VERSION is missing at the top of the file."));
+        if (product == null) _diags.Add(new GeaDiagnostic("GEA1001", GeaSeverity.Error, 1, 1, "PRODUCT_NAME is missing."));
+        if (target == null) _diags.Add(new GeaDiagnostic("GEA1001", GeaSeverity.Error, 1, 1, "TARGET (PART or ASSEMBLY) is missing."));
 
         IReadOnlyList<GeaStmt> form = Array.Empty<GeaStmt>(), build = Array.Empty<GeaStmt>();
         IReadOnlyList<GeaTable> tables = Array.Empty<GeaTable>();
@@ -142,35 +146,36 @@ public sealed class GeaParser
             switch (kw.Text)
             {
                 case "BEGIN_FORM":
-                    if (hasForm || hasTables || hasBuild) Error("GEA1001", kw, "Khối FORM phải đứng trước TABLES và BUILD, và chỉ có một.", throwAfter: false);
+                    if (hasForm || hasTables || hasBuild) Error("GEA1001", kw, "The FORM block must come before TABLES and BUILD, and there can be only one.", throwAfter: false);
                     TryEndOfLine();
                     hasForm = true;
                     form = ParseBlock(GeaBlockKind.Form, kw, "END_FORM", out _);
                     break;
                 case "BEGIN_TABLES":
-                    if (hasTables || hasBuild) Error("GEA1001", kw, "Khối TABLES phải đứng trước BUILD, và chỉ có một.", throwAfter: false);
+                    if (hasTables || hasBuild) Error("GEA1001", kw, "The TABLES block must come before BUILD, and there can be only one.", throwAfter: false);
                     TryEndOfLine();
                     hasTables = true;
                     tables = ParseTables(kw);
                     break;
                 case "BEGIN_BUILD":
-                    if (hasBuild) Error("GEA1001", kw, "Chỉ có một khối BUILD.", throwAfter: false);
+                    if (hasBuild) Error("GEA1001", kw, "There can be only one BUILD block.", throwAfter: false);
                     TryEndOfLine();
                     hasBuild = true;
                     build = ParseBlock(GeaBlockKind.Build, kw, "END_BUILD", out _);
                     break;
                 default:
-                    Error("GEA1001", kw, $"Lệnh '{kw.Text}' nằm ngoài khối. Mọi lệnh phải nằm trong BEGIN_FORM, BEGIN_TABLES hoặc BEGIN_BUILD.", throwAfter: false);
+                    Error("GEA1001", kw, $"Statement '{kw.Text}' is outside a block. Every statement must be inside BEGIN_FORM, BEGIN_TABLES or BEGIN_BUILD.", throwAfter: false);
                     break;
             }
         }
-        if (!hasBuild) _diags.Add(new GeaDiagnostic("GEA1002", GeaSeverity.Error, Math.Max(1, _lineNo), 1, "Thiếu khối BEGIN_BUILD ... END_BUILD."));
+        if (!hasBuild) _diags.Add(new GeaDiagnostic("GEA1002", GeaSeverity.Error, Math.Max(1, _lineNo), 1, "The BEGIN_BUILD ... END_BUILD block is missing."));
 
         return new GeaProgram
         {
             Version = version,
             ProductName = product ?? "",
             ParamPrefix = prefix,
+            ExtraParamPrefixes = extraPrefixes,
             Target = target ?? "PART",
             Form = form,
             HasForm = hasForm,
@@ -179,9 +184,9 @@ public sealed class GeaParser
         };
     }
 
-    // ================================================================ khối lệnh
+    // ================================================================ statement blocks
 
-    /// <summary>Đọc lệnh tới khi gặp một trong các từ kết thúc. Trả về từ kết thúc đã gặp (null nếu hết file).</summary>
+    /// <summary>Reads statements until one of the end keywords is met. Returns the end keyword that was met (null at the end of the file).</summary>
     private List<GeaStmt> ParseBlock(GeaBlockKind block, GeaToken opener, string terminators, out GeaToken? end)
     {
         var terms = terminators.Split('|');
@@ -208,14 +213,14 @@ public sealed class GeaParser
                 _li++;
                 Begin(line);
                 end = Next();
-                // ELSE_IF giữ phần còn lại của dòng cho nơi gọi
+                // ELSE_IF keeps the rest of the line for the caller
                 if (!head.Is("ELSE_IF")) TryEndOfLine();
                 return list;
             }
             if (head.Kind == TokKind.Word && head.Text is "BEGIN_FORM" or "BEGIN_TABLES" or "BEGIN_BUILD")
             {
-                // Khối mới ở cấp file: khối hiện tại thiếu END_*; để phần đọc file xử lý dòng này
-                Error("GEA1002", opener, $"Thiếu {terms[^1]} cho {opener.Text} ở dòng {opener.Line} (gặp {head.Text} ở dòng {head.Line}).", throwAfter: false);
+                // A new file-level block: the current block is missing its END_*; let the file reader handle this line
+                Error("GEA1002", opener, $"{terms[^1]} is missing for {opener.Text} at line {opener.Line} (met {head.Text} at line {head.Line}).", throwAfter: false);
                 end = null;
                 return list;
             }
@@ -224,12 +229,12 @@ public sealed class GeaParser
                 bool closesOuter = _open.Take(_open.Count - 1).Any(t => t.Contains(head.Text));
                 if (closesOuter)
                 {
-                    // Khối hiện tại thiếu END_*: để khối ngoài nhận dòng này
-                    Error("GEA1002", opener, $"Thiếu {terms[^1]} cho {opener.Text} ở dòng {opener.Line}.", throwAfter: false);
+                    // The current block is missing its END_*: let the outer block take this line
+                    Error("GEA1002", opener, $"{terms[^1]} is missing for {opener.Text} at line {opener.Line}.", throwAfter: false);
                     end = null;
                     return list;
                 }
-                Error("GEA1002", head, $"{head.Text} không khớp với khối nào (khối đang mở: {opener.Text} ở dòng {opener.Line}, cần {terms[^1]}).", throwAfter: false);
+                Error("GEA1002", head, $"{head.Text} does not match any block (open block: {opener.Text} at line {opener.Line}, expected {terms[^1]}).", throwAfter: false);
                 _li++;
                 continue;
             }
@@ -240,9 +245,9 @@ public sealed class GeaParser
                 var stmt = ParseStatement(block);
                 if (stmt != null) list.Add(stmt);
             }
-            catch (ParseError) { /* đã ghi chẩn đoán */ }
+            catch (ParseError) { /* diagnostic already recorded */ }
         }
-        Error("GEA1002", opener, $"Thiếu {terms[^1]} cho {opener.Text} ở dòng {opener.Line}.", throwAfter: false);
+        Error("GEA1002", opener, $"{terms[^1]} is missing for {opener.Text} at line {opener.Line}.", throwAfter: false);
         end = null;
         return list;
     }
@@ -256,9 +261,9 @@ public sealed class GeaParser
         var kw = Next();
         int L = kw.Line, C = kw.Col;
 
-        if (kw.Kind != TokKind.Word) throw Error("GEA1001", kw, $"Dòng phải bắt đầu bằng một lệnh hoặc tên biến, không phải '{kw.Text}'.");
+        if (kw.Kind != TokKind.Word) throw Error("GEA1001", kw, $"A line must start with a statement or a variable name, not '{kw.Text}'.");
 
-        // Gán và tăng giảm: <tên> = ..., <tên>++
+        // Assignment and increment/decrement: <name> = ..., <name>++
         if (!Keywords.Contains(kw.Text) || kw.Text is "ERROR" or "ERROR_MESSAGE")
         {
             var op = Peek();
@@ -275,24 +280,24 @@ public sealed class GeaParser
                 EndOfLine();
                 return new IncDecStmt(L, C, kw.Text, op.Text == "++" ? 1 : -1);
             }
-            throw Error("GEA1001", kw, $"Lệnh không nhận ra: '{kw.Text}'. Lệnh viết hoa (ví dụ IF, SET_PARAM); gán viết dạng 'tên = biểu thức'.");
+            throw Error("GEA1001", kw, $"Unknown statement: '{kw.Text}'. Statements are written in capitals (for example IF, SET_PARAM); an assignment is written as 'name = expression'.");
         }
 
         if (Reserved.Contains(kw.Text))
-            throw Error("GEA1001", kw, $"Lệnh '{kw.Text}' đã được dành riêng nhưng chưa hỗ trợ ở GEA_VERSION 1.");
+            throw Error("GEA1001", kw, $"Statement '{kw.Text}' is reserved but not supported in GEA_VERSION 1.");
 
         if (block == GeaBlockKind.Form && BuildOnly.Contains(kw.Text))
-            Error("GEA2020", kw, $"Lệnh '{kw.Text}' chỉ dùng được trong khối BUILD.", throwAfter: false);
+            Error("GEA2020", kw, $"Statement '{kw.Text}' can only be used in the BUILD block.", throwAfter: false);
         if (block == GeaBlockKind.Build && FormOnly.Contains(kw.Text))
-            Error("GEA2020", kw, $"Lệnh '{kw.Text}' chỉ dùng được trong khối FORM.", throwAfter: false);
+            Error("GEA2020", kw, $"Statement '{kw.Text}' can only be used in the FORM block.", throwAfter: false);
 
         switch (kw.Text)
         {
             case "DECLARE_VARIABLE":
             {
-                var typeTok = Expect(TokKind.Word, "kiểu (INTEGER, DOUBLE, BOOL, STRING, LENGTH, ANGLE)");
+                var typeTok = Expect(TokKind.Word, "type (INTEGER, DOUBLE, BOOL, STRING, LENGTH, ANGLE)");
                 if (!GeaUnits.TryParseType(typeTok.Text, out var type) || type == GeaType.Reference)
-                    throw Error("GEA1003", typeTok, $"Kiểu không hợp lệ: '{typeTok.Text}'. Dùng INTEGER, DOUBLE, BOOL, STRING, LENGTH, ANGLE (tham chiếu dùng DECLARE_REFERENCE).");
+                    throw Error("GEA1003", typeTok, $"Invalid type: '{typeTok.Text}'. Use INTEGER, DOUBLE, BOOL, STRING, LENGTH, ANGLE (use DECLARE_REFERENCE for references).");
                 var name = ExpectName();
                 GeaExpr? init = AtEnd ? null : ParseExpr();
                 EndOfLine();
@@ -337,8 +342,8 @@ public sealed class GeaParser
             {
                 var v = ExpectName();
                 var mode = Expect(TokKind.Word, "FROM");
-                if (mode.Text == "REF") throw Error("GEA1001", mode, "FOR ... REF (duyệt mảng) chưa hỗ trợ ở GEA_VERSION 1.");
-                if (mode.Text != "FROM") throw Error("GEA1003", mode, "Cú pháp: FOR <i> FROM <a> TO <b> [STEP <s>].");
+                if (mode.Text == "REF") throw Error("GEA1001", mode, "FOR ... REF (iterating an array) is not supported in GEA_VERSION 1.");
+                if (mode.Text != "FROM") throw Error("GEA1003", mode, "Syntax: FOR <i> FROM <a> TO <b> [STEP <s>].");
                 var from = ParseExpr();
                 ExpectWord("TO");
                 var to = ParseExpr();
@@ -359,13 +364,33 @@ public sealed class GeaParser
                 var body = ParseBlock(block, kw, "END_WHILE", out _);
                 return new WhileStmt(L, C, cond, body);
             }
+            case "ADD_COMPONENT":
+            {
+                // ADD_COMPONENT <ref> FROM <part name> [AT x, y, z] [ROT rx, ry, rz]   (TARGET ASSEMBLY)
+                var v = ExpectName();
+                ExpectWord("FROM");
+                var part = ParseExpr();
+                IReadOnlyList<GeaExpr>? at = null, rot = null;
+                while (!AtEnd)
+                {
+                    var opt = Expect(TokKind.Word, "AT or ROT");
+                    switch (opt.Text)
+                    {
+                        case "AT" when at == null: at = ParseTriple(); break;
+                        case "ROT" when rot == null: rot = ParseTriple(); break;
+                        case "AT" or "ROT": throw Error("GEA1003", opt, $"{opt.Text} is given twice.");
+                        default: throw Error("GEA1003", opt, $"Invalid option: '{opt.Text}'. Syntax: ADD_COMPONENT <ref> FROM <part> [AT x, y, z] [ROT rx, ry, rz].");
+                    }
+                }
+                return new AddComponentStmt(L, C, v.Text, part, at, rot);
+            }
             case "BREAK": EndOfLine(); return new BreakStmt(L, C);
             case "CONTINUE": EndOfLine(); return new ContinueStmt(L, C);
             case "RETURN": EndOfLine(); return new ReturnStmt(L, C);
 
             case "BEGIN_GROUP":
             {
-                var title = Expect(TokKind.String, "tiêu đề nhóm (chuỗi)");
+                var title = Expect(TokKind.String, "group title (string)");
                 EndOfLine();
                 var body = ParseBlock(block, kw, "END_GROUP", out _);
                 return new GroupStmt(L, C, title.Text, body);
@@ -374,8 +399,8 @@ public sealed class GeaParser
             case "CHECKBOX_PARAM":
             {
                 var name = ExpectName();
-                var def = Expect(TokKind.Word, "TRUE hoặc FALSE");
-                if (def.Text is not ("TRUE" or "FALSE")) throw Error("GEA1003", def, "Giá trị mặc định của CHECKBOX_PARAM là TRUE hoặc FALSE.");
+                var def = Expect(TokKind.Word, "TRUE or FALSE");
+                if (def.Text is not ("TRUE" or "FALSE")) throw Error("GEA1003", def, "The default value of CHECKBOX_PARAM is TRUE or FALSE.");
                 ParseLabelTooltip(out var label, out var tip, allowDefault: false, out _);
                 return new CheckboxParamStmt(L, C, name.Text, def.Text == "TRUE", label, tip);
             }
@@ -384,9 +409,9 @@ public sealed class GeaParser
                 var name = ExpectName();
                 var options = new List<string>();
                 while (!AtEnd && Peek().Kind == TokKind.String) options.Add(Next().Text);
-                if (options.Count == 0) throw Error("GEA1003", name, "RADIOBUTTON_PARAM cần ít nhất một lựa chọn (chuỗi).");
+                if (options.Count == 0) throw Error("GEA1003", name, "RADIOBUTTON_PARAM needs at least one choice (string).");
                 ParseLabelTooltip(out var label, out var tip, allowDefault: true, out var def);
-                if (def != null && !options.Contains(def)) throw Error("GEA1003", name, $"DEFAULT \"{def}\" không nằm trong các lựa chọn.");
+                if (def != null && !options.Contains(def)) throw Error("GEA1003", name, $"DEFAULT \"{def}\" is not one of the choices.");
                 return new RadioParamStmt(L, C, name.Text, options, def ?? options[0], label, tip);
             }
             case "ASSERT":
@@ -457,7 +482,7 @@ public sealed class GeaParser
             case "SET_REF_ATTR":
             {
                 var r = ExpectName();
-                var k = Expect(TokKind.String, "khóa thuộc tính (chuỗi)");
+                var k = Expect(TokKind.String, "attribute key (string)");
                 var e = ParseExpr();
                 EndOfLine();
                 return new SetRefAttrStmt(L, C, r.Text, new StringExpr(k.Line, k.Col, k.Text), e);
@@ -465,7 +490,7 @@ public sealed class GeaParser
             case "GET_REF_ATTR":
             {
                 var r = ExpectName();
-                var k = Expect(TokKind.String, "khóa thuộc tính (chuỗi)");
+                var k = Expect(TokKind.String, "attribute key (string)");
                 var v = ExpectName();
                 EndOfLine();
                 return new GetRefAttrStmt(L, C, r.Text, new StringExpr(k.Line, k.Col, k.Text), v.Text);
@@ -509,49 +534,49 @@ public sealed class GeaParser
             case "PRODUCT_NAME":
             case "PARAM_PREFIX":
             case "TARGET":
-                throw Error("GEA1001", kw, $"'{kw.Text}' chỉ dùng ở phần đầu file.");
+                throw Error("GEA1001", kw, $"'{kw.Text}' can only be used in the header of the file.");
             case "BEGIN_FORM":
             case "BEGIN_BUILD":
             case "BEGIN_TABLES":
-                throw Error("GEA1002", kw, $"Không được mở {kw.Text} bên trong một khối khác (thiếu END_* ở trên?).");
+                throw Error("GEA1002", kw, $"{kw.Text} cannot be opened inside another block (is an END_* missing above?).");
             case "BEGIN_TABLE":
             case "COLUMN":
             case "ROW":
             case "SOURCE":
-                throw Error("GEA2020", kw, $"'{kw.Text}' chỉ dùng trong khối TABLES.");
+                throw Error("GEA2020", kw, $"'{kw.Text}' can only be used in the TABLES block.");
             case "FEATURE_IN":
             case "FEATURE_OUT":
-                throw Error("GEA2020", kw, $"'{kw.Text}' chỉ dùng bên trong CREATE_FEATURE ... END_CREATE_FEATURE.");
+                throw Error("GEA2020", kw, $"'{kw.Text}' can only be used inside CREATE_FEATURE ... END_CREATE_FEATURE.");
         }
-        throw Error("GEA1001", kw, $"Lệnh không nhận ra hoặc không dùng được ở đây: '{kw.Text}'.");
+        throw Error("GEA1001", kw, $"Unknown statement or not usable here: '{kw.Text}'.");
     }
 
     private GeaStmt ParseInputParam(int L, int C)
     {
         var name = ExpectName();
-        var typeTok = Expect(TokKind.Word, "kiểu (LENGTH, ANGLE, INTEGER, DOUBLE, STRING)");
+        var typeTok = Expect(TokKind.Word, "type (LENGTH, ANGLE, INTEGER, DOUBLE, STRING)");
         if (!GeaUnits.TryParseType(typeTok.Text, out var type) || type is GeaType.Bool or GeaType.Reference)
-            throw Error("GEA1003", typeTok, "Kiểu của USER_INPUT_PARAM phải là LENGTH, ANGLE, INTEGER, DOUBLE hoặc STRING (BOOL dùng CHECKBOX_PARAM).");
+            throw Error("GEA1003", typeTok, "The type of USER_INPUT_PARAM must be LENGTH, ANGLE, INTEGER, DOUBLE or STRING (use CHECKBOX_PARAM for BOOL).");
 
         GeaValue def;
         string unit = GeaUnits.DefaultUnit(type);
         double factor = 1;
         if (type == GeaType.String)
         {
-            def = GeaValue.Text(Expect(TokKind.String, "giá trị mặc định (chuỗi)").Text);
+            def = GeaValue.Text(Expect(TokKind.String, "default value (string)").Text);
         }
         else
         {
-            var (num, u, numTok) = SignedNumber("giá trị mặc định");
+            var (num, u, numTok) = SignedNumber("default value");
             if (u != null)
             {
                 if (!GeaUnits.TryGet(u, out var ut, out factor) || ut != type)
-                    throw Error("GEA2002", numTok, $"Đơn vị '{u}' không hợp với kiểu {GeaUnits.TypeName(type)}.");
+                    throw Error("GEA2002", numTok, $"Unit '{u}' does not fit type {GeaUnits.TypeName(type)}.");
                 unit = u;
             }
-            else if (GeaOps.IsDimensioned(type)) factor = 1; // không ghi đơn vị: mm hoặc độ
+            else if (GeaOps.IsDimensioned(type)) factor = 1; // no unit written: mm or degrees
             if (type == GeaType.Integer && Math.Abs(num - Math.Round(num)) > 1e-12)
-                throw Error("GEA2002", numTok, "Giá trị mặc định của INTEGER phải là số nguyên.");
+                throw Error("GEA2002", numTok, "The default value of an INTEGER must be a whole number.");
             def = GeaValue.Number(type, num * factor);
         }
 
@@ -560,33 +585,33 @@ public sealed class GeaParser
         string? label = null, tip = null;
         while (!AtEnd)
         {
-            var opt = Expect(TokKind.Word, "MIN, MAX, STEP, REQUIRED, LABEL hoặc TOOLTIP");
+            var opt = Expect(TokKind.Word, "MIN, MAX, STEP, REQUIRED, LABEL or TOOLTIP");
             switch (opt.Text)
             {
                 case "MIN": min = Bound(type, factor); break;
                 case "MAX": max = Bound(type, factor); break;
                 case "STEP": step = Bound(type, factor); break;
                 case "REQUIRED": required = true; break;
-                case "LABEL": label = Expect(TokKind.String, "nhãn (chuỗi)").Text; break;
-                case "TOOLTIP": tip = Expect(TokKind.String, "gợi ý (chuỗi)").Text; break;
-                default: throw Error("GEA1003", opt, $"Tùy chọn không hợp lệ: '{opt.Text}'.");
+                case "LABEL": label = Expect(TokKind.String, "label (string)").Text; break;
+                case "TOOLTIP": tip = Expect(TokKind.String, "hint (string)").Text; break;
+                default: throw Error("GEA1003", opt, $"Invalid option: '{opt.Text}'.");
             }
         }
         if (type == GeaType.String && (min != null || max != null || step != null))
-            throw Error("GEA1003", typeTok, "MIN, MAX, STEP không dùng cho STRING.");
+            throw Error("GEA1003", typeTok, "MIN, MAX, STEP do not apply to STRING.");
         if (min != null && max != null && min > max)
-            throw Error("GEA1003", name, "MIN lớn hơn MAX.");
+            throw Error("GEA1003", name, "MIN is greater than MAX.");
         return new InputParamStmt(L, C, name.Text, type, def, unit, min, max, step, required, label, tip);
     }
 
-    /// <summary>MIN/MAX/STEP: số (có thể âm), không ghi đơn vị thì dùng đơn vị của thông số.</summary>
+    /// <summary>MIN/MAX/STEP: a number (may be negative); without a unit the unit of the parameter is used.</summary>
     private double Bound(GeaType type, double paramFactor)
     {
-        if (type == GeaType.String) throw Error("GEA1003", Peek(), "MIN, MAX, STEP không dùng cho STRING.");
-        var (num, u, tok) = SignedNumber("số");
+        if (type == GeaType.String) throw Error("GEA1003", Peek(), "MIN, MAX, STEP do not apply to STRING.");
+        var (num, u, tok) = SignedNumber("number");
         if (u == null) return num * paramFactor;
         if (!GeaUnits.TryGet(u, out var ut, out var f) || ut != type)
-            throw Error("GEA2002", tok, $"Đơn vị '{u}' không hợp với kiểu {GeaUnits.TypeName(type)}.");
+            throw Error("GEA2002", tok, $"Unit '{u}' does not fit type {GeaUnits.TypeName(type)}.");
         return num * f;
     }
 
@@ -607,24 +632,35 @@ public sealed class GeaParser
         label = tooltip = def = null;
         while (!AtEnd)
         {
-            var opt = Expect(TokKind.Word, "LABEL hoặc TOOLTIP");
+            var opt = Expect(TokKind.Word, "LABEL or TOOLTIP");
             switch (opt.Text)
             {
-                case "LABEL": label = Expect(TokKind.String, "nhãn (chuỗi)").Text; break;
-                case "TOOLTIP": tooltip = Expect(TokKind.String, "gợi ý (chuỗi)").Text; break;
-                case "DEFAULT" when allowDefault: def = Expect(TokKind.String, "lựa chọn mặc định (chuỗi)").Text; break;
-                default: throw Error("GEA1003", opt, $"Tùy chọn không hợp lệ: '{opt.Text}'.");
+                case "LABEL": label = Expect(TokKind.String, "label (string)").Text; break;
+                case "TOOLTIP": tooltip = Expect(TokKind.String, "hint (string)").Text; break;
+                case "DEFAULT" when allowDefault: def = Expect(TokKind.String, "default choice (string)").Text; break;
+                default: throw Error("GEA1003", opt, $"Invalid option: '{opt.Text}'.");
             }
         }
     }
 
+    /// <summary>Three expressions separated by commas (a position or a rotation).</summary>
+    private IReadOnlyList<GeaExpr> ParseTriple()
+    {
+        var a = ParseExpr();
+        ExpectSymbol(",");
+        var b = ParseExpr();
+        ExpectSymbol(",");
+        var c = ParseExpr();
+        return new[] { a, b, c };
+    }
+
     private GeaStmt ParseCreateFeature(GeaToken kw)
     {
-        var kind = Expect(TokKind.Word, "nguồn (builder:<Tên>)");
+        var kind = Expect(TokKind.Word, "source (builder:<Name>)");
         ExpectSymbol(":");
-        var src = Expect(TokKind.Word, "tên builder");
-        if (kind.Text == "lib") throw Error("GEA1001", kind, "Nguồn lib: (iFeature, iPart) chưa hỗ trợ ở GEA_VERSION 1. Dùng builder:<Tên>.");
-        if (kind.Text != "builder") throw Error("GEA1003", kind, "Nguồn phải có dạng builder:<Tên>.");
+        var src = Expect(TokKind.Word, "builder name");
+        if (kind.Text == "lib") throw Error("GEA1001", kind, "The lib: source (iFeature, iPart) is not supported in GEA_VERSION 1. Use builder:<Name>.");
+        if (kind.Text != "builder") throw Error("GEA1003", kind, "The source must have the form builder:<Name>.");
         string? on = null;
         if (!AtEnd)
         {
@@ -639,7 +675,7 @@ public sealed class GeaParser
         {
             if (_li >= _lines.Count)
             {
-                Error("GEA1002", kw, $"Thiếu END_CREATE_FEATURE cho CREATE_FEATURE ở dòng {kw.Line}.", throwAfter: false);
+                Error("GEA1002", kw, $"END_CREATE_FEATURE is missing for CREATE_FEATURE at line {kw.Line}.", throwAfter: false);
                 break;
             }
             var line = _lines[_li++];
@@ -650,7 +686,7 @@ public sealed class GeaParser
                 if (head.Is("END_CREATE_FEATURE")) { EndOfLine(); break; }
                 if (head.Is("FEATURE_IN"))
                 {
-                    var n = Expect(TokKind.String, "tên đầu vào (chuỗi)");
+                    var n = Expect(TokKind.String, "input name (string)");
                     var e = ParseExpr();
                     EndOfLine();
                     inputs.Add(new FeatureInput(head.Line, head.Col, n.Text, e));
@@ -658,17 +694,17 @@ public sealed class GeaParser
                 else if (head.Is("FEATURE_OUT"))
                 {
                     var v = ExpectName();
-                    var n = Expect(TokKind.String, "tên đầu ra (chuỗi)");
+                    var n = Expect(TokKind.String, "output name (string)");
                     EndOfLine();
                     outputs.Add(new FeatureOutput(head.Line, head.Col, v.Text, n.Text));
                 }
                 else if (head.Kind == TokKind.Word && (IsBlockEnd(head.Text) || head.Text is "BEGIN_FORM" or "BEGIN_TABLES" or "BEGIN_BUILD"))
                 {
-                    _li--; // để khối ngoài xử lý
-                    Error("GEA1002", kw, $"Thiếu END_CREATE_FEATURE cho CREATE_FEATURE ở dòng {kw.Line}.", throwAfter: false);
+                    _li--; // let the outer block handle it
+                    Error("GEA1002", kw, $"END_CREATE_FEATURE is missing for CREATE_FEATURE at line {kw.Line}.", throwAfter: false);
                     break;
                 }
-                else throw Error("GEA1001", head, "Trong CREATE_FEATURE chỉ dùng FEATURE_IN, FEATURE_OUT và END_CREATE_FEATURE.");
+                else throw Error("GEA1001", head, "Inside CREATE_FEATURE only FEATURE_IN, FEATURE_OUT and END_CREATE_FEATURE are allowed.");
             }
             catch (ParseError) { }
         }
@@ -688,7 +724,7 @@ public sealed class GeaParser
             if (kw.Is("END_TABLES")) { TryEndOfLine(); return tables; }
             try
             {
-                if (!kw.Is("BEGIN_TABLE")) throw Error("GEA2020", kw, "Trong khối TABLES chỉ dùng BEGIN_TABLE ... END_TABLE.");
+                if (!kw.Is("BEGIN_TABLE")) throw Error("GEA2020", kw, "Inside the TABLES block only BEGIN_TABLE ... END_TABLE is allowed.");
                 var name = ExpectName();
                 EndOfLine();
                 var cols = new List<TableColumn>();
@@ -705,18 +741,18 @@ public sealed class GeaParser
                         if (k2.Is("COLUMN"))
                         {
                             var cn = ExpectName();
-                            var ct = Expect(TokKind.Word, "kiểu cột");
+                            var ct = Expect(TokKind.Word, "column type");
                             if (!GeaUnits.TryParseType(ct.Text, out var type) || type == GeaType.Reference)
-                                throw Error("GEA1003", ct, $"Kiểu cột không hợp lệ: '{ct.Text}'.");
+                                throw Error("GEA1003", ct, $"Invalid column type: '{ct.Text}'.");
                             double f = 1;
                             if (!AtEnd)
                             {
-                                var u = Expect(TokKind.Word, "đơn vị");
+                                var u = Expect(TokKind.Word, "unit");
                                 if (!GeaUnits.TryGet(u.Text, out var ut, out f) || ut != type)
-                                    throw Error("GEA2002", u, $"Đơn vị '{u.Text}' không hợp với kiểu {ct.Text}.");
+                                    throw Error("GEA2002", u, $"Unit '{u.Text}' does not fit type {ct.Text}.");
                             }
                             EndOfLine();
-                            if (rows.Count > 0) throw Error("GEA1003", k2, "COLUMN phải khai báo trước mọi ROW.");
+                            if (rows.Count > 0) throw Error("GEA1003", k2, "COLUMN must be declared before every ROW.");
                             cols.Add(new TableColumn(cn.Text, type, f));
                         }
                         else if (k2.Is("ROW"))
@@ -724,23 +760,23 @@ public sealed class GeaParser
                             var vals = new List<GeaValue>();
                             foreach (var col in cols)
                             {
-                                if (AtEnd) throw Error("GEA1003", k2, $"ROW thiếu giá trị: cần {cols.Count} giá trị.");
+                                if (AtEnd) throw Error("GEA1003", k2, $"ROW is missing values: {cols.Count} values are needed.");
                                 vals.Add(TableCell(col));
                             }
                             EndOfLine();
                             rows.Add(vals);
                         }
-                        else if (k2.Is("SOURCE")) throw Error("GEA1001", k2, "SOURCE (nạp CSV/XLSX) chưa hỗ trợ ở GEA_VERSION 1.");
-                        else throw Error("GEA1001", k2, "Trong BEGIN_TABLE chỉ dùng COLUMN, ROW và END_TABLE.");
+                        else if (k2.Is("SOURCE")) throw Error("GEA1001", k2, "SOURCE (loading CSV/XLSX) is not supported in GEA_VERSION 1.");
+                        else throw Error("GEA1001", k2, "Inside BEGIN_TABLE only COLUMN, ROW and END_TABLE are allowed.");
                     }
                     catch (ParseError) { }
                 }
-                if (!closed) Error("GEA1002", kw, $"Thiếu END_TABLE cho bảng {name.Text}.", throwAfter: false);
+                if (!closed) Error("GEA1002", kw, $"END_TABLE is missing for table {name.Text}.", throwAfter: false);
                 tables.Add(new GeaTable(kw.Line, kw.Col, name.Text, cols, rows));
             }
             catch (ParseError) { }
         }
-        Error("GEA1002", opener, "Thiếu END_TABLES.", throwAfter: false);
+        Error("GEA1002", opener, "END_TABLES is missing.", throwAfter: false);
         return tables;
     }
 
@@ -748,20 +784,20 @@ public sealed class GeaParser
     {
         switch (col.Type)
         {
-            case GeaType.String: return GeaValue.Text(Expect(TokKind.String, "chuỗi").Text);
+            case GeaType.String: return GeaValue.Text(Expect(TokKind.String, "string").Text);
             case GeaType.Bool:
-                var b = Expect(TokKind.Word, "TRUE hoặc FALSE");
+                var b = Expect(TokKind.Word, "TRUE or FALSE");
                 return GeaValue.Boolean(b.Text == "TRUE");
             default:
-                var (num, u, tok) = SignedNumber("số");
+                var (num, u, tok) = SignedNumber("number");
                 double f = col.Factor;
                 if (u != null && (!GeaUnits.TryGet(u, out var ut, out f) || ut != col.Type))
-                    throw Error("GEA2002", tok, $"Đơn vị '{u}' không hợp với cột {col.Name}.");
+                    throw Error("GEA2002", tok, $"Unit '{u}' does not fit column {col.Name}.");
                 return GeaValue.Number(col.Type, num * f);
         }
     }
 
-    // ================================================================ biểu thức
+    // ================================================================ expressions
 
     private GeaExpr ParseExpr() => ParseOr();
 
@@ -809,7 +845,7 @@ public sealed class GeaParser
                 return new BinaryExpr(t.Line, t.Col, t.Text, left, ParseAdd());
             }
             if (t.Is("="))
-                throw Error("GEA1003", t, "So sánh bằng dùng '==' (dấu '=' chỉ dùng để gán).");
+                throw Error("GEA1003", t, "Use '==' to compare for equality ('=' is only for assignment).");
         }
         return left;
     }
@@ -853,7 +889,7 @@ public sealed class GeaParser
 
     private GeaExpr ParsePrimary()
     {
-        if (AtEnd) throw Error("GEA1003", LastTok(), "Thiếu biểu thức ở cuối dòng.");
+        if (AtEnd) throw Error("GEA1003", LastTok(), "An expression is missing at the end of the line.");
         var t = Next();
         switch (t.Kind)
         {
@@ -882,7 +918,7 @@ public sealed class GeaParser
                 if (!AtEnd && Peek().Is("("))
                 {
                     if (!GeaOps.Functions.Contains(t.Text))
-                        throw Error("GEA2001", t, $"Hàm không tồn tại: '{t.Text}'. Các hàm: {string.Join(", ", GeaOps.Functions)}.");
+                        throw Error("GEA2001", t, $"Function does not exist: '{t.Text}'. Functions: {string.Join(", ", GeaOps.Functions)}.");
                     Next();
                     var args = new List<GeaExpr>();
                     if (!Peek().Is(")"))
@@ -898,21 +934,21 @@ public sealed class GeaParser
                     return new CallExpr(t.Line, t.Col, t.Text, args);
                 }
                 if (GeaOps.Functions.Contains(t.Text) && t.Text is not ("MIN" or "MAX"))
-                    throw Error("GEA1003", t, $"Hàm {t.Text} cần dấu ngoặc: {t.Text}(...).");
+                    throw Error("GEA1003", t, $"Function {t.Text} needs parentheses: {t.Text}(...).");
                 if (Keywords.Contains(t.Text) && t.Text is not ("ERROR" or "ERROR_MESSAGE"))
-                    throw Error("GEA1003", t, $"Từ khóa '{t.Text}' không dùng được trong biểu thức.");
+                    throw Error("GEA1003", t, $"Keyword '{t.Text}' cannot be used in an expression.");
                 if (!AtEnd && Peek().Is("."))
                 {
                     Next();
-                    var m = Expect(TokKind.Word, "tên thành phần");
+                    var m = Expect(TokKind.Word, "member name");
                     return new MemberExpr(t.Line, t.Col, t.Text, m.Text);
                 }
                 return new NameExpr(t.Line, t.Col, t.Text);
         }
-        throw Error("GEA1003", t, $"Không mong đợi '{t.Text}' trong biểu thức.");
+        throw Error("GEA1003", t, $"Unexpected '{t.Text}' in the expression.");
     }
 
-    // ================================================================ tiện ích token
+    // ================================================================ token helpers
 
     private sealed class ParseError : Exception { }
 
@@ -925,54 +961,54 @@ public sealed class GeaParser
 
     private bool AtEnd => _ti >= _toks.Count;
 
-    private GeaToken Peek() => AtEnd ? new GeaToken(TokKind.Symbol, "<hết dòng>", _lineNo, LastTok().Col + 1) : _toks[_ti];
+    private GeaToken Peek() => AtEnd ? new GeaToken(TokKind.Symbol, "<end of line>", _lineNo, LastTok().Col + 1) : _toks[_ti];
 
     private GeaToken LastTok() => _toks.Count > 0 ? _toks[^1] : new GeaToken(TokKind.Symbol, "", _lineNo, 1);
 
     private GeaToken Next()
     {
-        if (AtEnd) throw Error("GEA1003", Peek(), "Thiếu đối số ở cuối dòng.");
+        if (AtEnd) throw Error("GEA1003", Peek(), "An argument is missing at the end of the line.");
         return _toks[_ti++];
     }
 
     private GeaToken Expect(TokKind kind, string what)
     {
-        if (AtEnd) throw Error("GEA1003", Peek(), $"Thiếu {what}.");
+        if (AtEnd) throw Error("GEA1003", Peek(), $"{what} is missing.");
         var t = _toks[_ti];
-        if (t.Kind != kind) throw Error("GEA1003", t, $"Cần {what}, gặp '{t.Text}'.");
+        if (t.Kind != kind) throw Error("GEA1003", t, $"Expected {what}, got '{t.Text}'.");
         _ti++;
         return t;
     }
 
     private GeaToken ExpectName()
     {
-        var t = Expect(TokKind.Word, "tên");
-        if (Keywords.Contains(t.Text)) throw Error("GEA1003", t, $"'{t.Text}' là từ khóa, không dùng làm tên.");
+        var t = Expect(TokKind.Word, "name");
+        if (Keywords.Contains(t.Text)) throw Error("GEA1003", t, $"'{t.Text}' is a keyword, it cannot be used as a name.");
         return t;
     }
 
     private void ExpectWord(string word)
     {
         var t = Expect(TokKind.Word, word);
-        if (t.Text != word) throw Error("GEA1003", t, $"Cần '{word}', gặp '{t.Text}'.");
+        if (t.Text != word) throw Error("GEA1003", t, $"Expected '{word}', got '{t.Text}'.");
     }
 
     private void ExpectSymbol(string sym)
     {
-        if (AtEnd) throw Error("GEA1003", Peek(), $"Thiếu '{sym}'.");
+        if (AtEnd) throw Error("GEA1003", Peek(), $"'{sym}' is missing.");
         var t = _toks[_ti];
-        if (!t.Is(sym)) throw Error("GEA1003", t, $"Cần '{sym}', gặp '{t.Text}'.");
+        if (!t.Is(sym)) throw Error("GEA1003", t, $"Expected '{sym}', got '{t.Text}'.");
         _ti++;
     }
 
     private void EndOfLine()
     {
-        if (!AtEnd) throw Error("GEA1003", _toks[_ti], $"Thừa đối số: '{_toks[_ti].Text}'.");
+        if (!AtEnd) throw Error("GEA1003", _toks[_ti], $"Extra argument: '{_toks[_ti].Text}'.");
     }
 
     private void TryEndOfLine()
     {
-        if (!AtEnd) Error("GEA1003", _toks[_ti], $"Thừa đối số: '{_toks[_ti].Text}'.", throwAfter: false);
+        if (!AtEnd) Error("GEA1003", _toks[_ti], $"Extra argument: '{_toks[_ti].Text}'.", throwAfter: false);
     }
 
     private ParseError Error(string code, GeaToken at, string message, bool throwAfter = true)

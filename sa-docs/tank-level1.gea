@@ -1,51 +1,51 @@
 ! ============================================================================
-! Máy biến áp lực - Cấp 1: thùng, nắp và chân đế
+! Power transformer - Level 1: tank, cover and skirt
 !
-! Mẫu D0 theo gea-language-spec.md (GEA_VERSION 1).
-! Giá trị mặc định, MIN, MAX bên dưới là TẠM (lấy từ hộp thí điểm),
-! cần thay bằng số liệu thật từ catalog hoặc bản vẽ.
+! Template D0 following gea-language-spec.md (GEA_VERSION 1).
+! The default values, MIN and MAX below are TEMPORARY (taken from the pilot box),
+! and must be replaced with real figures from the catalog or drawings.
 ! ============================================================================
 GEA_VERSION 1
-PRODUCT_NAME "Máy biến áp lực - Cấp 1: thùng và nắp"
+PRODUCT_NAME "Power transformer - Level 1: tank and cover"
 PARAM_PREFIX TR_
 TARGET PART
 
 BEGIN_FORM
 
-  BEGIN_GROUP "Thùng"
-    USER_INPUT_PARAM TR_TankLength LENGTH 100 mm MIN 40 MAX 500 REQUIRED LABEL "Chiều dài ngoài" TOOLTIP "Kích thước ngoài của thùng theo phương dài"
-    USER_INPUT_PARAM TR_TankWidth  LENGTH 60 mm  MIN 30 MAX 300 REQUIRED LABEL "Chiều rộng ngoài" TOOLTIP "Kích thước ngoài của thùng theo phương rộng"
-    USER_INPUT_PARAM TR_TankHeight LENGTH 40 mm  MIN 20 MAX 200 REQUIRED LABEL "Chiều cao thân thùng" TOOLTIP "Chưa tính chân đế và nắp"
-    USER_INPUT_PARAM TR_Wall       LENGTH 2 mm   MIN 1 MAX 10 REQUIRED LABEL "Độ dày thành"
-    USER_INPUT_PARAM TR_Bottom     LENGTH 2 mm   MIN 1 MAX 10 REQUIRED LABEL "Độ dày đáy"
-    USER_INPUT_PARAM TR_CornerRadius LENGTH 3 mm MIN 0 MAX 20 LABEL "Bán kính bo góc đứng (ngoài)"
-    USER_INPUT_PARAM TR_SkirtHeight  LENGTH 5 mm MIN 0 MAX 50 LABEL "Chiều cao chân đế"
+  BEGIN_GROUP "Tank"
+    USER_INPUT_PARAM TR_TankLength LENGTH 100 mm MIN 40 MAX 500 REQUIRED LABEL "Outer length" TOOLTIP "Outer size of the tank in the length direction"
+    USER_INPUT_PARAM TR_TankWidth  LENGTH 60 mm  MIN 30 MAX 300 REQUIRED LABEL "Outer width" TOOLTIP "Outer size of the tank in the width direction"
+    USER_INPUT_PARAM TR_TankHeight LENGTH 40 mm  MIN 20 MAX 200 REQUIRED LABEL "Tank body height" TOOLTIP "Without the skirt and the cover"
+    USER_INPUT_PARAM TR_Wall       LENGTH 2 mm   MIN 1 MAX 10 REQUIRED LABEL "Wall thickness"
+    USER_INPUT_PARAM TR_Bottom     LENGTH 2 mm   MIN 1 MAX 10 REQUIRED LABEL "Bottom thickness"
+    USER_INPUT_PARAM TR_CornerRadius LENGTH 3 mm MIN 0 MAX 20 LABEL "Vertical corner radius (outer)"
+    USER_INPUT_PARAM TR_SkirtHeight  LENGTH 5 mm MIN 0 MAX 50 LABEL "Skirt height"
   END_GROUP
 
-  BEGIN_GROUP "Nắp"
-    USER_INPUT_PARAM TR_CoverThickness LENGTH 2 mm MIN 1 MAX 10 REQUIRED LABEL "Độ dày nắp"
-    USER_INPUT_PARAM TR_CoverLip       LENGTH 4 mm MIN 2 MAX 15 REQUIRED LABEL "Chiều cao gờ nắp" TOOLTIP "Phần gờ lồng vào lòng thùng"
-    USER_INPUT_PARAM TR_CoverClearance LENGTH 0.3 mm MIN 0 MAX 1 LABEL "Khe hở gờ nắp" TOOLTIP "Khe giữa gờ nắp và thành trong của thùng"
+  BEGIN_GROUP "Cover"
+    USER_INPUT_PARAM TR_CoverThickness LENGTH 2 mm MIN 1 MAX 10 REQUIRED LABEL "Cover thickness"
+    USER_INPUT_PARAM TR_CoverLip       LENGTH 4 mm MIN 2 MAX 15 REQUIRED LABEL "Cover lip height" TOOLTIP "The lip that fits into the tank"
+    USER_INPUT_PARAM TR_CoverClearance LENGTH 0.3 mm MIN 0 MAX 1 LABEL "Cover lip clearance" TOOLTIP "Gap between the cover lip and the inner wall of the tank"
   END_GROUP
 
-  BEGIN_GROUP "Hoàn thiện"
-    RADIOBUTTON_PARAM TR_Paint "Grey" "Green" LABEL "Màu sơn"
+  BEGIN_GROUP "Finish"
+    RADIOBUTTON_PARAM TR_Paint "Grey" "Green" LABEL "Paint color"
   END_GROUP
 
-  ! --- Luật kiểm tra (ASSERT sai thì không gửi đơn được) ---
+  ! --- Validation rules (a false ASSERT blocks submitting the order) ---
   DECLARE_VARIABLE LENGTH shortSide
   DECLARE_VARIABLE LENGTH innerHeight
   shortSide   = MIN(TR_TankLength, TR_TankWidth)
   innerHeight = TR_TankHeight - TR_Bottom
 
-  ASSERT TR_Wall < shortSide / 2 "Độ dày thành phải nhỏ hơn một nửa cạnh ngắn của thùng"
-  ASSERT TR_Wall < innerHeight "Độ dày thành phải nhỏ hơn chiều cao lòng thùng"
-  ASSERT TR_CornerRadius <= shortSide / 2 "Bán kính bo góc không được vượt quá một nửa cạnh ngắn"
-  ASSERT TR_CoverLip < innerHeight "Gờ nắp phải thấp hơn chiều cao lòng thùng"
-  ASSERT TR_CoverClearance < TR_Wall "Khe hở gờ nắp phải nhỏ hơn độ dày thành"
+  ASSERT TR_Wall < shortSide / 2 "The wall thickness must be less than half of the shorter side of the tank"
+  ASSERT TR_Wall < innerHeight "The wall thickness must be less than the inner height of the tank"
+  ASSERT TR_CornerRadius <= shortSide / 2 "The corner radius must not exceed half of the shorter side"
+  ASSERT TR_CoverLip < innerHeight "The cover lip must be lower than the inner height of the tank"
+  ASSERT TR_CoverClearance < TR_Wall "The cover lip clearance must be less than the wall thickness"
 
   IF TR_CornerRadius < TR_Wall
-    ASSERT FALSE "Bán kính bo góc ngoài nhỏ hơn độ dày thành: bán kính trong sẽ bằng 0" WARN
+    ASSERT FALSE "The outer corner radius is smaller than the wall thickness: the inner radius would be 0" WARN
   END_IF
 
 END_FORM
@@ -58,10 +58,10 @@ BEGIN_BUILD
 
   innerRadius = MAX(TR_CornerRadius - TR_Wall, 0 mm)
 
-  PROCESSING_BOX_START "Dựng máy biến áp - Cấp 1"
+  PROCESSING_BOX_START "Building power transformer - Level 1"
 
-  ! --- Thùng ---
-  PROCESSING_BOX_SET_STATE "Dựng thùng" 10
+  ! --- Tank ---
+  PROCESSING_BOX_SET_STATE "Building the tank" 10
   CREATE_FEATURE builder:Tank
     FEATURE_IN "Length"       TR_TankLength
     FEATURE_IN "Width"        TR_TankWidth
@@ -76,8 +76,8 @@ BEGIN_BUILD
   SET_REF_NAME tank "TR_Tank*"
   SET_REF_ATTR tank "ROLE" "TANK"
 
-  ! --- Nắp ---
-  PROCESSING_BOX_SET_STATE "Dựng nắp" 50
+  ! --- Cover ---
+  PROCESSING_BOX_SET_STATE "Building the cover" 50
   BEGIN_CATCH_ERROR
     CREATE_FEATURE builder:Cover
       FEATURE_IN "Tank"      tank
@@ -88,18 +88,18 @@ BEGIN_BUILD
     END_CREATE_FEATURE
   END_CATCH_ERROR
   IF ERROR
-    FAIL "Không dựng được nắp: " + ERROR_MESSAGE
+    FAIL "Could not build the cover: " + ERROR_MESSAGE
   END_IF
   SET_REF_NAME cover "TR_Cover*"
   SET_REF_ATTR cover "ROLE" "COVER"
 
-  ! --- Hoàn thiện ---
-  PROCESSING_BOX_SET_STATE "Cập nhật model và gán màu sơn" 90
+  ! --- Finish ---
+  PROCESSING_BOX_SET_STATE "Updating the model and applying the paint color" 90
   REGEN_MDL
   SET_APPEARANCE tank TR_Paint
   SET_APPEARANCE cover TR_Paint
 
-  PRINT "Dựng xong: thùng " + STR(TR_TankLength) + " x " + STR(TR_TankWidth) + " x " + STR(TR_TankHeight)
+  PRINT "Build done: tank " + STR(TR_TankLength) + " x " + STR(TR_TankWidth) + " x " + STR(TR_TankHeight)
   PROCESSING_BOX_END
 
 END_BUILD

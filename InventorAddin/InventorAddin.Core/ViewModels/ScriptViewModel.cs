@@ -14,7 +14,7 @@ using InventorAddin.Services.Gea;
 
 namespace InventorAddin.ViewModels;
 
-/// <summary>Một ô của form sinh từ khối FORM của script.</summary>
+/// <summary>One field of the form generated from the FORM block of the script.</summary>
 public sealed class ScriptFieldViewModel : ObservableObject
 {
     private readonly Action _changed;
@@ -44,7 +44,7 @@ public sealed class ScriptFieldViewModel : ObservableObject
     public bool IsRadio => Def.Kind == GeaFieldKind.Radio;
     public IReadOnlyList<string> Options => Def.Options;
 
-    /// <summary>Gợi ý khoảng giá trị, ví dụ "1 – 10".</summary>
+    /// <summary>Hint for the value range, for example "1 – 10".</summary>
     public string Range
     {
         get
@@ -86,7 +86,7 @@ public sealed class ScriptFieldViewModel : ObservableObject
 
     public bool HasError => _error != null;
 
-    /// <summary>Giá trị đưa vào FORM (số theo đơn vị hiển thị dạng chữ, để FORM tự kiểm tra).</summary>
+    /// <summary>Value fed to FORM (a number in the display unit as text, so FORM checks it itself).</summary>
     public object? Raw => Def.Kind switch
     {
         GeaFieldKind.Checkbox => _checked,
@@ -94,7 +94,7 @@ public sealed class ScriptFieldViewModel : ObservableObject
         _ => _text,
     };
 
-    /// <summary>Giá trị để lưu và nạp lại (số thực theo đơn vị hiển thị).</summary>
+    /// <summary>Value to store and reload (a real number in the display unit).</summary>
     public object? Stored => Def.Kind switch
     {
         GeaFieldKind.Checkbox => _checked,
@@ -103,7 +103,7 @@ public sealed class ScriptFieldViewModel : ObservableObject
         _ => _text,
     };
 
-    /// <summary>Gán giá trị không phát sự kiện đổi (nơi gọi tự tính lại form).</summary>
+    /// <summary>Sets the value without raising a change event (the caller recomputes the form).</summary>
     public void Load(object? value)
     {
         switch (Def.Kind)
@@ -151,7 +151,7 @@ public sealed class ScriptGroupViewModel : ObservableObject
 
 public enum ScriptMessageKind { Error, Warning, Note }
 
-/// <summary>Một dòng chẩn đoán hoặc thông báo của form; <see cref="Line"/> để nhảy tới dòng trong trình soạn thảo.</summary>
+/// <summary>One diagnostic or message line of the form; <see cref="Line"/> is used to jump to the line in the editor.</summary>
 public sealed record ScriptMessage(ScriptMessageKind Kind, string Text, int Line)
 {
     public bool IsError => Kind == ScriptMessageKind.Error;
@@ -164,9 +164,9 @@ public sealed record ScriptTemplate(string Path)
 }
 
 /// <summary>
-/// ViewModel của tab Script (.gea), làm việc như SmartAssembly: mở hoặc viết script, form sinh từ khối FORM,
-/// bấm Apply thì chạy lại BUILD và model đổi theo script. Sửa file bằng trình soạn thảo ngoài rồi lưu thì add-in
-/// tự nạp lại (và tự Apply nếu bật). Script và giá trị được lưu trong Part nên mở lại file vẫn sửa tiếp được.
+/// ViewModel of the Script (.gea) tab, working like SmartAssembly: open or write a script, the form is generated from the FORM block,
+/// pressing Apply runs BUILD again and the model changes to follow the script. Edit the file in an external editor and save, and the add-in
+/// reloads it on its own (and applies it automatically if that is on). The script and values are stored in the Part, so reopening the file lets you keep editing.
 /// </summary>
 public sealed class ScriptViewModel : ObservableObject, IDisposable
 {
@@ -196,7 +196,7 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
     private string? _lastDocKey;
     private ScriptTemplate? _selectedTemplate;
 
-    /// <param name="templateFilter">Chỉ liệt kê các mẫu có tên file thỏa điều kiện (mỗi add-in sản phẩm chỉ hiện mẫu của mình); null = tất cả.</param>
+    /// <param name="templateFilter">List only the templates whose file name satisfies the condition (each product add-in shows only its own templates); null = all.</param>
     public ScriptViewModel(IScriptGateway gateway, IDialogService dialogs, Func<string, bool>? templateFilter = null)
     {
         _gateway = gateway;
@@ -228,7 +228,7 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
         SetStatus("Open a .gea script (or pick a template), adjust the values, then Apply.", false);
     }
 
-    // ------------------------------------------------------------ thuộc tính cho View
+    // ------------------------------------------------------------ properties for the View
 
     public ObservableCollection<ScriptGroupViewModel> Groups { get; } = new();
     public ObservableCollection<ScriptMessage> FormMessages { get; } = new();
@@ -242,7 +242,7 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
         set { if (Set(ref _selectedTemplate, value)) OpenTemplateCommand.RaiseCanExecuteChanged(); }
     }
 
-    /// <summary>Nội dung trong trình soạn thảo. Gõ thì biên dịch lại sau một khoảng ngắn.</summary>
+    /// <summary>Content of the editor. Typing recompiles after a short delay.</summary>
     public string ScriptText
     {
         get => _scriptText;
@@ -276,7 +276,7 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
 
     public string ProductName => _script?.Program.ProductName is { Length: > 0 } p ? p : "(no script)";
 
-    /// <summary>Lưu file bằng trình soạn thảo ngoài (hoặc bấm Save) thì tự Apply.</summary>
+    /// <summary>Saving the file in an external editor (or pressing Save) applies it automatically.</summary>
     public bool AutoApply { get => _autoApply; set => Set(ref _autoApply, value); }
 
     public string Status { get => _status; private set => Set(ref _status, value); }
@@ -311,7 +311,7 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
         ApplyExportedValues(path);
     }
 
-    /// <summary>File .gea export từ web có khối giá trị !@: điền vào form (đổi đơn vị nội bộ sang đơn vị hiển thị).</summary>
+    /// <summary>A .gea file exported from the web has a !@ value block: it fills the form (converting the internal unit to the display unit).</summary>
     private void ApplyExportedValues(string path)
     {
         if (_fileText == null || _script == null || _script.HasErrors) return;
@@ -334,7 +334,7 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
         SetStatus($"Opened {Path.GetFileName(path)}; loaded {applied} value(s) from the web export.", false);
     }
 
-    /// <summary>Lần đầu mở cửa sổ của add-in sản phẩm: nếu chưa có script nào thì mở sẵn mẫu của sản phẩm để form hiện ngay.</summary>
+    /// <summary>The first time the add-in window opens: if there is no script yet, open the product template so the form shows right away.</summary>
     public void OpenDefaultTemplateIfEmpty()
     {
         if (_scriptPath != null || _scriptText.Length > 0 || SelectedTemplate == null) return;
@@ -346,7 +346,7 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
         if (SelectedTemplate == null || !ConfirmDiscard()) return;
         try
         {
-            // Mẫu nằm trong thư mục add-in (chỉ đọc): mở bản sao trong thư mục người dùng để sửa được
+            // The template is in the add-in folder (read-only): open a copy in the user folder so it can be edited
             var copy = GeaScriptLibrary.EditableCopy(SelectedTemplate.Path);
             LoadFile(copy, null);
             SetStatus($"Opened {Path.GetFileName(copy)} (your editable copy in {GeaScriptLibrary.UserDirectory}).", false);
@@ -395,7 +395,7 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
 
     private static string ReadFile(string path)
     {
-        // Trình soạn thảo ngoài có thể đang ghi: mở cho phép chia sẻ
+        // The external editor may be writing: open with sharing allowed
         using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         using var reader = new StreamReader(fs, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
         return reader.ReadToEnd();
@@ -448,14 +448,14 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
         }
         catch
         {
-            // .gea chưa gắn với ứng dụng nào: mở bằng Notepad
+            // .gea is not associated with any application: open it in Notepad
             try { Process.Start(new ProcessStartInfo("notepad.exe", $"\"{_scriptPath}\"") { UseShellExecute = true }); }
             catch (Exception ex) { SetStatus("Could not start an editor: " + ex.Message, true); return; }
         }
         SetStatus("Edit the file and save it; the add-in reloads it" + (AutoApply ? " and applies it automatically." : ". Then click Apply."), false);
     }
 
-    // ------------------------------------------------------------ theo dõi file trên đĩa
+    // ------------------------------------------------------------ watching the file on disk
 
     private void Watch(string? path)
     {
@@ -489,7 +489,7 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
         try { text = ReadFile(_scriptPath); }
         catch
         {
-            _fileTimer.Start(); // đang bị khóa: thử lại
+            _fileTimer.Start(); // locked right now: try again
             return;
         }
         if (text == _fileText) return;
@@ -518,7 +518,7 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
         else SetStatus("Script reloaded from disk. Click Apply to update the model.", false);
     }
 
-    // ------------------------------------------------------------ biên dịch và form
+    // ------------------------------------------------------------ compile and form
 
     private void SetText(string text, IReadOnlyDictionary<string, object?>? values)
     {
@@ -534,7 +534,7 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
     private void Recompile(IReadOnlyDictionary<string, object?>? values)
     {
         var previous = values ?? CurrentValues();
-        _script = GeaScript.Compile(_scriptText);
+        _script = GeaScript.Compile(_scriptText, GeaScriptLibrary.LibraryResolver(_scriptPath), _scriptPath != null ? Path.GetFileName(_scriptPath) : "script.gea");
 
         Diagnostics.Clear();
         var file = _scriptPath != null ? Path.GetFileName(_scriptPath) : "script.gea";
@@ -544,7 +544,7 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
         Raise(nameof(DiagnosticsHeader));
         Raise(nameof(ProductName));
 
-        // Dựng lại các ô khi danh sách thông số đổi; giữ giá trị đã nhập theo tên
+        // Rebuild the fields when the parameter list changes; keep the entered values by name
         var probe = _script.EvaluateForm(null);
         var signature = string.Join("\n", probe.Fields.Select(f =>
             $"{f.Name}|{f.Kind}|{f.Label}|{f.Group}|{f.Unit}|{f.Min}|{f.Max}|{f.Tooltip}|{f.Default}|{string.Join(",", f.Options)}"));
@@ -571,7 +571,7 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
             if (previous.TryGetValue(f.Name, out var v)) vm.Load(v);
             _fields.Add(vm);
         }
-        // Nhóm theo BEGIN_GROUP, giữ thứ tự xuất hiện
+        // Group by BEGIN_GROUP, keeping the order of appearance
         foreach (var g in _fields.GroupBy(f => f.Def.Group ?? ""))
             Groups.Add(new ScriptGroupViewModel(g.Key, g.ToList()));
         DefaultsCommand.RaiseCanExecuteChanged();
@@ -624,7 +624,7 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
 
     // ------------------------------------------------------------ Inventor
 
-    /// <summary>Đọc lại trạng thái document. Đổi sang một Part có script lưu kèm thì nạp script và giá trị đó.</summary>
+    /// <summary>Re-reads the document state. Switching to a Part that has a stored script loads that script and its values.</summary>
     public void Refresh()
     {
         _docState = _gateway.GetState();
@@ -642,12 +642,12 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
         LoadStored(_docState.Stored, announce: true);
     }
 
-    /// <summary>Nạp script và giá trị lưu trong Part. Nếu file nguồn còn trên đĩa thì theo dõi file đó.</summary>
+    /// <summary>Loads the script and values stored in the Part. If the source file is still on disk, that file is watched.</summary>
     private void LoadStored(StoredScript stored, bool announce)
     {
         var path = !string.IsNullOrEmpty(stored.Path) && File.Exists(stored.Path) ? stored.Path : null;
         string? disk = null;
-        try { if (path != null) disk = ReadFile(path); } catch { /* không đọc được: coi như không có file */ }
+        try { if (path != null) disk = ReadFile(path); } catch { /* cannot read: treat it as no file */ }
 
         _fileText = disk;
         ScriptPath = path;
@@ -663,7 +663,7 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
     private void Apply()
     {
         if (_script == null || _form == null) return;
-        if (IsTextDirty && !Save()) return; // như "lưu rồi chạy": file luôn khớp với model
+        if (IsTextDirty && !Save()) return; // like "save then run": the file always matches the model
 
         var state = _gateway.GetState();
         bool allowForeign = false;
@@ -681,7 +681,7 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
             var result = _gateway.Apply(_script, _form, _scriptPath, AddLog, allowForeign);
             AddLog(result.Message);
             Refresh();
-            _lastDocKey = _docState?.DocKey; // không nạp lại script vừa áp dụng
+            _lastDocKey = _docState?.DocKey; // do not reload the script that was just applied
             SetStatus(result.Message, !result.Ok);
         }
         finally
@@ -700,7 +700,7 @@ public sealed class ScriptViewModel : ObservableObject, IDisposable
         SetStatus(result.Message, !result.Ok);
     }
 
-    // ------------------------------------------------------------ tiện ích
+    // ------------------------------------------------------------ utilities
 
     private void AddLog(string line)
     {
