@@ -18,7 +18,7 @@ body { margin: 0; }
 .main { overflow: auto; min-width: 0; padding: 20px 28px 32px; }
 .page-title { font-size: 28px; font-weight: 400; margin: 0 0 16px; }
 .toolbar { display: flex; align-items: center; gap: 10px; margin: 14px 0; flex-wrap: wrap; }
-.tree { padding: 2px 0 6px; max-height: 50vh; overflow: auto; }
+.tree { padding: 2px 0 6px; flex: 1 1 auto; min-height: 120px; overflow: auto; }
 .tree-row { display: flex; align-items: center; gap: 4px; padding: 5px 8px; cursor: pointer; white-space: nowrap; font-size: 13px; }
 .tree-row:hover { background: var(--gray-3); }
 .tree-row.sel { background: var(--accent-3); color: var(--accent-11); font-weight: 500; }
@@ -41,6 +41,26 @@ body { margin: 0; }
 .viewer { border: 1px solid var(--plm-line); border-radius: 4px; min-height: 360px; display: grid; place-items: center; background: var(--gray-2); overflow: hidden; }
 .viewer img { max-width: 100%; max-height: 70vh; }
 .viewer iframe { width: 100%; height: 70vh; border: 0; background: white; }
+/* BOM CSV viewer (BomView.jsx), shown inside .viewer */
+.viewer:has(.bom) { place-items: stretch; background: var(--color-panel-solid); }
+.bom { width: 100%; min-width: 0; align-self: start; display: flex; flex-direction: column; font-size: 13px; }
+.bom-bar { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--plm-line); }
+.bom-count { color: var(--gray-10); }
+.bom-msg { padding: 40px; text-align: center; color: var(--gray-10); display: flex; gap: 8px; align-items: center; justify-content: center; }
+.bom-scroll { overflow: auto; max-height: 60vh; }
+/* Full grid: a line around every cell (collapsed, so each line is drawn once) */
+.bom-table { border: 1px solid var(--gray-6); }
+.bom-table th, .bom-table td { border: 1px solid var(--gray-6); white-space: nowrap; }
+.bom-table th { position: sticky; top: 0; background: var(--gray-3); z-index: 1; box-shadow: 0 1px 0 var(--gray-6); }
+.bom-table tbody tr:nth-child(even) td { background: var(--gray-2); }
+.bom-table th.num, .bom-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.bom-empty { color: var(--gray-9); }
+.bom-raw { margin: 0; padding: 12px; overflow: auto; max-height: 60vh; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; }
+.bom-inputs { border-top: 1px solid var(--plm-line); padding: 12px; }
+.bom-kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 4px 20px; margin: 8px 0 0; }
+.bom-kv-row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid var(--gray-4); }
+.bom-kv-row dt { color: var(--gray-11); overflow: hidden; text-overflow: ellipsis; }
+.bom-kv-row dd { margin: 0; font-variant-numeric: tabular-nums; }
 .card { border: 1px solid var(--plm-line); border-radius: 4px; padding: 14px; background: var(--color-panel-solid); }
 .kv { display: grid; grid-template-columns: 110px 1fr; gap: 6px 10px; font-size: 13px; }
 .kv dt { color: var(--gray-11); } .kv dd { margin: 0; word-break: break-word; }

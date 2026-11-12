@@ -29,7 +29,7 @@ public sealed record JobResult(
 /// (same Transaction, same feature error checks), then exports .ipt, STEP and images.
 /// May only be called on the Inventor UI thread.
 /// </summary>
-internal sealed class InventorJobExecutor
+internal sealed partial class InventorJobExecutor
 {
     private const string StepTranslatorId = "{90AF7F40-0C01-11D5-8E83-0010B541CD80}";
     private const string ImportedProduct = "imported"; // matches the constant of the same name in be/Cadflow.Api/Program.cs
@@ -68,6 +68,15 @@ internal sealed class InventorJobExecutor
             var issues = isBox ? BoxParams.Validate(values) : scripted!.Validate(values);
             if (issues.Count > 0)
                 return JobResult.Fail("Invalid inputs: " + issues[0].Message, retryable: false);
+        }
+
+        // An imported script with TARGET ASSEMBLY builds an assembly (see InventorJobExecutor.Assembly.cs); every other job builds one Part.
+        if (isImported)
+        {
+            var peekName = string.IsNullOrWhiteSpace(job.ScriptName) ? "script.gea" : job.ScriptName!;
+            var peek = GeaScript.Compile(job.ScriptText!, GeaScriptLibrary.LibraryResolver(null), peekName);
+            if (!peek.HasErrors && peek.Program.Target == "ASSEMBLY")
+                return RunAssembly(job, workDir, progress, peek, peekName);
         }
 
         Directory.CreateDirectory(workDir);
@@ -195,6 +204,12 @@ internal sealed class InventorJobExecutor
             }
             else progress("Drawing", "Drawing failed (see add-in log); continuing: " + drawing.Warning);
 
+            // BOM (CSV): one line for the part just built. Like STEP and the drawing, a failure here does not fail the job.
+            progress("Exporting", "Writing the BOM.");
+            var bomPath = Path.Combine(workDir, job.Id + "_bom.csv");
+            if (TryWriteBom(doc, iptPath, values, job.TextInputs, summary, bomPath)) files.Add(new OutputFile(bomPath, "bom"));
+            else progress("Exporting", "BOM failed (see add-in log); continuing.");
+
             return new JobResult(true, null, false, summary, files);
         }
         catch (Exception ex)
@@ -218,6 +233,71 @@ internal sealed class InventorJobExecutor
         var doc = (Inv.PartDocument)_app.Documents.Add(Inv.DocumentTypeEnum.kPartDocumentObject, template, true);
         doc.Activate(); // the gateway works on the active document
         return doc;
+    }
+
+    /// <summary>
+    /// Writes the BOM CSV for the part just built. Mass and volume come from the measurements already in <paramref name="summary"/>
+    /// (mass is only there for the box, see "Measuring"); the size is the range box in mm (Inventor units are cm).
+    /// Each property is read on its own, so one that is missing leaves its cell empty instead of dropping the file.
+    /// </summary>
+    private static bool TryWriteBom(Inv.PartDocument doc, string iptPath, Dictionary<string, double> values,
+        Dictionary<string, string>? textInputs, Dictionary<string, double> summary, string path)
+    {
+        try
+        {
+            var line = PartBomLine(doc, Path.GetFileName(iptPath), "", "", 1,
+                summary.TryGetValue("massKg", out var m) ? m : null,
+                summary.TryGetValue("volumeCm3", out var v) ? v : null);
+            return WriteBomCsv(path, new[] { line }, values, textInputs);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("BOM export failed", ex);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// One BOM line for a built part: part number, description, material and size are read from the document (each on its own, a missing one is left empty);
+    /// <paramref name="fallbackPartNumber"/> / <paramref name="fallbackDescription"/> are used when the document has none.
+    /// </summary>
+    private static BomLine PartBomLine(Inv.PartDocument doc, string fileName, string fallbackPartNumber, string fallbackDescription,
+        int quantity, double? massKg, double? volumeCm3)
+    {
+        string partNumber = "", description = "", material = "";
+        double? sx = null, sy = null, sz = null;
+        try { partNumber = Convert.ToString(doc.PropertySets["Design Tracking Properties"]["Part Number"].Value) ?? ""; } catch { }
+        try { description = Convert.ToString(doc.PropertySets["Design Tracking Properties"]["Description"].Value) ?? ""; } catch { }
+        try { material = doc.ComponentDefinition.Material.Name ?? ""; } catch { }
+        try
+        {
+            var box = doc.ComponentDefinition.RangeBox;
+            sx = (box.MaxPoint.X - box.MinPoint.X) * 10;
+            sy = (box.MaxPoint.Y - box.MinPoint.Y) * 10;
+            sz = (box.MaxPoint.Z - box.MinPoint.Z) * 10;
+        }
+        catch { }
+        return new BomLine(string.IsNullOrWhiteSpace(partNumber) ? fallbackPartNumber : partNumber,
+            string.IsNullOrWhiteSpace(description) ? fallbackDescription : description,
+            fileName, material, quantity, massKg, volumeCm3, sx, sy, sz);
+    }
+
+    /// <summary>Writes the BOM lines plus the job inputs (extra columns) as UTF-8 with a byte order mark: Excel then reads non-ASCII names correctly.</summary>
+    private static bool WriteBomCsv(string path, IReadOnlyList<BomLine> lines, Dictionary<string, double> values, Dictionary<string, string>? textInputs)
+    {
+        try
+        {
+            var inputs = values.ToDictionary(kv => kv.Key, kv => BomWriter.Num(kv.Value, 6), StringComparer.Ordinal);
+            if (textInputs != null)
+                foreach (var kv in textInputs) inputs[kv.Key] = kv.Value;
+            File.WriteAllText(path, BomWriter.ToCsv(lines, inputs), new System.Text.UTF8Encoding(true));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("BOM export failed", ex);
+            return false;
+        }
     }
 
     private bool TryExportStep(Inv._Document doc, string path)

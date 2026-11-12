@@ -25,6 +25,13 @@ public interface IGeaHost
     /// <summary>Runs a builder; returns the outputs by name.</summary>
     IReadOnlyDictionary<string, GeaRef> CreateFeature(BuilderManifest builder, GeaRef? on, IReadOnlyDictionary<string, GeaValue> inputs);
 
+    /// <summary>
+    /// ADD_COMPONENT (TARGET ASSEMBLY): inserts a part at a position (mm) with a rotation (degrees) and returns a reference to the occurrence.
+    /// A host that builds a part (not an assembly) does not support it, hence the default that throws GEA4020.
+    /// </summary>
+    GeaRef AddComponent(string part, double[] positionMm, double[] rotationDeg) =>
+        throw new GeaRuntimeException("GEA4020", "ADD_COMPONENT needs an assembly; this host builds a part.");
+
     void SetRefName(GeaRef target, string name);
 
     string GetRefName(GeaRef target);
@@ -83,6 +90,7 @@ public sealed class GeaSimulationHost : IGeaHost
     }
 
     private int _bodyCounter;
+    private int _componentCounter;
 
     public Dictionary<string, GeaValue> Parameters { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, string> ParameterExpressions { get; } = new(StringComparer.Ordinal);
@@ -131,6 +139,20 @@ public sealed class GeaSimulationHost : IGeaHost
             result["Turret"] = new GeaRef("BODY", turret, builder.Name, props);
         }
         return result;
+    }
+
+    public GeaRef AddComponent(string part, double[] positionMm, double[] rotationDeg)
+    {
+        var inputs = new Dictionary<string, GeaValue>(StringComparer.Ordinal)
+        {
+            ["Part"] = GeaValue.Text(part),
+            ["X"] = GeaValue.Length(positionMm[0]), ["Y"] = GeaValue.Length(positionMm[1]), ["Z"] = GeaValue.Length(positionMm[2]),
+            ["Rx"] = GeaValue.Angle(rotationDeg[0]), ["Ry"] = GeaValue.Angle(rotationDeg[1]), ["Rz"] = GeaValue.Angle(rotationDeg[2]),
+        };
+        var obj = new SimObject { Name = $"Comp{++_componentCounter}", Builder = "component:" + part, Inputs = inputs };
+        Objects.Add(obj);
+        Trace.Add($"ADD_COMPONENT \"{part}\" AT {inputs["X"]}, {inputs["Y"]}, {inputs["Z"]} ROT {inputs["Rx"]}, {inputs["Ry"]}, {inputs["Rz"]}");
+        return new GeaRef("COMPONENT", obj, "component", inputs);
     }
 
     private static SimObject Obj(GeaRef r) => (SimObject)r.Handle;

@@ -24,11 +24,15 @@ public static class GeaForms
             })
             .ToArray();
 
-    /// <summary>Reason the script cannot run on the web, or null if it is allowed.</summary>
+    /// <summary>
+    /// Reason the script cannot run on the web, or null if it is allowed. TARGET PART builds one Part; TARGET ASSEMBLY builds an assembly
+    /// (<c>ADD_COMPONENT</c> of the parts that ship with the add-in, see section 11.1 of the language spec).
+    /// </summary>
     public static string? Reject(GeaScript script)
     {
         if (script.HasErrors) return "The script has errors.";
-        if (script.Program.Target != "PART") return $"TARGET {script.Program.Target} is not supported yet (only PART).";
+        if (script.Program.Target is not ("PART" or "ASSEMBLY"))
+            return $"TARGET {script.Program.Target} is not supported.";
         var fields = script.EvaluateForm(null).Fields;
         if (fields.Count > MaxFields) return $"The form has {fields.Count} fields; at most {MaxFields} are allowed.";
         return null;

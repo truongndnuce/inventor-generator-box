@@ -23,7 +23,7 @@ public sealed class VaultException(int status, string message) : Exception(messa
 }
 
 /// <summary>
-/// The document vault (PLM-style) on PostgreSQL: folders, items (a file with a number, state and current version) and versions.
+/// Smart Vault, the document vault (PLM-style) on PostgreSQL: folders, items (a file with a number, state and current version) and versions.
 /// Only metadata lives here; the bytes are handled by <see cref="VaultFiles"/>. No login: "who" is the free-text name sent by the client.
 /// </summary>
 public sealed class VaultStore
@@ -38,8 +38,8 @@ public sealed class VaultStore
         [Released] = [],
     };
 
-    /// <summary>The three fixed sub-folders of a job folder, in display order.</summary>
-    public static readonly string[] JobSubfolders = ["image", "drawing", "model"];
+    /// <summary>The fixed sub-folders of a job folder, in display order.</summary>
+    public static readonly string[] JobSubfolders = ["image", "drawing", "model", "bom"];
 
     private const string Schema = """
         CREATE TABLE IF NOT EXISTS vault_folders (
@@ -135,16 +135,23 @@ public sealed class VaultStore
         !string.IsNullOrWhiteSpace(name) && name.Length <= 150 && name == name.Trim() && name is not "." and not ".."
         && name.IndexOfAny(['/', '\\', ':', '*', '?', '"', '<', '>', '|']) < 0 && !name.Any(char.IsControl);
 
-    /// <summary>The kind of a file by its extension: image, drawing, model or other. It decides the item number prefix.</summary>
-    public static string KindOf(string fileName) => Path.GetExtension(fileName).ToLowerInvariant() switch
+    /// <summary>
+    /// The kind of a file by its name: image, drawing, model, bom or other. It decides the item number prefix.
+    /// Only the worker's bill of materials (<c>&lt;job&gt;_bom.csv</c>) is a "bom"; any other CSV stays "other".
+    /// </summary>
+    public static string KindOf(string fileName)
     {
-        ".png" or ".jpg" or ".jpeg" or ".gif" or ".svg" => "image",
-        ".pdf" or ".dwg" or ".dxf" or ".idw" => "drawing",
-        ".ipt" or ".iam" or ".stp" or ".step" or ".rvt" or ".rfa" or ".ifc" or ".igs" or ".iges" or ".sat" => "model",
-        _ => "other",
-    };
+        if (fileName.EndsWith("_bom.csv", StringComparison.OrdinalIgnoreCase)) return "bom";
+        return Path.GetExtension(fileName).ToLowerInvariant() switch
+        {
+            ".png" or ".jpg" or ".jpeg" or ".gif" or ".svg" => "image",
+            ".pdf" or ".dwg" or ".dxf" or ".idw" => "drawing",
+            ".ipt" or ".iam" or ".stp" or ".step" or ".rvt" or ".rfa" or ".ifc" or ".igs" or ".iges" or ".sat" => "model",
+            _ => "other",
+        };
+    }
 
-    private static string PrefixOf(string kind) => kind switch { "image" => "IMG", "drawing" => "DRW", "model" => "MDL", _ => "DOC" };
+    private static string PrefixOf(string kind) => kind switch { "image" => "IMG", "drawing" => "DRW", "model" => "MDL", "bom" => "BOM", _ => "DOC" };
 
     // ---------------------------------------------------------------- folders
 
@@ -410,6 +417,36 @@ public sealed class VaultStore
             throw new VaultException(409, $"An item in '{current}' cannot go to '{state}'. Allowed: {(Transitions[current].Length == 0 ? "none (check in a new version)" : string.Join(", ", Transitions[current]))}.");
         Exec(conn, tx, "UPDATE vault_items SET state = @s, modified_by = @by, modified_at = @t WHERE id = @id",
             ("s", state), ("by", Who(by)), ("t", DateTimeOffset.UtcNow), ("id", id));
+        tx.Commit();
+        return Item(id)!;
+    }
+
+    /// <summary>
+    /// Renames a file (item). The extension must stay the same (it decides the type and the number prefix), and the new name must be free in the folder.
+    /// <paramref name="moveFiles"/> (old name, new name) renames the stored bytes; it runs inside the transaction, so a failure leaves the name unchanged.
+    /// State, version and number are not touched.
+    /// </summary>
+    public VaultItem RenameItem(string id, string newName, string? by, Action<string, string> moveFiles)
+    {
+        if (!IsValidName(newName)) throw new VaultException(400, "File name is empty, too long or contains / \\ : * ? \" < > |.");
+        using var conn = _db.OpenConnection();
+        using var tx = conn.BeginTransaction();
+        string oldName;
+        using (var cmd = Cmd(conn, tx, "SELECT name FROM vault_items WHERE id = @id FOR UPDATE", ("id", id)))
+            oldName = cmd.ExecuteScalar() as string ?? throw new VaultException(404, "Item not found.");
+        if (oldName == newName) return Item(conn, tx, id)!;
+        if (!string.Equals(Path.GetExtension(oldName), Path.GetExtension(newName), StringComparison.OrdinalIgnoreCase))
+            throw new VaultException(400, $"Keep the file extension '{Path.GetExtension(oldName)}'.");
+        try
+        {
+            Exec(conn, tx, "UPDATE vault_items SET name = @n, modified_by = @by, modified_at = @t WHERE id = @id",
+                ("n", newName), ("by", Who(by)), ("t", DateTimeOffset.UtcNow), ("id", id));
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            throw new VaultException(409, $"A file named '{newName}' already exists in this folder.");
+        }
+        moveFiles(oldName, newName);
         tx.Commit();
         return Item(id)!;
     }

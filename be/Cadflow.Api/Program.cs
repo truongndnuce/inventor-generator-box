@@ -52,6 +52,7 @@ builder.Services.AddRateLimiter(o =>
 builder.Services.AddSingleton(new R2Store(builder.Configuration.GetSection("R2").Get<R2Options>() ?? new R2Options()));
 builder.Services.AddSingleton(new Cadflow.Api.Vault.VaultStore(dbConn));
 builder.Services.AddSingleton(sp => new Cadflow.Api.Vault.VaultFiles(dataDir, sp.GetRequiredService<R2Store>(), sp.GetRequiredService<JobStore>()));
+builder.Services.AddSingleton<Cadflow.Api.Vault.VaultJobSaver>();
 builder.Services.AddHostedService<StaleJobReaper>();
 builder.Services.AddHostedService<RetentionService>();
 builder.Services.Configure<JsonOptions>(o => o.SerializerOptions.PropertyNameCaseInsensitive = true);
@@ -87,7 +88,7 @@ else
     app.Logger.LogWarning("Frontend build not found: {Dir}. Run 'npm install' and 'npm run build' in fe/ (or use 'npm run dev'). Only the API is served.", frontendDir);
 }
 
-// The PLM vault front-end (fe-plm/, built with base /plm/) is served next to the main one.
+// The Smart Vault front-end (fe-plm/, built with base /plm/) is served next to the main one.
 var plmDir = Path.GetFullPath(app.Configuration["FrontendPlm:Path"] ?? Path.Combine(app.Environment.ContentRootPath, "..", "..", "fe-plm", "dist"));
 if (Directory.Exists(plmDir))
 {
@@ -416,8 +417,25 @@ worker.MapPost("/jobs/{id}/artifacts", async (string id, string worker, string n
     return Results.NoContent();
 });
 
-worker.MapPost("/jobs/{id}/complete", (string id, string worker, CompleteRequest req) =>
-    store.Complete(id, worker, req.Summary) ? Results.NoContent() : Results.Conflict(new { error = "The job is not running on this worker." }));
+worker.MapPost("/jobs/{id}/complete", (string id, string worker, CompleteRequest req, Cadflow.Api.Vault.VaultJobSaver vaultSaver) =>
+{
+    if (!store.Complete(id, worker, req.Summary)) return Results.Conflict(new { error = "The job is not running on this worker." });
+
+    // Save the results (model, drawing, images, BOM) into Smart Vault right away, in the background so the worker is not kept waiting.
+    // A failure is only logged: the job stays succeeded and "Save to Smart Vault" on the job page can retry. Turn off with Vault:AutoSave=false.
+    if (app.Configuration.GetValue("Vault:AutoSave", true) && store.Get(id) is { Kind: not JobKinds.Preview, ArtifactsPurgedAt: null } done)
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                var r = vaultSaver.Save(done, done.RequestedBy);
+                app.Logger.LogInformation("Job {Job} saved to Smart Vault:{Added} new, {Versions} new versions, {Unchanged} unchanged, {Skipped} skipped.",
+                    id, r.Added, r.NewVersions, r.Unchanged, r.Skipped.Count);
+            }
+            catch (Exception ex) { app.Logger.LogWarning(ex, "Could not save job {Job} to Smart Vault.", id); }
+        });
+    return Results.NoContent();
+});
 
 worker.MapPost("/jobs/{id}/fail", (string id, string worker, FailRequest req) =>
     store.Fail(id, worker, string.IsNullOrWhiteSpace(req.Error) ? "Unknown error." : req.Error!, req.Retryable)

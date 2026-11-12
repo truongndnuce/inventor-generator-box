@@ -6,7 +6,7 @@ using InventorAddin.Models;
 namespace InventorAddin.Web;
 
 /// <summary>
-/// Products built by a .gea script that ships with the add-in (transformer, gas turbine, generator). Each product is declared once:
+/// Products built by a .gea script that ships with the add-in (transformer, gas turbine, generator, circuit breaker, disconnector). Each product is declared once:
 /// the script, the validation rules shared with the server, and the elevations used to write the dimension string on the drawing section.
 /// Adding a product = adding one line in <see cref="All"/> (and an add-in if it should have a window of its own).
 /// </summary>
@@ -38,6 +38,22 @@ public sealed record ScriptedProduct(
             "base, water cooler, stator frame with ribs, bearing housings, rotor shaft and exciter cabinet.",
             GeneratorParams.Complete, GeneratorParams.Validate,
             v => new[] { 0, v[GeneratorParams.BaseHeight], GeneratorParams.AxisHeight(v), GeneratorParams.TopHeight(v) }),
+
+        new ScriptedProduct(CircuitBreakerParams.Code, "circuit-breaker.gea", "Building circuit breaker",
+            "foundation, lattice stand, control cabinet and the two interrupter columns.",
+            CircuitBreakerParams.Complete, CircuitBreakerParams.Validate,
+            v => new[] { 0, CircuitBreakerParams.PierTop(v), CircuitBreakerParams.StandTop(v), CircuitBreakerParams.TopHeight(v) }),
+
+        new ScriptedProduct(DisconnectorParams.Code, "disconnector.gea", "Building disconnector",
+            "posts, frame beams, insulator columns, blade arms and the control cabinet.",
+            DisconnectorParams.Complete, DisconnectorParams.Validate,
+            v => new[] { 0, v[DisconnectorParams.PostHeight], DisconnectorParams.FrameTop(v), DisconnectorParams.TopHeight(v) }),
+
+        // Internal part of the substation assembly (no add-in and no entry in the server's Products: it is only placed with ADD_COMPONENT).
+        new ScriptedProduct(SubstationYardParams.Code, "substation-yard.gea", "Building substation yard",
+            "gravel pad, walkway and two portal gantries.",
+            SubstationYardParams.Complete, SubstationYardParams.Validate,
+            v => new[] { 0, v[SubstationYardParams.GravelHeight], SubstationYardParams.TopHeight(v) - 1000, SubstationYardParams.TopHeight(v) }),
     };
 
     public static ScriptedProduct? Find(string? code) =>

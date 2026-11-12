@@ -48,6 +48,12 @@ public static class Products
         new Product(GeneratorParams.Code, "Water-cooled generator",
             "Simplified large water-cooled synchronous generator: box stator frame with side ribs, water cooler with pipes under the frame, top box with fans, bearing housings, rotor shaft, exciter cabinet and base frame.", 1,
             GeneratorParams.All, GeneratorParams.Complete, GeneratorParams.Validate, ScriptFile: "generator.gea"),
+        new Product(CircuitBreakerParams.Code, "Circuit breaker",
+            "Simplified high-voltage live-tank circuit breaker: concrete pad and pier, lattice steel stand, control cabinet and two stacked ribbed insulator columns with a collar.", 1,
+            CircuitBreakerParams.All, CircuitBreakerParams.Complete, CircuitBreakerParams.Validate, ScriptFile: "circuit-breaker.gea"),
+        new Product(DisconnectorParams.Code, "Disconnector",
+            "Simplified high-voltage double-column disconnector (1 to 3 phases): steel posts with base plates, frame beams, two ribbed insulator columns per phase, blade arms and a control cabinet.", 1,
+            DisconnectorParams.All, DisconnectorParams.Complete, DisconnectorParams.Validate, ScriptFile: "disconnector.gea"),
     };
 
     public static Product? Find(string? code) =>

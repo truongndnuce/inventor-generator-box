@@ -89,6 +89,10 @@ public sealed record CreateFeatureStmt(
     int Line, int Col, string SourceKind, string SourceName, string? OnRef,
     IReadOnlyList<FeatureInput> Inputs, IReadOnlyList<FeatureOutput> Outputs) : GeaStmt(Line, Col);
 
+/// <summary>ADD_COMPONENT (TARGET ASSEMBLY): inserts the part <see cref="Part"/> at <see cref="At"/> (3 lengths) rotated by <see cref="Rot"/> (3 angles); either may be null (origin, no rotation).</summary>
+public sealed record AddComponentStmt(
+    int Line, int Col, string Var, GeaExpr Part, IReadOnlyList<GeaExpr>? At, IReadOnlyList<GeaExpr>? Rot) : GeaStmt(Line, Col);
+
 public sealed record SetRefNameStmt(int Line, int Col, string Ref, GeaExpr Name) : GeaStmt(Line, Col);
 
 public sealed record GetRefNameStmt(int Line, int Col, string Ref, string Var) : GeaStmt(Line, Col);

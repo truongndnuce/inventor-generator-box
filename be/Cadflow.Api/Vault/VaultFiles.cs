@@ -49,6 +49,33 @@ public sealed class VaultFiles(string dataDir, R2Store r2, JobStore jobs)
         return (null, size);
     }
 
+    /// <summary>
+    /// Renames the stored bytes of every version of an item on the server disk (the path contains the file name). Files on R2 are not touched:
+    /// their key is stored per version and the download name comes from the item. On a failure the files already moved are put back.
+    /// </summary>
+    public void RenameOnDisk(string itemId, string oldName, string newName)
+    {
+        var root = Path.Combine(dataDir, "vault", itemId);
+        if (!Directory.Exists(root)) return;
+        var moved = new List<(string From, string To)>();
+        try
+        {
+            foreach (var dir in Directory.GetDirectories(root, "v*"))
+            {
+                var from = Path.Combine(dir, oldName);
+                if (!File.Exists(from)) continue;
+                var to = Path.Combine(dir, newName);
+                File.Move(from, to);
+                moved.Add((from, to));
+            }
+        }
+        catch
+        {
+            foreach (var (from, to) in moved) { try { File.Move(to, from); } catch { /* best effort */ } }
+            throw;
+        }
+    }
+
     /// <summary>The HTTP answer for downloading a version: a redirect to a short-lived R2 URL, or the file from disk.</summary>
     public IResult Serve(VaultItem item, VaultVersion v, bool download)
     {

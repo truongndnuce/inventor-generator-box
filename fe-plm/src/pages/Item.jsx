@@ -3,11 +3,13 @@ import { Badge, Button, Callout, Select } from '@radix-ui/themes';
 import { DownloadIcon, UploadIcon } from '@radix-ui/react-icons';
 import { api, fileUrl, fmtDate, fmtSize, go, MAIN_APP, send, uploadFile } from '../lib.js';
 import { Crumbs, StateBadge, VersionBadge } from '../components.jsx';
+import BomView from '../BomView.jsx';
 
 const NEXT = { 'In Work': ['Under Review'], 'Under Review': ['In Work', 'Approved'], Approved: ['In Work', 'Released'], Released: [] };
 
 function Preview({ item }) {
   const url = fileUrl(item.id, item.version);
+  if (item.kind === 'bom') return <BomView item={item} />;
   if (item.kind === 'image') return <img src={url} alt={item.name} />;
   if (item.contentType === 'application/pdf') return <iframe src={url} title={item.name} />;
   return <div style={{ padding: 40, textAlign: 'center', color: 'var(--gray-10)' }}>No preview for {item.name.split('.').pop().toUpperCase()} files.<br />Download it to open in CAD.</div>;

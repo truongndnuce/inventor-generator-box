@@ -1,0 +1,208 @@
+! ============================================================================
+! High-voltage double-column disconnector (simplified from the reference picture), up to three phases in a row: steel posts with base plates
+! carrying a frame (a longitudinal beam on each side and a cross beam under every phase), two ribbed insulator columns per phase, a horizontal
+! blade arm joining the two column tops of each phase, and a control cabinet hanging under the cross beam of the middle phase.
+!
+! Each part is a named solid body in the same Part. Coordinate system of the builders:
+!   X  = across the poles (the two columns of a phase are at X = +-DS_ColumnSpacing / 2)
+!   D  = along the row of phases (centered at D = 0)
+!   Elevation = height (ground at 0)
+!
+! The model is made of solid blocks and bushings: no moving blade, linkage or earthing details.
+! The rules in FORM match DisconnectorParams.Validate (the server uses that C# copy); the constants (1.3 / 1.8 / 120 / 40 / 200 / 30 mm)
+! match the constants of the same name in the C# file.
+! ============================================================================
+GEA_VERSION 1
+PRODUCT_NAME "Disconnector (simplified)"
+PARAM_PREFIX DS_
+TARGET PART
+
+BEGIN_FORM
+
+  BEGIN_GROUP "Poles and columns"
+    USER_INPUT_PARAM DS_PhaseCount     INTEGER 3 MIN 1 MAX 3 LABEL "Number of phases"
+    USER_INPUT_PARAM DS_PhaseSpacing   LENGTH 2500 mm MIN 1200 MAX 5000 REQUIRED LABEL "Phase spacing"
+    USER_INPUT_PARAM DS_ColumnSpacing  LENGTH 3000 mm MIN 1200 MAX 6000 REQUIRED LABEL "Spacing between the two columns"
+    USER_INPUT_PARAM DS_ColumnDiameter LENGTH 400 mm  MIN 150  MAX 700  REQUIRED LABEL "Column diameter (largest shed)"
+    USER_INPUT_PARAM DS_ColumnLength   LENGTH 2400 mm MIN 800  MAX 5000 REQUIRED LABEL "Column length"
+    USER_INPUT_PARAM DS_ShedCount      INTEGER 16 MIN 4 MAX 40 LABEL "Sheds per column"
+  END_GROUP
+
+  BEGIN_GROUP "Blade arm"
+    USER_INPUT_PARAM DS_ArmHeight LENGTH 160 mm MIN 60 MAX 400 LABEL "Blade arm height"
+    USER_INPUT_PARAM DS_ArmWidth  LENGTH 140 mm MIN 60 MAX 300 LABEL "Blade arm width"
+  END_GROUP
+
+  BEGIN_GROUP "Support frame"
+    USER_INPUT_PARAM DS_PostHeight LENGTH 2200 mm MIN 800 MAX 5000 REQUIRED LABEL "Post height"
+    USER_INPUT_PARAM DS_PostSize   LENGTH 300 mm  MIN 150 MAX 600  LABEL "Post size"
+    USER_INPUT_PARAM DS_BeamHeight LENGTH 250 mm  MIN 100 MAX 500  LABEL "Frame beam height"
+  END_GROUP
+
+  BEGIN_GROUP "Control cabinet"
+    USER_INPUT_PARAM DS_CabWidth  LENGTH 500 mm MIN 250 MAX 1000 LABEL "Cabinet width"
+    USER_INPUT_PARAM DS_CabDepth  LENGTH 400 mm MIN 200 MAX 800  LABEL "Cabinet depth"
+    USER_INPUT_PARAM DS_CabHeight LENGTH 600 mm MIN 300 MAX 1200 LABEL "Cabinet height"
+  END_GROUP
+
+  ! --- Validation rules ---
+  ASSERT DS_ColumnSpacing >= 3 * DS_ColumnDiameter "Column spacing must be at least 3 x the column diameter."
+  ASSERT DS_PhaseSpacing >= 3 * DS_ColumnDiameter "Phase spacing must be at least 3 x the column diameter."
+  ASSERT 1.3 * DS_ColumnDiameter <= 1.8 * DS_PostSize \
+    "The column base ring (1.3 x the column diameter) must not be wider than 1.8 x the post size."
+  ASSERT DS_PhaseSpacing >= 1.8 * DS_PostSize + 100 mm \
+    "Phase spacing must be at least 1.8 x the post size + 100 mm (the base plates must not touch)."
+  ASSERT DS_CabHeight <= DS_PostHeight - 200 mm \
+    "Cabinet height must leave 200 mm of clearance under it: at most the post height - 200 mm."
+  ASSERT DS_CabWidth <= DS_ColumnSpacing - DS_PostSize - 100 mm \
+    "Cabinet width must fit between the posts: at most the column spacing - post size - 100 mm."
+
+END_FORM
+
+BEGIN_BUILD
+
+  DECLARE_VARIABLE LENGTH frameTop
+  DECLARE_VARIABLE LENGTH colTop
+  DECLARE_VARIABLE LENGTH phaseD
+  DECLARE_VARIABLE LENGTH midD
+  DECLARE_VARIABLE INTEGER index
+  DECLARE_REFERENCE body
+
+  frameTop = DS_PostHeight + DS_BeamHeight
+  colTop = frameTop + 120 mm + DS_ColumnLength
+  ! The middle phase (the first one when there are two) gets the control cabinet
+  IF DS_PhaseCount == 2
+    midD = -DS_PhaseSpacing / 2
+  ELSE
+    midD = 0 mm
+  END_IF
+
+  PROCESSING_BOX_START "Building the disconnector"
+
+  ! --- Posts with base plates: two per phase, under the two columns ---
+  PROCESSING_BOX_SET_STATE "Posts" 15
+  index = 0
+  FOR p FROM 0 TO DS_PhaseCount - 1
+    phaseD = (2 * p - DS_PhaseCount + 1) * DS_PhaseSpacing / 2
+    FOR s FROM 0 TO 1
+      index++
+      CREATE_FEATURE builder:Block
+        FEATURE_IN "CenterX"   (2 * s - 1) * DS_ColumnSpacing / 2
+        FEATURE_IN "CenterD"   phaseD
+        FEATURE_IN "SizeX"     1.8 * DS_PostSize
+        FEATURE_IN "SizeD"     1.8 * DS_PostSize
+        FEATURE_IN "Height"    40 mm
+        FEATURE_OUT body "Body"
+      END_CREATE_FEATURE
+      SET_REF_NAME body "DS_BasePlate_" + STR(index)
+      SET_REF_ATTR body "ROLE" "BASE_PLATE"
+      SET_APPEARANCE body "Grey"
+
+      CREATE_FEATURE builder:Block
+        FEATURE_IN "CenterX"   (2 * s - 1) * DS_ColumnSpacing / 2
+        FEATURE_IN "CenterD"   phaseD
+        FEATURE_IN "Elevation" 30 mm
+        FEATURE_IN "SizeX"     DS_PostSize
+        FEATURE_IN "SizeD"     DS_PostSize
+        FEATURE_IN "Height"    DS_PostHeight - 30 mm
+        FEATURE_OUT body "Body"
+      END_CREATE_FEATURE
+      SET_REF_NAME body "DS_Post_" + STR(index)
+      SET_REF_ATTR body "ROLE" "POST"
+      SET_APPEARANCE body "Grey"
+    END_FOR
+  END_FOR
+
+  ! --- Frame: a longitudinal beam on each side (along D) and a cross beam under every phase (along X); they sink 30 mm into the posts ---
+  PROCESSING_BOX_SET_STATE "Frame beams" 35
+  FOR s FROM 0 TO 1
+    CREATE_FEATURE builder:Block
+      FEATURE_IN "CenterX"   (2 * s - 1) * DS_ColumnSpacing / 2
+      FEATURE_IN "Elevation" DS_PostHeight - 30 mm
+      FEATURE_IN "SizeX"     DS_PostSize
+      FEATURE_IN "SizeD"     (DS_PhaseCount - 1) * DS_PhaseSpacing + DS_PostSize
+      FEATURE_IN "Height"    DS_BeamHeight + 30 mm
+      FEATURE_OUT body "Body"
+    END_CREATE_FEATURE
+    SET_REF_NAME body "DS_LongBeam_" + STR(s + 1)
+    SET_REF_ATTR body "ROLE" "FRAME_BEAM"
+    SET_APPEARANCE body "LightGrey"
+  END_FOR
+
+  FOR p FROM 0 TO DS_PhaseCount - 1
+    phaseD = (2 * p - DS_PhaseCount + 1) * DS_PhaseSpacing / 2
+    CREATE_FEATURE builder:Block
+      FEATURE_IN "CenterD"   phaseD
+      FEATURE_IN "Elevation" DS_PostHeight - 30 mm
+      FEATURE_IN "SizeX"     DS_ColumnSpacing + DS_PostSize
+      FEATURE_IN "SizeD"     DS_PostSize
+      FEATURE_IN "Height"    DS_BeamHeight + 30 mm
+      FEATURE_OUT body "Body"
+    END_CREATE_FEATURE
+    SET_REF_NAME body "DS_CrossBeam_" + STR(p + 1)
+    SET_REF_ATTR body "ROLE" "FRAME_BEAM"
+    SET_APPEARANCE body "LightGrey"
+  END_FOR
+
+  ! --- Control cabinet hanging under the cross beam of the middle phase (it sinks 20 mm into the beam) ---
+  PROCESSING_BOX_SET_STATE "Control cabinet" 50
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "CenterD"      midD
+    FEATURE_IN "Elevation"    DS_PostHeight - 10 mm - DS_CabHeight
+    FEATURE_IN "SizeX"        DS_CabWidth
+    FEATURE_IN "SizeD"        DS_CabDepth
+    FEATURE_IN "Height"       DS_CabHeight
+    FEATURE_IN "CornerRadius" 10 mm
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "DS_Cabinet"
+  SET_REF_ATTR body "ROLE" "CABINET"
+  SET_APPEARANCE body "Grey"
+
+  ! --- Two ochre insulator columns per phase, each on a metal base ring (120 mm, sunk 30 mm into the beam) ---
+  PROCESSING_BOX_SET_STATE "Insulator columns" 70
+  index = 0
+  FOR p FROM 0 TO DS_PhaseCount - 1
+    phaseD = (2 * p - DS_PhaseCount + 1) * DS_PhaseSpacing / 2
+    FOR s FROM 0 TO 1
+      CREATE_FEATURE builder:Bushing
+        FEATURE_IN "CenterX"        (2 * s - 1) * DS_ColumnSpacing / 2
+        FEATURE_IN "CenterD"        phaseD
+        FEATURE_IN "Elevation"      frameTop - 30 mm
+        FEATURE_IN "Diameter"       DS_ColumnDiameter
+        FEATURE_IN "Length"         DS_ColumnLength
+        FEATURE_IN "TurretHeight"   120 mm + 30 mm
+        FEATURE_IN "TurretDiameter" 1.3 * DS_ColumnDiameter
+        FEATURE_IN "ShedCount"      DS_ShedCount
+        FEATURE_OUT body "Body"
+      END_CREATE_FEATURE
+      index++
+      SET_REF_NAME body "DS_Column_" + STR(index)
+      SET_REF_ATTR body "ROLE" "INSULATOR"
+      SET_APPEARANCE body "Yellow"
+    END_FOR
+  END_FOR
+
+  ! --- Horizontal blade arm over each phase, joining the two column tops (it sinks 30 mm into them) ---
+  PROCESSING_BOX_SET_STATE "Blade arms" 90
+  FOR p FROM 0 TO DS_PhaseCount - 1
+    phaseD = (2 * p - DS_PhaseCount + 1) * DS_PhaseSpacing / 2
+    CREATE_FEATURE builder:Block
+      FEATURE_IN "CenterD"   phaseD
+      FEATURE_IN "Elevation" colTop - 30 mm
+      FEATURE_IN "SizeX"     DS_ColumnSpacing + 400 mm
+      FEATURE_IN "SizeD"     DS_ArmWidth
+      FEATURE_IN "Height"    DS_ArmHeight + 30 mm
+      FEATURE_OUT body "Body"
+    END_CREATE_FEATURE
+    SET_REF_NAME body "DS_Arm_" + STR(p + 1)
+    SET_REF_ATTR body "ROLE" "BLADE_ARM"
+    SET_APPEARANCE body "Silver"
+  END_FOR
+
+  PROCESSING_BOX_SET_STATE "Updating the model" 96
+  REGEN_MDL
+  PRINT "Disconnector built."
+  PROCESSING_BOX_END
+
+END_BUILD

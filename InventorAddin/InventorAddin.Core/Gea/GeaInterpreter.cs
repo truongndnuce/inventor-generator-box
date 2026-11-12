@@ -531,6 +531,15 @@ public sealed class GeaInterpreter
             case CreateFeatureStmt cf:
                 CreateFeature(cf);
                 return Flow.Normal;
+            case AddComponentStmt ac:
+            {
+                var part = Eval(ac.Part).Str ?? "";
+                if (part.Length == 0) throw new GeaRuntimeException("GEA4012", "The part name of ADD_COMPONENT must not be empty.", ac.Line, ac.Col);
+                var at = ac.At == null ? new double[3] : ac.At.Select(e => Eval(e).Num).ToArray();
+                var rot = ac.Rot == null ? new double[3] : ac.Rot.Select(e => Eval(e).Num).ToArray();
+                _env[ac.Var] = GeaValue.Reference(HostCall(ac.Line, ac.Col, () => _host!.AddComponent(part, at, rot)));
+                return Flow.Normal;
+            }
             case SetRefNameStmt rn:
             {
                 var r = Ref(rn.Ref, rn);

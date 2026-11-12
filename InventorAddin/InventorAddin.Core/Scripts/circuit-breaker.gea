@@ -1,0 +1,233 @@
+! ============================================================================
+! High-voltage live-tank circuit breaker (simplified from the reference picture): a concrete foundation (pad and pier), a lattice steel
+! stand (four legs, horizontal braces, top plate), a control cabinet fixed to the stand, and the interrupter: two stacked ribbed black insulator
+! columns joined by a collar (grading ring).
+!
+! Each part is a named solid body in the same Part. Coordinate system of the builders:
+!   X  = across the stand (the control cabinet is on the negative side, the pole axis is at X = 0)
+!   D  = depth (the pole axis is at D = 0)
+!   Elevation = height (ground at 0)
+!
+! The model is made of solid blocks and bushings; the lattice stand is four legs with horizontal rungs (no diagonal members).
+! The rules in FORM match CircuitBreakerParams.Validate (the server uses that C# copy); the constants (150 / 60 / 1.2 / 1.35 / 30 mm / 0.3)
+! match the constants of the same name in the C# file.
+! ============================================================================
+GEA_VERSION 1
+PRODUCT_NAME "Circuit breaker (simplified)"
+PARAM_PREFIX CB_
+TARGET PART
+
+BEGIN_FORM
+
+  BEGIN_GROUP "Interrupter columns"
+    USER_INPUT_PARAM CB_ColumnDiameter LENGTH 420 mm MIN 200 MAX 900  REQUIRED LABEL "Column diameter (largest shed)"
+    USER_INPUT_PARAM CB_LowerLength    LENGTH 1500 mm MIN 600 MAX 4000 REQUIRED LABEL "Lower column length"
+    USER_INPUT_PARAM CB_UpperLength    LENGTH 1500 mm MIN 600 MAX 4000 REQUIRED LABEL "Upper column length"
+    USER_INPUT_PARAM CB_ShedCount      INTEGER 14 MIN 4 MAX 40 LABEL "Sheds per column"
+    USER_INPUT_PARAM CB_CollarHeight   LENGTH 120 mm MIN 60 MAX 300 LABEL "Collar height"
+  END_GROUP
+
+  BEGIN_GROUP "Support stand"
+    USER_INPUT_PARAM CB_StandHeight LENGTH 1800 mm MIN 800 MAX 4000 REQUIRED LABEL "Stand height"
+    USER_INPUT_PARAM CB_StandWidth  LENGTH 700 mm  MIN 400 MAX 1500 REQUIRED LABEL "Stand width"
+    USER_INPUT_PARAM CB_LegSize     LENGTH 100 mm  MIN 50  MAX 250  LABEL "Leg size"
+    USER_INPUT_PARAM CB_BraceCount  INTEGER 4 MIN 0 MAX 10 LABEL "Horizontal braces"
+  END_GROUP
+
+  BEGIN_GROUP "Control cabinet"
+    USER_INPUT_PARAM CB_CabWidth  LENGTH 600 mm MIN 300 MAX 1200 LABEL "Cabinet width"
+    USER_INPUT_PARAM CB_CabDepth  LENGTH 350 mm MIN 200 MAX 800  LABEL "Cabinet depth"
+    USER_INPUT_PARAM CB_CabHeight LENGTH 800 mm MIN 400 MAX 1500 LABEL "Cabinet height"
+  END_GROUP
+
+  BEGIN_GROUP "Foundation"
+    USER_INPUT_PARAM CB_PadWidth   LENGTH 1800 mm MIN 900 MAX 4000 LABEL "Pad width"
+    USER_INPUT_PARAM CB_PadHeight  LENGTH 250 mm  MIN 100 MAX 800  LABEL "Pad height"
+    USER_INPUT_PARAM CB_PierWidth  LENGTH 1000 mm MIN 500 MAX 2500 LABEL "Pier width"
+    USER_INPUT_PARAM CB_PierHeight LENGTH 600 mm  MIN 200 MAX 1500 LABEL "Pier height"
+  END_GROUP
+
+  ! --- Validation rules ---
+  ASSERT CB_PierWidth <= CB_PadWidth - 200 mm "Pier width must be at least 200 mm smaller than the pad width."
+  ASSERT CB_StandWidth <= CB_PierWidth - 100 mm "Stand width must be at least 100 mm smaller than the pier width."
+  ASSERT 1.2 * CB_ColumnDiameter <= CB_StandWidth \
+    "The column base ring (1.2 x the column diameter) must fit on the stand: reduce the column diameter or widen the stand."
+  ASSERT 4 * CB_LegSize <= CB_StandWidth "Leg size must be at most a quarter of the stand width."
+  ASSERT CB_CabDepth <= CB_StandWidth "Cabinet depth must not exceed the stand width."
+  ASSERT CB_CabHeight <= 0.7 * CB_StandHeight \
+    "Cabinet height must be at most 70 % of the stand height (it is fixed from 30 % of the stand height upward)."
+
+END_FORM
+
+BEGIN_BUILD
+
+  DECLARE_VARIABLE LENGTH pierTop
+  DECLARE_VARIABLE LENGTH standTop
+  DECLARE_VARIABLE LENGTH lowerTop
+  DECLARE_VARIABLE LENGTH collarTop
+  DECLARE_VARIABLE LENGTH legOff
+  DECLARE_VARIABLE LENGTH braceZ
+  DECLARE_VARIABLE INTEGER index
+  DECLARE_REFERENCE body
+
+  pierTop = CB_PadHeight + CB_PierHeight
+  standTop = pierTop + CB_StandHeight
+  lowerTop = standTop + 150 mm + CB_LowerLength
+  collarTop = lowerTop + CB_CollarHeight
+  legOff = (CB_StandWidth - CB_LegSize) / 2
+
+  PROCESSING_BOX_START "Building the circuit breaker"
+
+  ! --- Foundation: a wide pad and a pier on it (the pier sinks 30 mm into the pad so the two blocks join) ---
+  PROCESSING_BOX_SET_STATE "Foundation" 10
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "SizeX"  CB_PadWidth
+    FEATURE_IN "SizeD"  CB_PadWidth
+    FEATURE_IN "Height" CB_PadHeight
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "CB_Pad"
+  SET_REF_ATTR body "ROLE" "FOUNDATION_PAD"
+  SET_APPEARANCE body "Grey"
+
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "Elevation" CB_PadHeight - 30 mm
+    FEATURE_IN "SizeX"     CB_PierWidth
+    FEATURE_IN "SizeD"     CB_PierWidth
+    FEATURE_IN "Height"    CB_PierHeight + 30 mm
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "CB_Pier"
+  SET_REF_ATTR body "ROLE" "FOUNDATION_PIER"
+  SET_APPEARANCE body "Grey"
+
+  ! --- Support stand: four legs, a top plate and horizontal braces on the four sides ---
+  PROCESSING_BOX_SET_STATE "Support stand" 30
+  index = 0
+  FOR lx FROM 0 TO 1
+    FOR ld FROM 0 TO 1
+      CREATE_FEATURE builder:Block
+        FEATURE_IN "CenterX"   (2 * lx - 1) * legOff
+        FEATURE_IN "CenterD"   (2 * ld - 1) * legOff
+        FEATURE_IN "Elevation" pierTop - 30 mm
+        FEATURE_IN "SizeX"     CB_LegSize
+        FEATURE_IN "SizeD"     CB_LegSize
+        FEATURE_IN "Height"    CB_StandHeight + 30 mm
+        FEATURE_OUT body "Body"
+      END_CREATE_FEATURE
+      index++
+      SET_REF_NAME body "CB_Leg_" + STR(index)
+      SET_REF_ATTR body "ROLE" "STAND_LEG"
+      SET_APPEARANCE body "Silver"
+    END_FOR
+  END_FOR
+
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "Elevation" standTop - 40 mm
+    FEATURE_IN "SizeX"     CB_StandWidth
+    FEATURE_IN "SizeD"     CB_StandWidth
+    FEATURE_IN "Height"    40 mm
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "CB_StandPlate"
+  SET_REF_ATTR body "ROLE" "STAND_PLATE"
+  SET_APPEARANCE body "Silver"
+
+  index = 0
+  FOR k FROM 1 TO CB_BraceCount
+    braceZ = pierTop + k * CB_StandHeight / (CB_BraceCount + 1)
+    FOR sd FROM 0 TO 1
+      ! A rung along X (at D = +-legOff) and a rung along D (at X = +-legOff)
+      CREATE_FEATURE builder:Block
+        FEATURE_IN "CenterD"   (2 * sd - 1) * legOff
+        FEATURE_IN "Elevation" braceZ - 20 mm
+        FEATURE_IN "SizeX"     CB_StandWidth - 20 mm
+        FEATURE_IN "SizeD"     40 mm
+        FEATURE_IN "Height"    40 mm
+        FEATURE_OUT body "Body"
+      END_CREATE_FEATURE
+      index++
+      SET_REF_NAME body "CB_Brace_" + STR(index)
+      SET_REF_ATTR body "ROLE" "STAND_BRACE"
+      SET_APPEARANCE body "Silver"
+
+      CREATE_FEATURE builder:Block
+        FEATURE_IN "CenterX"   (2 * sd - 1) * legOff
+        FEATURE_IN "Elevation" braceZ - 20 mm
+        FEATURE_IN "SizeX"     40 mm
+        FEATURE_IN "SizeD"     CB_StandWidth - 20 mm
+        FEATURE_IN "Height"    40 mm
+        FEATURE_OUT body "Body"
+      END_CREATE_FEATURE
+      index++
+      SET_REF_NAME body "CB_Brace_" + STR(index)
+      SET_REF_ATTR body "ROLE" "STAND_BRACE"
+      SET_APPEARANCE body "Silver"
+    END_FOR
+  END_FOR
+
+  ! --- Control cabinet fixed to the -X side of the stand (it sinks 30 mm into the stand) ---
+  PROCESSING_BOX_SET_STATE "Control cabinet" 50
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "CenterX"      -(CB_StandWidth / 2 + CB_CabWidth / 2 - 30 mm)
+    FEATURE_IN "Elevation"    pierTop + 0.3 * CB_StandHeight
+    FEATURE_IN "SizeX"        CB_CabWidth
+    FEATURE_IN "SizeD"        CB_CabDepth
+    FEATURE_IN "Height"       CB_CabHeight
+    FEATURE_IN "CornerRadius" 10 mm
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "CB_Cabinet"
+  SET_REF_ATTR body "ROLE" "CABINET"
+  SET_APPEARANCE body "LightGrey"
+
+  ! --- Lower interrupter column: a metal base ring (150 mm above the stand plate, sunk 30 mm into it) and ribbed black sheds ---
+  PROCESSING_BOX_SET_STATE "Lower column" 65
+  CREATE_FEATURE builder:Bushing
+    FEATURE_IN "Elevation"      standTop - 30 mm
+    FEATURE_IN "Diameter"       CB_ColumnDiameter
+    FEATURE_IN "Length"         CB_LowerLength
+    FEATURE_IN "TurretHeight"   150 mm + 30 mm
+    FEATURE_IN "TurretDiameter" 1.2 * CB_ColumnDiameter
+    FEATURE_IN "ShedCount"      CB_ShedCount
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "CB_LowerColumn"
+  SET_REF_ATTR body "ROLE" "INSULATOR_LOWER"
+  SET_APPEARANCE body "Black"
+
+  ! --- Collar (grading ring) between the two columns ---
+  PROCESSING_BOX_SET_STATE "Collar" 78
+  CREATE_FEATURE builder:Cylinder
+    FEATURE_IN "Axis"      "H"
+    FEATURE_IN "Elevation" lowerTop - 30 mm
+    FEATURE_IN "Diameter"  1.35 * CB_ColumnDiameter
+    FEATURE_IN "Length"    CB_CollarHeight + 30 mm
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "CB_Collar"
+  SET_REF_ATTR body "ROLE" "COLLAR"
+  SET_APPEARANCE body "Silver"
+
+  ! --- Upper interrupter column with a cap on top ---
+  PROCESSING_BOX_SET_STATE "Upper column" 90
+  CREATE_FEATURE builder:Bushing
+    FEATURE_IN "Elevation"      collarTop - 30 mm
+    FEATURE_IN "Diameter"       CB_ColumnDiameter
+    FEATURE_IN "Length"         CB_UpperLength
+    FEATURE_IN "TurretHeight"   60 mm
+    FEATURE_IN "TurretDiameter" 1.1 * CB_ColumnDiameter
+    FEATURE_IN "ShedCount"      CB_ShedCount
+    FEATURE_IN "CapHeight"      80 mm
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "CB_UpperColumn"
+  SET_REF_ATTR body "ROLE" "INSULATOR_UPPER"
+  SET_APPEARANCE body "Black"
+
+  PROCESSING_BOX_SET_STATE "Updating the model" 96
+  REGEN_MDL
+  PRINT "Circuit breaker built."
+  PROCESSING_BOX_END
+
+END_BUILD

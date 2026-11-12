@@ -14,20 +14,20 @@ export default function App() {
   useEffect(() => { try { localStorage.setItem('plm.dark', dark ? '1' : '0'); } catch { /* ignore */ } }, [dark]);
 
   const [tree, setTree] = useState([]);
+  const [rev, setRev] = useState(0);   // bumped when the sidebar renames a folder, so the open listing reloads
   const reloadTree = useCallback(() => { api('/api/vault/tree').then((t) => setTree(t.folders)).catch(() => {}); }, []);
   useEffect(() => { reloadTree(); }, [reloadTree]);
 
   const parts = hash.replace(/^#\/?/, '').split('/');
   const route = parts[0] || 'files';
   const page = route === 'item' ? <Item id={parts[1]} user={user} key={parts[1]} />
-    : <Files folderId={parts[1] || null} user={user} reloadTree={reloadTree} key={parts[1] || 'root'} />;
+    : <Files folderId={parts[1] || null} user={user} reloadTree={reloadTree} rev={rev} key={parts[1] || 'root'} />;
 
   return (
     <Theme accentColor="blue" grayColor="slate" radius="small" appearance={dark ? 'dark' : 'light'}>
       <div className="shell">
         <header className="topbar">
-          <div className="brand"><div className="brand-mark">Cf</div> Docs</div>
-          <div className="project">Cadflow vault</div>
+          <div className="brand"><div className="brand-mark">SV</div> Smart Vault</div>
           <div className="spacer" />
           <a href={MAIN_APP} style={{ fontSize: 13 }}>Orders &amp; jobs</a>
           <a onClick={() => setDark(!dark)} style={{ fontSize: 13, cursor: 'pointer' }}>{dark ? 'Light' : 'Dark'}</a>
@@ -36,7 +36,10 @@ export default function App() {
         <div className={`body ${collapsed ? 'collapsed' : ''}`}>
           <nav className="side">
             <a className="active" onClick={() => go('#/files')} style={{ cursor: 'pointer' }}><FileIcon /> <span>Files</span></a>
-            {!collapsed && <Tree folders={tree} current={route === 'files' ? parts[1] || null : null} onSelect={(id) => go(id ? `#/files/${id}` : '#/files')} />}
+            {!collapsed && <Tree folders={tree} current={route === 'files' ? parts[1] || null : null} user={user}
+              onSelect={(id) => go(id ? `#/files/${id}` : '#/files')}
+              onCreated={(f) => { reloadTree(); go(`#/files/${f.id}`); }}
+              onRenamed={() => { reloadTree(); setRev((r) => r + 1); }} />}
             <div className="foot"><a onClick={() => setCollapsed(!collapsed)} style={{ cursor: 'pointer', padding: 8 }}>{collapsed ? <DoubleArrowRightIcon /> : <DoubleArrowLeftIcon />}</a></div>
           </nav>
           <main className="main">{page}</main>

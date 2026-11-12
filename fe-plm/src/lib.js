@@ -43,6 +43,25 @@ export function useUser() {
 export const fileUrl = (itemId, version, download) =>
   `/api/vault/items/${itemId}/versions/${version}/file${download ? '?download=true' : ''}`;
 
+/** Parses CSV text (RFC 4180: quoted cells, doubled quotes, CRLF/LF, optional UTF-8 BOM) into an array of rows of strings. */
+export function parseCsv(text) {
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  const rows = []; let row = []; let cell = ''; let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else quoted = false; } else cell += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ',') { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(cell); cell = ''; rows.push(row); row = [];
+    } else cell += c;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter((r) => r.length > 1 || r[0] !== '');
+}
+
 /** Uploads one file as the body of a POST (a same-name file becomes a new version). */
 export async function uploadFile(url, file) {
   const res = await fetch(url, { method: 'POST', body: file });

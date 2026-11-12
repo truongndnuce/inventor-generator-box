@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <AssemblyName>InventorAddin.CircuitBreaker</AssemblyName>
+        <AddinClassId>6855250B-C6A3-4871-A9F7-C2EA814009B7</AddinClassId>
+        <AddinDisplayName>Cadflow Circuit Breaker</AddinDisplayName>
+        <AddinDescription>Build a high-voltage circuit breaker (foundation, lattice stand, control cabinet, two interrupter columns) from a .gea script.</AddinDescription>
+        <AddinFileName>InventorCircuitBreakerAddin.addin</AddinFileName>
+    </PropertyGroup>
+
+    <Import Project="..\..\Addin.targets" />
+
+</Project>

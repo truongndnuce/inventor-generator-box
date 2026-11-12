@@ -358,10 +358,52 @@ The following names are **reserved** so that adding them later does not clash wi
 | Priority | Statement |
 |---------|------|
 | P1 | `CHOICE_PARAM`, `MESSAGE_BOX`, `MESSAGE_BOX_EX`, `SET_OUTPUT`, `JSON_LOAD_DOCUMENT`, `JSON_GET_VALUE`, `JSON_SET_VALUE`, `TABLE_*`, `ADD_ARRAY_ELEM`, `GET_ARRAY_ELEM`, `GET_ARRAY_SIZE`, `CLEAR_ARRAY`, `SET_MAP_VALUE`, `GET_MAP_VALUE`, `HAS_MAP_KEY` |
-| P2 | `ADD_COMPONENT`, `BEGIN_ASSEMBLE`/`END_ASSEMBLE` with `MATE`, `FLUSH`, `INSERT`, `ANGLE_CONSTRAINT`; `EXPORT_STEP`, `EXPORT_IMAGE`, `EXPORT_PDF`; `DRW_NEW`, `DRW_ADD_VIEW`, `DRW_ADD_SECTION`, `DRW_ADD_BALLOONS`, `DRW_ADD_PARTSLIST`, `DRW_ADD_NOTE`; `DECLARE_STRUCT`, `START_STOPWATCH`, `GET_STOPWATCH_TIME`; `FILE_OPEN`, `FILE_READ_LINE`, `FILE_WRITE_LINE`, `FILE_CLOSE` (only inside the job folder) |
+| P2 | `BEGIN_ASSEMBLE`/`END_ASSEMBLE` with `MATE`, `FLUSH`, `INSERT`, `ANGLE_CONSTRAINT`; `EXPORT_STEP`, `EXPORT_IMAGE`, `EXPORT_PDF`; `DRW_NEW`, `DRW_ADD_VIEW`, `DRW_ADD_SECTION`, `DRW_ADD_BALLOONS`, `DRW_ADD_PARTSLIST`, `DRW_ADD_NOTE`; `DECLARE_STRUCT`, `START_STOPWATCH`, `GET_STOPWATCH_TIME`; `FILE_OPEN`, `FILE_READ_LINE`, `FILE_WRITE_LINE`, `FILE_CLOSE` (only inside the job folder) |
 | P3 | `USER_SELECT`, `USER_SELECT_MULTIPLE` (add-in only), `GET_SURFACE_NORM`, `MEASURE_DISTANCE`, `GET_SURFACE_CONTOUR`, `GET_REF_VERTEX`, `GET_REF_POS`, `VECTOR_NORMALIZE`, `VECTOR_FROM_POINTS`, `FIX_FAIL_FEATURE` |
 
 Statements that **run external programs** (such as `.exe`, PowerShell) are **not in** the v1 language and are banned by default.
+
+### 11.1 `ADD_COMPONENT` (TARGET ASSEMBLY)
+
+`ADD_COMPONENT` was moved out of the reserved list. It is the first statement of the assembly direction (`docs/component-reuse-roadmap.md`, direction C). It places a part **by position**; positioning by mates (`MATE`, `FLUSH`, `INSERT`) and the `BEGIN_ASSEMBLE` block stay reserved.
+
+```
+ADD_COMPONENT <ref> FROM <part name> [AT x, y, z] [ROT rx, ry, rz]
+```
+
+| Part | Meaning |
+|------|---------|
+| `<ref>` | A variable declared with `DECLARE_REFERENCE`; it receives a reference to the occurrence, so `SET_REF_NAME`, `SET_REF_ATTR`, `SET_APPEARANCE` work on it. |
+| `FROM <part name>` | A STRING expression naming the part to insert. It must not be empty (run-time error GEA4012). In the Inventor worker the name is a product that ships with the add-in: `box`, `transformer`, `gas-turbine`, `generator`; any other name is GEA4021. The worker builds that part once per job with the default values of its form, saves it as `<name>.ipt` in the job folder and inserts it. |
+| `AT x, y, z` | Three LENGTH expressions (a unit is required unless the value is 0). Default: the origin. |
+| `ROT rx, ry, rz` | Three ANGLE expressions, in degrees about X, Y, Z. Default: no rotation. |
+
+Rules:
+- Only in BUILD, and only when `TARGET ASSEMBLY`; in a PART file it is error GEA2020. `CREATE_FEATURE` builders are all `TARGET PART`, so they cannot be used in an assembly file (GEA2013).
+- `AT` and `ROT` can each be given once, in either order. `AT` and `ROT` are now keywords.
+- A host that builds a part (the Part host of the add-in) throws GEA4020 ("ADD_COMPONENT needs an assembly").
+- Simulation Host: each call adds an object named `Comp<N>` with builder `component:<part name>` and inputs `Part, X, Y, Z, Rx, Ry, Rz`, and a trace line `ADD_COMPONENT "<part>" AT ... ROT ...`.
+- Inventor Host (`InventorAssemblyHost`, used by the web worker for an imported script with `TARGET ASSEMBLY`): `Occurrences.Add(<.ipt>, matrix)`. The rotation is about X, then Y, then Z (degrees, about the assembly origin), then the translation. `SET_REF_NAME` renames the occurrence, `SET_REF_ATTR`/`GET_REF_ATTR` use the occurrence's attributes. Not supported in an assembly (GEA4020): `CREATE_FEATURE`, `SET_PARAM_EXPR`, `SET_APPEARANCE`. FORM parameters are kept in memory.
+- Job outputs: the `.iam`, the part `.ipt` files it refers to, STEP, pictures, and a BOM with one line per distinct part and its quantity. No 2D drawing yet.
+
+Example (three posts, `YD_Gap` apart):
+
+```
+GEA_VERSION 1
+PRODUCT_NAME "Yard"
+PARAM_PREFIX YD_
+TARGET ASSEMBLY
+BEGIN_FORM
+  USER_INPUT_PARAM YD_Gap LENGTH 500 mm MIN 100 mm
+END_FORM
+BEGIN_BUILD
+  DECLARE_REFERENCE c
+  FOR i FROM 0 TO 2
+    ADD_COMPONENT c FROM "post" AT i * YD_Gap, 0, 0 ROT 0, 0, 0
+    SET_REF_NAME c "Post*"
+  END_FOR
+END_BUILD
+```
 
 ---
 

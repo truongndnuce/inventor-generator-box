@@ -62,9 +62,6 @@ public sealed class GeaChecker
 
     private void Run()
     {
-        if (_p.Target == "ASSEMBLY")
-            Warn("GEA2020", 1, 1, "TARGET ASSEMBLY is not supported by the Inventor Host in this version yet; it can only be dry-run.");
-
         _block = GeaBlockKind.Form;
         Stmts(_p.Form);
 
@@ -222,6 +219,18 @@ public sealed class GeaChecker
             case CreateFeatureStmt cf:
                 CreateFeature(cf);
                 break;
+            case AddComponentStmt ac:
+            {
+                if (_p.Target != "ASSEMBLY")
+                    Error("GEA2020", ac.Line, ac.Col, $"ADD_COMPONENT can only be used when TARGET is ASSEMBLY (the file has TARGET {_p.Target}).");
+                ExpectType(GeaType.String, ac.Part, "Part name");
+                if (ac.At != null) foreach (var e in ac.At) ExpectAssignable(GeaType.Length, e, "AT (a length)");
+                if (ac.Rot != null) foreach (var e in ac.Rot) ExpectAssignable(GeaType.Angle, e, "ROT (an angle)");
+                var sym = Writable(ac.Var, ac.Line, ac.Col);
+                if (sym != null && sym.Type != GeaType.Reference)
+                    Error("GEA2002", ac.Line, ac.Col, $"ADD_COMPONENT needs a reference variable ({ac.Var} is {Name(sym.Type)}); declare it with DECLARE_REFERENCE.");
+                break;
+            }
             case SetRefNameStmt rn:
                 RefArg(rn.Ref, rn.Line, rn.Col);
                 ExpectType(GeaType.String, rn.Name, "Name");

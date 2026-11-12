@@ -49,10 +49,10 @@ public sealed class VaultTests : IDisposable
     }
 
     [Fact]
-    public void Job_folder_has_image_drawing_model_and_is_reused()
+    public void Job_folder_has_image_drawing_model_bom_and_is_reused()
     {
         var (job, sub) = _vault.EnsureJobFolder("AJ-1", "box-AJ-1", "me");
-        Assert.Equal(["image", "drawing", "model"], VaultStore.JobSubfolders);
+        Assert.Equal(["image", "drawing", "model", "bom"], VaultStore.JobSubfolders);
         Assert.Equal(VaultStore.JobSubfolders.OrderBy(x => x), sub.Keys.OrderBy(x => x));
         Assert.All(sub.Values, f => Assert.Equal(job.Id, f.ParentId));
         var (job2, sub2) = _vault.EnsureJobFolder("AJ-1", "box-AJ-1", "me");
@@ -179,6 +179,92 @@ public sealed class VaultTests : IDisposable
         Assert.Equal(2, _vault.Items(sub["drawing"].Id).Count);      // pdf + dwg
         Assert.Equal(2, _vault.Items(sub["model"].Id).Count);        // ipt + stp
         Assert.Equal($"transformer-{job.Id}", folder.Name);
+    }
+
+    [Theory]
+    [InlineData("AJ-1_bom.csv", "bom")] [InlineData("AJ-1_BOM.CSV", "bom")] [InlineData("data.csv", "other")]
+    [InlineData("a.ipt", "model")] [InlineData("a.stp", "model")] [InlineData("a.pdf", "drawing")] [InlineData("a_front.png", "image")]
+    public void KindOf_recognises_the_job_bom_but_not_any_csv(string name, string kind) => Assert.Equal(kind, VaultStore.KindOf(name));
+
+    // ---------------------------------------------------------------- rename
+
+    private string DiskFile(VaultItem item, int version) => Path.Combine(_db.DataDir, "vault", item.Id, "v" + version, item.Name);
+
+    [Fact]
+    public void Renaming_a_file_moves_every_version_and_keeps_number_state_and_version()
+    {
+        var f = _vault.CreateFolder(null, "p", "me");
+        var item = Add(f.Id, "old.ipt", "v1").Item;
+        Add(f.Id, "old.ipt", "v2");
+        var before = _vault.Item(item.Id)!;
+
+        var renamed = _vault.RenameItem(item.Id, "new.ipt", "bob", (from, to) => _files.RenameOnDisk(item.Id, from, to));
+
+        Assert.Equal("new.ipt", renamed.Name);
+        Assert.Equal((before.Number, before.Version, before.State, before.Kind), (renamed.Number, renamed.Version, renamed.State, renamed.Kind));
+        Assert.Equal("bob", renamed.ModifiedBy);
+        Assert.Equal("v1", File.ReadAllText(DiskFile(renamed, 1)));
+        Assert.Equal("v2", File.ReadAllText(DiskFile(renamed, 2)));
+        Assert.False(File.Exists(Path.Combine(_db.DataDir, "vault", item.Id, "v1", "old.ipt")));
+        Add(f.Id, "new.ipt", "v3");                                                   // a new check-in still lands on the same item
+        Assert.Equal(3, _vault.Item(item.Id)!.Version);
+    }
+
+    [Fact]
+    public void Renaming_a_file_is_refused_for_a_taken_name_a_new_extension_or_an_unsafe_name_and_changes_nothing()
+    {
+        var f = _vault.CreateFolder(null, "p", "me");
+        var a = Add(f.Id, "a.ipt", "A").Item;
+        Add(f.Id, "b.ipt", "B");
+        void Move(string from, string to) => _files.RenameOnDisk(a.Id, from, to);
+
+        Assert.Equal(409, Assert.Throws<VaultException>(() => _vault.RenameItem(a.Id, "B.IPT", "me", Move)).Status);   // taken, ignoring case
+        Assert.Equal(400, Assert.Throws<VaultException>(() => _vault.RenameItem(a.Id, "a.stp", "me", Move)).Status);   // extension kept
+        Assert.Equal(400, Assert.Throws<VaultException>(() => _vault.RenameItem(a.Id, "x/y.ipt", "me", Move)).Status);
+        Assert.Equal(404, Assert.Throws<VaultException>(() => _vault.RenameItem("nope", "z.ipt", "me", Move)).Status);
+        Assert.Equal("a.ipt", _vault.Item(a.Id)!.Name);
+        Assert.Equal("A", File.ReadAllText(DiskFile(a, 1)));
+    }
+
+    [Fact]
+    public void A_failed_file_move_rolls_the_new_name_back()
+    {
+        var f = _vault.CreateFolder(null, "p", "me");
+        var a = Add(f.Id, "a.ipt", "A").Item;
+        Assert.Throws<IOException>(() => _vault.RenameItem(a.Id, "c.ipt", "me", (_, _) => throw new IOException("disk")));
+        Assert.Equal("a.ipt", _vault.Item(a.Id)!.Name);
+    }
+
+    [Fact]
+    public void Renaming_a_folder_keeps_its_content_and_fixed_job_folders_stay_fixed()
+    {
+        var f = _vault.CreateFolder(null, "old", "me");
+        var item = Add(f.Id, "x.ipt").Item;
+        Assert.Equal("new", _vault.RenameFolder(f.Id, "new").Name);
+        Assert.Equal(item.Id, Assert.Single(_vault.Items(f.Id)).Id);
+        var (_, sub) = _vault.EnsureJobFolder("AJ-9", "box-AJ-9", "me");
+        Assert.Equal(409, Assert.Throws<VaultException>(() => _vault.RenameFolder(sub["bom"].Id, "x")).Status);
+    }
+
+    [Fact]
+    public void JobSaver_puts_model_drawing_image_and_bom_files_in_their_folders_and_is_idempotent()
+    {
+        var job = FinishedJob();
+        var bom = job.Id + "_bom.csv";
+        File.WriteAllText(Path.Combine(_jobs.ArtifactDir(job.Id), bom), "part,qty\nbox,1\n");
+        // The job in the DB must list the BOM too: re-read after registering it (the job is already complete, so add it straight to the object).
+        job.Artifacts.Add(new ArtifactInfo { Name = bom, Kind = "bom", Size = 5 });
+
+        var saver = new VaultJobSaver(_vault, _files);
+        var first = saver.Save(job, "me");
+        Assert.Equal(7, first.Added);                          // ipt, stp, 2 png, pdf, dwg, bom
+        Assert.Equal(["notes.bin"], first.Skipped);            // unknown extension: no sub-folder for it
+        var (_, sub) = _vault.EnsureJobFolder(job.Id, $"{job.ProductCode}-{job.Id}", "me");
+        Assert.Equal(bom, Assert.Single(_vault.Items(sub["bom"].Id)).Name);
+        Assert.StartsWith("BOM-", _vault.Items(sub["bom"].Id)[0].Number);
+
+        var second = saver.Save(job, "me");
+        Assert.Equal((0, 0, 7), (second.Added, second.NewVersions, second.Unchanged));
     }
 
     [Fact]

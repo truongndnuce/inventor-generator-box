@@ -111,7 +111,7 @@ public sealed class CadTools(JobStore store, ConfigStore configs, JobService job
     [McpServerTool(Name = "create_job"),
      Description("Create (enqueue) a job immediately. Validate first with validate_job and confirm with the user before calling. Provide productCode, or scriptId for an imported .gea script.")]
     public string CreateJob(
-        [Description("Product code, e.g. 'box', 'transformer', 'gas-turbine', 'generator'")] string? productCode = null,
+        [Description("Product code, e.g. 'box', 'transformer', 'gas-turbine', 'generator', 'circuit-breaker', 'disconnector'")] string? productCode = null,
         [Description("Parameter name -> number (mm / degrees / count)")] Dictionary<string, double>? values = null,
         [Description("Optional active configuration id")] string? configId = null,
         [Description("Script id from import_gea (instead of productCode)")] string? scriptId = null,

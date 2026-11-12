@@ -185,6 +185,25 @@ public class JobStoreTests
     }
 
     [Fact]
+    public void A_bom_csv_is_kept_with_the_other_artifacts_of_a_finished_job()
+    {
+        using var db = new TestDb();
+        var s = db.NewStore();
+        var id = NewJob(s).Id;
+        s.Claim("w1");
+
+        Assert.True(s.AddArtifact(id, "w1", new ArtifactInfo { Name = id + ".ipt", Kind = "ipt", Size = 10 }));
+        Assert.True(s.AddArtifact(id, "w1", new ArtifactInfo { Name = id + "_bom.csv", Kind = "bom", Size = 120 }));
+        s.Complete(id, "w1", null);
+
+        var job = s.Get(id)!;
+        Assert.Equal(JobStatus.Succeeded, job.Status);
+        var bom = Assert.Single(job.Artifacts, a => a.Kind == "bom");
+        Assert.Equal(id + "_bom.csv", bom.Name);
+        Assert.Equal(2, job.Artifacts.Count);
+    }
+
+    [Fact]
     public void Artifacts_are_upserted_and_purged_by_retention()
     {
         using var db = new TestDb();

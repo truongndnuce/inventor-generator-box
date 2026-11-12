@@ -25,12 +25,14 @@ public sealed class CadToolsTests : IDisposable
     private static JsonElement Parse(string json) => JsonDocument.Parse(json).RootElement;
 
     [Fact]
-    public void ListProducts_has_the_four_built_in_products()
+    public void ListProducts_has_the_six_built_in_products()
     {
         var codes = Parse(_tools.ListProducts()).EnumerateArray().Select(p => p.GetProperty("code").GetString()).ToList();
         Assert.Contains("box", codes);
         Assert.Contains("gas-turbine", codes);
-        Assert.Equal(4, codes.Count);
+        Assert.Contains("circuit-breaker", codes);
+        Assert.Contains("disconnector", codes);
+        Assert.Equal(6, codes.Count);
     }
 
     [Fact]

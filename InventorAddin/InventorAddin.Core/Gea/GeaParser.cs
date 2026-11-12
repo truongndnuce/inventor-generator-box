@@ -20,7 +20,7 @@ public sealed class GeaParser
         "INCLUDE", "CHOICE_PARAM", "MESSAGE_BOX", "MESSAGE_BOX_EX", "SET_OUTPUT", "JSON_LOAD_DOCUMENT", "JSON_GET_VALUE",
         "JSON_SET_VALUE", "ADD_ARRAY_ELEM", "GET_ARRAY_ELEM", "GET_ARRAY_SIZE", "CLEAR_ARRAY", "SET_MAP_VALUE",
         "GET_MAP_VALUE", "HAS_MAP_KEY", "DECLARE_ARRAY", "DECLARE_MAP", "REF_VALID", "SEARCH_MDL_REF", "SEARCH_MDL_REFS",
-        "INVALIDATE_REF", "COPY_REF", "REF_EQUAL", "ADD_COMPONENT", "BEGIN_ASSEMBLE", "END_ASSEMBLE", "MATE", "FLUSH", "INSERT",
+        "INVALIDATE_REF", "COPY_REF", "REF_EQUAL", "BEGIN_ASSEMBLE", "END_ASSEMBLE", "MATE", "FLUSH", "INSERT",
         "ANGLE_CONSTRAINT", "EXPORT_STEP", "EXPORT_IMAGE", "EXPORT_PDF", "DRW_NEW", "DRW_ADD_VIEW", "DRW_ADD_SECTION",
         "DRW_ADD_BALLOONS", "DRW_ADD_PARTSLIST", "DRW_ADD_NOTE", "DECLARE_STRUCT", "START_STOPWATCH", "GET_STOPWATCH_TIME",
         "FILE_OPEN", "FILE_READ_LINE", "FILE_WRITE_LINE", "FILE_CLOSE", "USER_SELECT", "USER_SELECT_MULTIPLE",
@@ -40,6 +40,7 @@ public sealed class GeaParser
         "CREATE_FEATURE", "END_CREATE_FEATURE", "FEATURE_IN", "FEATURE_OUT", "ON", "SET_REF_NAME", "GET_REF_NAME",
         "SET_REF_ATTR", "GET_REF_ATTR", "SET_APPEARANCE", "REGEN_MDL", "PROCESSING_BOX_START", "PROCESSING_BOX_SET_STATE",
         "PROCESSING_BOX_END", "BEGIN_CATCH_ERROR", "END_CATCH_ERROR", "CLEAR_CATCH_ERROR", "FAIL",
+        "ADD_COMPONENT", "AT", "ROT",
         "TRUE", "FALSE", "AND", "OR", "NOT", "ERROR", "ERROR_MESSAGE",
         "INTEGER", "DOUBLE", "BOOL", "STRING", "LENGTH", "ANGLE", "REFERENCE",
         "mm", "cm", "m", "in", "deg", "rad",
@@ -52,7 +53,7 @@ public sealed class GeaParser
     {
         "WHILE", "SET_PARAM", "SET_PARAM_EXPR", "GET_PARAM", "CREATE_FEATURE", "SET_REF_NAME", "GET_REF_NAME", "SET_REF_ATTR",
         "GET_REF_ATTR", "SET_APPEARANCE", "REGEN_MDL", "PROCESSING_BOX_START", "PROCESSING_BOX_SET_STATE", "PROCESSING_BOX_END",
-        "BEGIN_CATCH_ERROR", "CLEAR_CATCH_ERROR", "FAIL",
+        "BEGIN_CATCH_ERROR", "CLEAR_CATCH_ERROR", "FAIL", "ADD_COMPONENT",
     };
 
     private readonly List<GeaLine> _lines;
@@ -363,6 +364,26 @@ public sealed class GeaParser
                 var body = ParseBlock(block, kw, "END_WHILE", out _);
                 return new WhileStmt(L, C, cond, body);
             }
+            case "ADD_COMPONENT":
+            {
+                // ADD_COMPONENT <ref> FROM <part name> [AT x, y, z] [ROT rx, ry, rz]   (TARGET ASSEMBLY)
+                var v = ExpectName();
+                ExpectWord("FROM");
+                var part = ParseExpr();
+                IReadOnlyList<GeaExpr>? at = null, rot = null;
+                while (!AtEnd)
+                {
+                    var opt = Expect(TokKind.Word, "AT or ROT");
+                    switch (opt.Text)
+                    {
+                        case "AT" when at == null: at = ParseTriple(); break;
+                        case "ROT" when rot == null: rot = ParseTriple(); break;
+                        case "AT" or "ROT": throw Error("GEA1003", opt, $"{opt.Text} is given twice.");
+                        default: throw Error("GEA1003", opt, $"Invalid option: '{opt.Text}'. Syntax: ADD_COMPONENT <ref> FROM <part> [AT x, y, z] [ROT rx, ry, rz].");
+                    }
+                }
+                return new AddComponentStmt(L, C, v.Text, part, at, rot);
+            }
             case "BREAK": EndOfLine(); return new BreakStmt(L, C);
             case "CONTINUE": EndOfLine(); return new ContinueStmt(L, C);
             case "RETURN": EndOfLine(); return new ReturnStmt(L, C);
@@ -620,6 +641,17 @@ public sealed class GeaParser
                 default: throw Error("GEA1003", opt, $"Invalid option: '{opt.Text}'.");
             }
         }
+    }
+
+    /// <summary>Three expressions separated by commas (a position or a rotation).</summary>
+    private IReadOnlyList<GeaExpr> ParseTriple()
+    {
+        var a = ParseExpr();
+        ExpectSymbol(",");
+        var b = ParseExpr();
+        ExpectSymbol(",");
+        var c = ParseExpr();
+        return new[] { a, b, c };
     }
 
     private GeaStmt ParseCreateFeature(GeaToken kw)

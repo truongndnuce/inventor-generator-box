@@ -4,6 +4,7 @@ import { API, api, fmtDate, fmtSize, fmtTime, go, postJson, productLabel, reorde
 import { ExportGeaLink, KindBadge, OrderAgainButton, StatusBadge, queueNote } from '../components.jsx';
 
 const VIEW_LABELS = { front: 'Front', top: 'Top', right: 'Right' };
+const ARTIFACT_LABELS = { ipt: 'Inventor part', iam: 'Inventor assembly', step: 'STEP', pdf: 'PDF drawing', dwg: 'DWG drawing', bom: 'BOM (CSV)' };
 /** View name from the file name: <id>_front.png -> Front; <id>.png (no suffix) is the iso view. */
 const viewLabel = (name) => VIEW_LABELS[(name.match(/_([a-z]+)\.png$/) || [])[1]] || 'Isometric';
 
@@ -90,12 +91,12 @@ export default function Job({ id, onNav }) {
     } catch (e) { setRebuildError(e.message); }
   };
 
-  // Save to PLM: copies the result files into the document vault (folder <product>-<job id> with image/drawing/model), where retention does not reach.
+  // Save to Smart Vault: copies the result files into the document vault (folder <product>-<job id> with image/drawing/model/bom), where retention does not reach.
   const saveToVault = async () => {
     setVaultMsg(null);
     try {
       const r = await postJson(`/api/vault/from-job/${encodeURIComponent(job.id)}`, { requestedBy: localStorage.getItem('cadflow.user') || '' });
-      setVaultMsg({ ok: true, folderId: r.folder.id, text: r.added + r.newVersions === 0 ? 'Already saved to PLM.' : `Saved to PLM: ${r.added} new file(s), ${r.newVersions} new version(s).` });
+      setVaultMsg({ ok: true, folderId: r.folder.id, text: r.added + r.newVersions === 0 ? 'Already saved to Smart Vault.' : `Saved to Smart Vault:${r.added} new file(s), ${r.newVersions} new version(s).` });
     } catch (e) { setVaultMsg({ ok: false, text: e.message }); }
   };
 
@@ -154,15 +155,16 @@ export default function Job({ id, onNav }) {
           <Heading size="4" mb="3">Result</Heading>
           <Gallery images={job.artifacts.filter((a) => a.kind === 'image')} url={url} />
           <Flex gap="2" wrap="wrap">
-            {job.artifacts.map((a) => (
-              <Button key={a.name} asChild variant="outline" size="2"><a href={dl(a)} download={a.name}>{`${a.name} (${fmtSize(a.size)})`}</a></Button>
+            {/* No file names here: a short label per kind. The pictures are already in the gallery above. */}
+            {job.artifacts.filter((a) => a.kind !== 'image').map((a) => (
+              <Button key={a.name} asChild variant="outline" size="2"><a href={dl(a)} download={a.name}>{`${ARTIFACT_LABELS[a.kind] || a.kind} (${fmtSize(a.size)})`}</a></Button>
             ))}
           </Flex>
           {job.kind !== 'preview' && (
             <Flex gap="3" align="center" mt="3" wrap="wrap">
-              <Button variant="soft" onClick={saveToVault}>Save to PLM</Button>
+              <Button variant="soft" onClick={saveToVault}>Save to Smart Vault</Button>
               {vaultMsg && <Text size="2" color={vaultMsg.ok ? 'green' : 'red'}>{vaultMsg.text}</Text>}
-              {vaultMsg?.ok && <Link href={`/plm/#/files/${vaultMsg.folderId}`}>Open in PLM</Link>}
+              {vaultMsg?.ok && <Link href={`/plm/#/files/${vaultMsg.folderId}`}>Open in Smart Vault</Link>}
             </Flex>
           )}
         </Card>

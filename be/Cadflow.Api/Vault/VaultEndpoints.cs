@@ -4,6 +4,7 @@ namespace Cadflow.Api.Vault;
 
 public sealed record CreateFolderRequest(string? ParentId, string? Name, string? CreatedBy);
 public sealed record RenameFolderRequest(string? Name);
+public sealed record RenameItemRequest(string? Name, string? ModifiedBy);
 public sealed record StateRequest(string? State, string? ModifiedBy);
 public sealed record FromJobRequest(string? RequestedBy);
 
@@ -17,6 +18,7 @@ public static class VaultEndpoints
         var vault = app.Services.GetRequiredService<VaultStore>();
         var files = app.Services.GetRequiredService<VaultFiles>();
         var jobs = app.Services.GetRequiredService<JobStore>();
+        var saver = app.Services.GetRequiredService<VaultJobSaver>();
         var g = app.MapGroup("/api/vault").AddEndpointFilter(async (ctx, next) =>
         {
             try { return await next(ctx); }
@@ -87,6 +89,9 @@ public static class VaultEndpoints
         g.MapGet("/items/{id}/versions/{n:int}/file", (string id, int n, bool? download) =>
             vault.Version(id, n) is { } x ? files.Serve(x.Item, x.Version, download == true) : Results.NotFound());
 
+        g.MapPatch("/items/{id}", (string id, RenameItemRequest req) =>
+            Results.Ok(vault.RenameItem(id, req.Name ?? "", req.ModifiedBy, (from, to) => files.RenameOnDisk(id, from, to))));
+
         g.MapPatch("/items/{id}/state", (string id, StateRequest req) => Results.Ok(vault.SetState(id, req.State ?? "", req.ModifiedBy)));
 
         g.MapDelete("/items/{id}", (string id) =>
@@ -107,18 +112,8 @@ public static class VaultEndpoints
             if (job.ArtifactsPurgedAt != null)
                 return Results.Json(new { error = "The result files of this job were deleted by retention. Rebuild the job first." }, statusCode: 410);
 
-            var (folder, sub) = vault.EnsureJobFolder(job.Id, $"{job.ProductCode}-{job.Id}", req?.RequestedBy ?? job.RequestedBy);
-            int added = 0, versions = 0, unchanged = 0;
-            var skipped = new List<string>();
-            foreach (var a in job.Artifacts)
-            {
-                var kind = VaultStore.KindOf(a.Name);
-                if (!sub.TryGetValue(kind, out var target)) { skipped.Add(a.Name); continue; }
-                var r = vault.Put(target.Id, a.Name, req?.RequestedBy ?? job.RequestedBy, $"From job {job.Id}", VaultFiles.ContentTypeFor(a.Name), job.Id,
-                    (itemId, v) => files.CopyFromJob(job, a, itemId, v));
-                if (r.Unchanged) unchanged++; else if (r.Created) added++; else versions++;
-            }
-            return Results.Ok(new { folder, added, newVersions = versions, unchanged, skipped });
+            var r = saver.Save(job, req?.RequestedBy);
+            return Results.Ok(new { r.Folder, r.Added, NewVersions = r.NewVersions, r.Unchanged, r.Skipped });
         });
     }
 

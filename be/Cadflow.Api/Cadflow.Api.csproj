@@ -25,6 +25,10 @@
         <Compile Include="..\..\InventorAddin\InventorAddin.Core\Models\TransformerParams.cs" Link="Shared\TransformerParams.cs" />
         <Compile Include="..\..\InventorAddin\InventorAddin.Core\Models\TurbineParams.cs" Link="Shared\TurbineParams.cs" />
         <Compile Include="..\..\InventorAddin\InventorAddin.Core\Models\GeneratorParams.cs" Link="Shared\GeneratorParams.cs" />
+        <Compile Include="..\..\InventorAddin\InventorAddin.Core\Models\CircuitBreakerParams.cs" Link="Shared\CircuitBreakerParams.cs" />
+        <Compile Include="..\..\InventorAddin\InventorAddin.Core\Models\DisconnectorParams.cs" Link="Shared\DisconnectorParams.cs" />
+        <!-- The BOM CSV writer of the worker (plain System code): linked so the server tests can check it without Inventor. -->
+        <Compile Include="..\..\InventorAddin\InventorAddin.Core\Models\BomWriter.cs" Link="Shared\BomWriter.cs" />
         <!-- The .gea interpreter (no Inventor dependency): the server compiles and computes the FORM of imported scripts itself. -->
         <Compile Include="..\..\InventorAddin\InventorAddin.Core\Gea\*.cs" Link="Shared\Gea\%(Filename)%(Extension)" />
     </ItemGroup>
@@ -35,6 +39,8 @@
         <Content Include="..\..\InventorAddin\InventorAddin.Core\Scripts\box.gea" Link="Scripts\box.gea" CopyToOutputDirectory="PreserveNewest" />
         <Content Include="..\..\InventorAddin\InventorAddin.Core\Scripts\turbine.gea" Link="Scripts\turbine.gea" CopyToOutputDirectory="PreserveNewest" />
         <Content Include="..\..\InventorAddin\InventorAddin.Core\Scripts\generator.gea" Link="Scripts\generator.gea" CopyToOutputDirectory="PreserveNewest" />
+        <Content Include="..\..\InventorAddin\InventorAddin.Core\Scripts\circuit-breaker.gea" Link="Scripts\circuit-breaker.gea" CopyToOutputDirectory="PreserveNewest" />
+        <Content Include="..\..\InventorAddin\InventorAddin.Core\Scripts\disconnector.gea" Link="Scripts\disconnector.gea" CopyToOutputDirectory="PreserveNewest" />
         <!-- Component libraries for INCLUDE lib:<name> (Scripts\lib\*.gea). -->
         <Content Include="..\..\InventorAddin\InventorAddin.Core\Scripts\lib\*.gea" Link="Scripts\lib\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
