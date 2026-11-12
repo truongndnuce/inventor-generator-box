@@ -89,6 +89,25 @@ public static class VaultEndpoints
         g.MapGet("/items/{id}/versions/{n:int}/file", (string id, int n, bool? download) =>
             vault.Version(id, n) is { } x ? files.Serve(x.Item, x.Version, download == true) : Results.NotFound());
 
+        // 3D viewing through Autodesk Platform Services (Model Derivative + Viewer). Status never starts a translation; POST does (once).
+        g.MapGet("/items/{id}/aps", async (string id, int? v, ApsClient aps, CancellationToken ct) =>
+        {
+            if (vault.Item(id) is not { } item) return Results.NotFound(new { error = "Item not found." });
+            return Results.Ok(await aps.StatusAsync(id, v ?? item.Version, item.Name, ct));
+        });
+
+        g.MapPost("/items/{id}/aps/translate", async (string id, int? v, ApsClient aps, CancellationToken ct) =>
+        {
+            if (vault.Item(id) is not { } item) return Results.NotFound(new { error = "Item not found." });
+            if (!VaultStore.IsForgeViewable(item.Name)) return Results.BadRequest(new { error = "Only model files and PDFs can be viewed with Autodesk Viewer." });
+            var n = v ?? item.Version;
+            if (vault.Version(id, n) is not { } x) return Results.NotFound(new { error = "Version not found." });
+            if (!aps.IsConfigured) return Results.Ok(await aps.StatusAsync(id, n, item.Name, ct));
+            var (path, temp) = await files.LocalCopyAsync(x.Item, x.Version, ct);
+            try { return Results.Ok(await aps.TranslateAsync(id, n, item.Name, path, ct)); }
+            finally { if (temp) TryDelete(path); }
+        });
+
         g.MapPatch("/items/{id}", (string id, RenameItemRequest req) =>
             Results.Ok(vault.RenameItem(id, req.Name ?? "", req.ModifiedBy, (from, to) => files.RenameOnDisk(id, from, to))));
 

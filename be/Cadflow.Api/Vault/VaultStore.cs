@@ -139,6 +139,10 @@ public sealed class VaultStore
     /// The kind of a file by its name: image, drawing, model, bom or other. It decides the item number prefix.
     /// Only the worker's bill of materials (<c>&lt;job&gt;_bom.csv</c>) is a "bom"; any other CSV stays "other".
     /// </summary>
+    /// <summary>Files the Autodesk Viewer can show: Inventor/CAD models and PDFs.</summary>
+    public static bool IsForgeViewable(string fileName) =>
+        KindOf(fileName) == "model" || fileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase);
+
     public static string KindOf(string fileName)
     {
         if (fileName.EndsWith("_bom.csv", StringComparison.OrdinalIgnoreCase)) return "bom";

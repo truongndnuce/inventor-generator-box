@@ -85,6 +85,23 @@ public sealed class VaultFiles(string dataDir, R2Store r2, JobStore jobs)
         return File.Exists(path) ? Results.File(path, v.ContentType, download ? item.Name : null) : Results.NotFound();
     }
 
+    /// <summary>A local path with the bytes of a version: the vault file itself, or a temp download from R2 (<c>Temp = true</c>: the caller deletes it).</summary>
+    public async Task<(string Path, bool Temp)> LocalCopyAsync(VaultItem item, VaultVersion v, CancellationToken ct)
+    {
+        if (v.R2Key != null && r2.IsConfigured)
+        {
+            var tmp = Path.Combine(Path.GetTempPath(), "sv-" + Guid.NewGuid().ToString("N") + Path.GetExtension(item.Name));
+            using var http = new HttpClient();
+            await using var src = await http.GetStreamAsync(r2.PresignGet(v.R2Key, item.Name, v.ContentType, false, DateTime.UtcNow), ct);
+            await using var dst = File.Create(tmp);
+            await src.CopyToAsync(dst, ct);
+            return (tmp, true);
+        }
+        var path = DiskPath(item.Id, v.Version, item.Name);
+        if (!File.Exists(path)) throw new VaultException(404, "The file is missing on the server.");
+        return (path, false);
+    }
+
     public void Delete(IEnumerable<VaultFileRef> refs)
     {
         foreach (var f in refs)

@@ -31,6 +31,9 @@ export function useHash() {
   }, []);
   return hash;
 }
+/** Files shown in the Autodesk Viewer (models and PDFs); keep in sync with VaultStore.IsForgeViewable. */
+export const forgeViewable = (i) => i.kind === 'model' || /\.pdf$/i.test(i.name);
+
 export const go = (h) => { location.hash = h; };
 
 /** The user name (no login yet): typed once, kept in this browser, sent as "by" with every change. */

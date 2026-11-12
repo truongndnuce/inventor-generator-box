@@ -53,6 +53,7 @@ builder.Services.AddSingleton(new R2Store(builder.Configuration.GetSection("R2")
 builder.Services.AddSingleton(new Cadflow.Api.Vault.VaultStore(dbConn));
 builder.Services.AddSingleton(sp => new Cadflow.Api.Vault.VaultFiles(dataDir, sp.GetRequiredService<R2Store>(), sp.GetRequiredService<JobStore>()));
 builder.Services.AddSingleton<Cadflow.Api.Vault.VaultJobSaver>();
+builder.Services.AddSingleton<Cadflow.Api.Vault.ApsClient>();
 builder.Services.AddHostedService<StaleJobReaper>();
 builder.Services.AddHostedService<RetentionService>();
 builder.Services.Configure<JsonOptions>(o => o.SerializerOptions.PropertyNameCaseInsensitive = true);
@@ -424,13 +425,15 @@ worker.MapPost("/jobs/{id}/complete", (string id, string worker, CompleteRequest
     // Save the results (model, drawing, images, BOM) into Smart Vault right away, in the background so the worker is not kept waiting.
     // A failure is only logged: the job stays succeeded and "Save to Smart Vault" on the job page can retry. Turn off with Vault:AutoSave=false.
     if (app.Configuration.GetValue("Vault:AutoSave", true) && store.Get(id) is { Kind: not JobKinds.Preview, ArtifactsPurgedAt: null } done)
-        _ = Task.Run(() =>
+        _ = Task.Run(async () =>
         {
             try
             {
                 var r = vaultSaver.Save(done, done.RequestedBy);
                 app.Logger.LogInformation("Job {Job} saved to Smart Vault:{Added} new, {Versions} new versions, {Unchanged} unchanged, {Skipped} skipped.",
                     id, r.Added, r.NewVersions, r.Unchanged, r.Skipped.Count);
+                // Also have Autodesk prepare the models for the 3D viewer, so they open instantly later.
+                if (app.Configuration.GetValue("Aps:AutoTranslate", true)) await vaultSaver.PrepareViewsAsync(r, app.Logger);
             }
             catch (Exception ex) { app.Logger.LogWarning(ex, "Could not save job {Job} to Smart Vault.", id); }
         });

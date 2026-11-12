@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, Button, Callout, Select } from '@radix-ui/themes';
 import { DownloadIcon, UploadIcon } from '@radix-ui/react-icons';
-import { api, fileUrl, fmtDate, fmtSize, go, MAIN_APP, send, uploadFile } from '../lib.js';
+import { api, forgeViewable, fileUrl, fmtDate, fmtSize, go, MAIN_APP, send, uploadFile } from '../lib.js';
 import { Crumbs, StateBadge, VersionBadge } from '../components.jsx';
 import BomView from '../BomView.jsx';
+import ModelView from '../ModelView.jsx';
 
 const NEXT = { 'In Work': ['Under Review'], 'Under Review': ['In Work', 'Approved'], Approved: ['In Work', 'Released'], Released: [] };
 
-function Preview({ item }) {
+function Preview({ item, onProps }) {
   const url = fileUrl(item.id, item.version);
+  if (forgeViewable(item)) return <ModelView item={item} onProps={onProps} />;
   if (item.kind === 'bom') return <BomView item={item} />;
   if (item.kind === 'image') return <img src={url} alt={item.name} />;
   if (item.contentType === 'application/pdf') return <iframe src={url} title={item.name} />;
@@ -19,6 +21,7 @@ export default function Item({ id, user }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [picked, setPicked] = useState(null);   // properties of the part selected in the 3D view
   const input = useRef(null);
 
   const load = useCallback(() => api(`/api/vault/items/${id}`).then((d) => { setData(d); setError(''); }).catch((e) => setError(e.message)), [id]);
@@ -43,8 +46,16 @@ export default function Item({ id, user }) {
       <h1 className="page-title" style={{ marginTop: 10 }}>{item.name}</h1>
       {error && <Callout.Root color="red" size="1" mb="3"><Callout.Text>{error}</Callout.Text></Callout.Root>}
       <div className="detail">
-        <div className="viewer"><Preview item={{ ...item, contentType: item.contentType }} /></div>
+        <div className={`viewer ${forgeViewable(item) ? 'viewer-3d' : ''}`}><Preview item={{ ...item, contentType: item.contentType }} onProps={setPicked} /></div>
         <div style={{ display: 'grid', gap: 16 }}>
+          {forgeViewable(item) && picked && (
+            <div className="card">
+              <b style={{ fontSize: 13 }}>Selected part{picked.name ? `: ${picked.name}` : ''}</b>
+              <dl className="kv" style={{ maxHeight: 260, overflow: 'auto', marginTop: 8 }}>
+                {picked.props.map((p, i) => <Fragment key={i}><dt>{p.displayName}</dt><dd>{String(p.displayValue)}{p.units ? ` ${p.units}` : ''}</dd></Fragment>)}
+              </dl>
+            </div>
+          )}
           <div className="card">
             <dl className="kv">
               <dt>Number</dt><dd>{item.number}</dd>

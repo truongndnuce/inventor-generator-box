@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ModelView from '../ModelView.jsx';
 import { AlertDialog, Button, Callout, ContextMenu, Dialog, Flex, Select, Text, TextField } from '@radix-ui/themes';
 import { FileIcon, MagnifyingGlassIcon } from '@radix-ui/react-icons';
-import { api, go, send, uploadFile, fmtDate } from '../lib.js';
+import { api, forgeViewable, go, send, uploadFile, fmtDate } from '../lib.js';
 import { FolderGlyph, Crumbs, ModifiedCells, Pager, RenameDialog, RowMenu, StateBadge, Thumb, VersionBadge, usePaging } from '../components.jsx';
 
 const ALL = '__all';
@@ -23,6 +24,8 @@ export default function Files({ folderId, user, reloadTree, rev }) {
   const [state, setState] = useState(ALL);
   const [found, setFound] = useState([]);
   const searching = !!q.trim() || kind !== ALL || state !== ALL;
+  const [selected, setSelected] = useState(null);  // model file shown in 3D under the list
+  const [picked, setPicked] = useState(null);       // properties of the part selected in the 3D view
 
   const load = useCallback(async () => {
     try {
@@ -52,6 +55,9 @@ export default function Files({ folderId, user, reloadTree, rev }) {
     return [...folders, ...view.items.map((i) => ({ type: 'item', i }))];
   }, [view, searching, found]);
   const { rows: pageRows, pager } = usePaging(rows);
+  // The selected model, with the freshest copy from the list (a rename or a new version changes it).
+  const sel = selected && (rows.find((r) => r.type === 'item' && r.i.id === selected.id)?.i ?? selected);
+  const pick = (i) => { setPicked(null); setSelected(i); };
 
   async function upload(files) {
     if (!folderId) { setError('Open a folder first, then upload.'); return; }
@@ -72,13 +78,15 @@ export default function Files({ folderId, user, reloadTree, rev }) {
   async function remove() {
     try {
       await api(toDelete.type === 'folder' ? `/api/vault/folders/${toDelete.f.id}` : `/api/vault/items/${toDelete.i.id}`, { method: 'DELETE' });
+      if (toDelete.type === 'item' && toDelete.i.id === selected?.id) setSelected(null);
       setToDelete(null); load();
     } catch (e) { setError(e.message); setToDelete(null); }
   }
 
   const folder = view?.folder;
+  // With a file open the page fits the window and does not scroll: only the file list (and the folder tree) scroll.
   return (
-    <>
+    <div style={sel ? { display: 'flex', flexDirection: 'column', height: 'calc(100vh - 104px)' } : undefined}>
       <h1 className="page-title">{folder ? folder.name : 'Files'}</h1>
       <div className="toolbar">
         <input ref={input} type="file" multiple hidden onChange={(e) => { upload([...e.target.files]); e.target.value = ''; }} />
@@ -104,7 +112,7 @@ export default function Files({ folderId, user, reloadTree, rev }) {
       <ContextMenu.Root>
         <ContextMenu.Trigger>
         <div
-          style={{ minHeight: 'calc(100vh - 230px)' }}
+          style={sel ? { flex: '1 1 0', minHeight: 0, display: 'flex', flexDirection: 'column' } : { minHeight: 'calc(100vh - 230px)' }}
           onContextMenuCapture={() => setCtx(null)}
           onDragOver={(e) => { if (folderId) { e.preventDefault(); setDrag(true); } }}
           onDragLeave={() => setDrag(false)}
@@ -112,7 +120,8 @@ export default function Files({ folderId, user, reloadTree, rev }) {
         >
           {searching ? <Text size="2" color="gray">Search results from all folders</Text> : <Crumbs items={view?.breadcrumb || []} />}
           {drag && <div className="dropzone">Drop files to upload to {folder?.name}</div>}
-          <table className="grid" style={{ marginTop: 10 }}>
+          <div style={sel ? { flex: '1 1 0', minHeight: 0, overflow: 'auto', marginTop: 10 } : { marginTop: 10 }}>
+          <table className="grid">
             <thead><tr><th /><th>Name</th><th>Version</th><th>State</th><th>Last modified</th><th>Modified by</th><th /></tr></thead>
             <tbody>
               {pageRows.map((r) => r.type === 'folder' ? (
@@ -123,7 +132,8 @@ export default function Files({ folderId, user, reloadTree, rev }) {
                   <td>{r.f.kind == null && <Button size="1" variant="ghost" color="gray" onClick={(e) => { e.stopPropagation(); setToDelete(r); }}>Delete</Button>}</td>
                 </tr>
               ) : (
-                <tr key={r.i.id} className="row" onClick={() => go(`#/item/${r.i.id}`)} onContextMenu={() => setCtx(r)}>
+                <tr key={r.i.id} className="row" style={sel?.id === r.i.id ? { background: 'var(--accent-a3)' } : undefined}
+                  onClick={() => (forgeViewable(r.i) ? pick(r.i) : go(`#/item/${r.i.id}`))} onContextMenu={() => setCtx(r)}>
                   <td className="thumb"><Thumb item={r.i} /></td>
                   <td>{r.i.name}</td><td><VersionBadge n={r.i.version} /></td><td><StateBadge state={r.i.state} /></td>
                   <ModifiedCells item={r.i} />
@@ -137,6 +147,7 @@ export default function Files({ folderId, user, reloadTree, rev }) {
               )}
             </tbody>
           </table>
+          </div>
           <Pager {...pager} />
         </div>
         </ContextMenu.Trigger>
@@ -154,6 +165,35 @@ export default function Files({ folderId, user, reloadTree, rev }) {
           )}
         </ContextMenu.Content>
       </ContextMenu.Root>
+
+      {sel && (
+        // Click a model in the list: its 3D view opens here, under the list, so another file is one click away.
+        <div className="split-3d" style={{ flex: '0 0 54%', minHeight: 0, gridTemplateRows: 'minmax(0, 1fr)' }}>
+          <div className="viewer viewer-3d" style={{ height: '100%', minHeight: 0 }}>
+            <ModelView key={`${sel.id}-${sel.version}`} item={sel} onProps={setPicked} />
+          </div>
+          <div className="card" style={{ overflow: 'auto', height: '100%', minHeight: 0 }}>
+            <Flex justify="between" align="start" gap="2">
+              <b style={{ fontSize: 13, wordBreak: 'break-all' }}>{sel.name}</b>
+              <Button size="1" variant="ghost" color="gray" onClick={() => setSelected(null)}>Close</Button>
+            </Flex>
+            <dl className="kv" style={{ marginTop: 8 }}>
+              <dt>Version</dt><dd><VersionBadge n={sel.version} /></dd>
+              <dt>State</dt><dd><StateBadge state={sel.state} /></dd>
+              <dt>Modified</dt><dd>{fmtDate(sel.modifiedAt)} by {sel.modifiedBy}</dd>
+            </dl>
+            <Button size="1" variant="soft" mt="2" onClick={() => go(`#/item/${sel.id}`)}>Details &amp; versions</Button>
+            {picked && (
+              <>
+                <b style={{ fontSize: 13, display: 'block', marginTop: 14 }}>Selected part{picked.name ? `: ${picked.name}` : ''}</b>
+                <dl className="kv" style={{ marginTop: 6 }}>
+                  {picked.props.map((p, i) => <Fragment key={i}><dt>{p.displayName}</dt><dd>{String(p.displayValue)}{p.units ? ` ${p.units}` : ''}</dd></Fragment>)}
+                </dl>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {renaming && (
         <RenameDialog
@@ -194,6 +234,6 @@ export default function Files({ folderId, user, reloadTree, rev }) {
           </Flex>
         </AlertDialog.Content>
       </AlertDialog.Root>
-    </>
+    </div>
   );
 }
