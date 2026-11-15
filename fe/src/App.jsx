@@ -15,7 +15,8 @@ const NAV = [
   { key: 'configurator', href: '#/', label: 'New order' },
   { key: 'chat', href: '#/chat', label: 'Chat' },
   { key: 'components', href: '#/components', label: 'Components' },
-  { key: 'designer', href: '#/designer', label: 'Designer' },
+  // Designer tab hidden for now; the page still works at #/designer. Restore this line to show it again.
+  // { key: 'designer', href: '#/designer', label: 'Designer' },
   { key: 'orders', href: '#/orders', label: 'Ordered' },
   { key: 'dashboard', href: '#/dashboard', label: 'Dashboard' },
   { key: 'config', href: '#/config', label: 'Config' },
