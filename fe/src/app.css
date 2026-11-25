@@ -121,6 +121,7 @@
 dl.meta { display: grid; grid-template-columns: minmax(130px, max-content) 1fr; gap: 4px 16px; margin: 0; align-content: start; }
 dl.meta dt { color: var(--gray-10); }
 dl.meta dd { margin: 0; word-break: break-word; }
+.swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 8px; vertical-align: -1px; border: 1px solid var(--gray-7); }
 .timeline { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow: auto; }
 .timeline li { padding: 4px 0; border-bottom: 1px dashed var(--gray-5); }
 .timeline time { color: var(--gray-10); margin-right: 8px; font-variant-numeric: tabular-nums; }

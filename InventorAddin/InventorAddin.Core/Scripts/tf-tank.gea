@@ -1,0 +1,28 @@
+! Transformer part 2/7: the tank (internal part of transformer-assembly; place it with ADD_COMPONENT ... FROM "tf-tank").
+! Part origin: center of the tank (X = 0, D = 0), underside at elevation 0.
+GEA_VERSION 1
+PRODUCT_NAME "Transformer tank"
+PARAM_PREFIX TT_
+TARGET PART
+
+BEGIN_FORM
+  BEGIN_GROUP "Tank"
+    USER_INPUT_PARAM TT_Length LENGTH 2000 mm MIN 1000 MAX 5000 REQUIRED LABEL "Tank length (X)"
+    USER_INPUT_PARAM TT_Width  LENGTH 1100 mm MIN 600  MAX 2500 REQUIRED LABEL "Tank width (D)"
+    USER_INPUT_PARAM TT_Height LENGTH 1500 mm MIN 800  MAX 3500 REQUIRED LABEL "Tank height"
+  END_GROUP
+END_FORM
+
+BEGIN_BUILD
+  DECLARE_REFERENCE body
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "SizeX"  TT_Length
+    FEATURE_IN "SizeD"  TT_Width
+    FEATURE_IN "Height" TT_Height
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "TF_Tank"
+  SET_REF_ATTR body "ROLE" "TANK"
+  SET_APPEARANCE body "Grey"
+  REGEN_MDL
+END_BUILD

@@ -17,6 +17,24 @@ export function Thumb({ item }) {
 export const StateBadge = ({ state }) => <Badge color={STATE_COLOR[state] || 'gray'} variant="soft">{state}</Badge>;
 export const VersionBadge = ({ n }) => <span className="ver">{n}</span>;
 
+/** Part information saved with a file by the job (material, finish, part number...). The two code keys are for filtering only. Shows nothing when empty. */
+const PART_PROP_ORDER = ['Part number', 'Description', 'Product', 'Designer', 'Created', 'Material', 'Standard', 'Density', 'Appearance', 'Surface treatment',
+  'Volume', 'Mass (from the model)', 'Mass (volume x density)', 'Solid bodies', 'Script', 'Script hash', 'Drawing'];
+export function PartProps({ props, title = 'Part information' }) {
+  // The database (jsonb) does not keep the order of the keys, so put them in a fixed, logical order here.
+  const rank = (k) => { const i = PART_PROP_ORDER.indexOf(k); return i < 0 ? PART_PROP_ORDER.length : i; };
+  const rows = Object.entries(props || {}).filter(([k]) => k !== 'materialCode' && k !== 'finishCode').sort((a, b) => rank(a[0]) - rank(b[0]));
+  if (rows.length === 0) return null;
+  return (
+    <div className="card">
+      <b style={{ fontSize: 13 }}>{title}</b>
+      <dl className="kv" style={{ marginTop: 8 }}>
+        {rows.flatMap(([k, v]) => [<dt key={`k${k}`}>{k}</dt>, <dd key={`v${k}`}>{v}</dd>])}
+      </dl>
+    </div>
+  );
+}
+
 export function Crumbs({ items, onRoot = '#/files' }) {
   return (
     <div className="crumbs">

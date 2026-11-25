@@ -1,0 +1,27 @@
+! Transformer part 6/7: one support leg of the conservator (internal part of transformer-assembly; ADD_COMPONENT ... FROM "tf-leg").
+! Part origin: center of the leg (X = 0, D = 0), underside at elevation 0.
+GEA_VERSION 1
+PRODUCT_NAME "Transformer conservator leg"
+PARAM_PREFIX TL_
+TARGET PART
+
+BEGIN_FORM
+  BEGIN_GROUP "Leg"
+    USER_INPUT_PARAM TL_Size   LENGTH 100 mm MIN 40  MAX 300  LABEL "Leg section"
+    USER_INPUT_PARAM TL_Height LENGTH 300 mm MIN 150 MAX 1000 LABEL "Leg height"
+  END_GROUP
+END_FORM
+
+BEGIN_BUILD
+  DECLARE_REFERENCE body
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "SizeX"  TL_Size
+    FEATURE_IN "SizeD"  TL_Size
+    FEATURE_IN "Height" TL_Height
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "TF_ConservatorLeg"
+  SET_REF_ATTR body "ROLE" "CONSERVATOR_LEG"
+  SET_APPEARANCE body "Grey"
+  REGEN_MDL
+END_BUILD

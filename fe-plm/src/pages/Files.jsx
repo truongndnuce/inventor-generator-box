@@ -3,7 +3,7 @@ import ModelView from '../ModelView.jsx';
 import { AlertDialog, Button, Callout, ContextMenu, Dialog, Flex, Select, Text, TextField } from '@radix-ui/themes';
 import { FileIcon, MagnifyingGlassIcon } from '@radix-ui/react-icons';
 import { api, forgeViewable, go, send, uploadFile, fmtDate } from '../lib.js';
-import { FolderGlyph, Crumbs, ModifiedCells, Pager, RenameDialog, RowMenu, StateBadge, Thumb, VersionBadge, usePaging } from '../components.jsx';
+import { FolderGlyph, Crumbs, ModifiedCells, PartProps, Pager, RenameDialog, RowMenu, StateBadge, Thumb, VersionBadge, usePaging } from '../components.jsx';
 
 const ALL = '__all';
 const STATES = ['In Work', 'Under Review', 'Approved', 'Released'];
@@ -40,8 +40,11 @@ export default function Files({ folderId, user, reloadTree, rev, allFolders = []
   const [q, setQ] = useState('');
   const [kind, setKind] = useState(ALL);
   const [state, setState] = useState(ALL);
+  const [material, setMaterial] = useState(ALL);
+  const [materials, setMaterials] = useState([]);   // the material choices (code + name) for the filter
   const [found, setFound] = useState([]);
-  const searching = !!q.trim() || kind !== ALL || state !== ALL;
+  const searching = !!q.trim() || kind !== ALL || state !== ALL || material !== ALL;
+  useEffect(() => { api('/api/materials').then((r) => setMaterials(r.materials)).catch(() => {}); }, []);
   const [selected, setSelected] = useState(null);  // model file shown in 3D under the list
   const [picked, setPicked] = useState(null);       // properties of the part selected in the 3D view
 
@@ -61,16 +64,17 @@ export default function Files({ folderId, user, reloadTree, rev, allFolders = []
       if (q.trim()) p.set('q', q.trim());
       if (kind !== ALL) p.set('kind', kind);
       if (state !== ALL) p.set('state', state);
+      if (material !== ALL) p.set('material', material);
       api('/api/vault/search?' + p).then((r) => { setFound(r); setError(''); }).catch((e) => setError(e.message));
     }, 200);
     return () => clearTimeout(t);
-  }, [q, kind, state, searching, searchRev]);
+  }, [q, kind, state, material, searching, searchRev]);
 
   const rows = useMemo(() => {
     if (searching) {
       // Folders whose name matches (from the whole tree), then the matching files.
       const text = q.trim().toLowerCase();
-      const folders = text && kind === ALL && state === ALL
+      const folders = text && kind === ALL && state === ALL && material === ALL
         ? allFolders.filter((f) => f.name.toLowerCase().includes(text)).sort((a, b) => a.name.localeCompare(b.name)).map((f) => ({ type: 'folder', f }))
         : [];
       return [...folders, ...found.map((i) => ({ type: 'item', i }))];
@@ -78,7 +82,7 @@ export default function Files({ folderId, user, reloadTree, rev, allFolders = []
     if (!view) return [];
     const folders = [...view.folders].sort((a, b) => a.name.localeCompare(b.name)).map((f) => ({ type: 'folder', f }));
     return [...folders, ...view.items.map((i) => ({ type: 'item', i }))];
-  }, [view, searching, found, allFolders, q, kind, state]);
+  }, [view, searching, found, allFolders, q, kind, state, material]);
   const { rows: pageRows, pager } = usePaging(rows);
   // The selected model, with the freshest copy from the list (a rename or a new version changes it).
   const sel = selected && (rows.find((r) => r.type === 'item' && r.i.id === selected.id)?.i ?? selected);
@@ -128,6 +132,12 @@ export default function Files({ folderId, user, reloadTree, rev, allFolders = []
           <Select.Trigger /><Select.Content>
             <Select.Item value={ALL}>All states</Select.Item>
             {STATES.map((s) => <Select.Item key={s} value={s}>{s}</Select.Item>)}
+          </Select.Content>
+        </Select.Root>
+        <Select.Root value={material} onValueChange={setMaterial}>
+          <Select.Trigger aria-label="Material" /><Select.Content>
+            <Select.Item value={ALL}>All materials</Select.Item>
+            {materials.map((m) => <Select.Item key={m.code} value={m.code}>{m.name}</Select.Item>)}
           </Select.Content>
         </Select.Root>
         {busy && <Text size="2" color="gray">{busy}</Text>}
@@ -211,6 +221,9 @@ export default function Files({ folderId, user, reloadTree, rev, allFolders = []
               <dt>Modified</dt><dd>{fmtDate(sel.modifiedAt)} by {sel.modifiedBy}</dd>
             </dl>
             <Button size="1" variant="soft" mt="2" onClick={() => go(`#/item/${sel.id}`)}>Details &amp; versions</Button>
+            {sel.properties && Object.keys(sel.properties).length > 0 && (
+              <div style={{ marginTop: 12 }}><PartProps props={sel.properties} /></div>
+            )}
             {picked && (
               <>
                 <b style={{ fontSize: 13, display: 'block', marginTop: 14 }}>Selected part{picked.name ? `: ${picked.name}` : ''}</b>

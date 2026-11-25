@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -139,6 +139,10 @@ internal sealed partial class InventorJobExecutor
             var files = new List<OutputFile>();
             var summary = new Dictionary<string, double>();
 
+            // Part information (Part Number, Description, Material, Finish) goes into the part's properties before it is measured and saved,
+            // so the .ipt, the BOM and the drawing title block all carry the same data. A failure here never fails the job.
+            WritePartProperties(doc, job);
+
             progress("Measuring", null);
             try
             {
@@ -233,6 +237,72 @@ internal sealed partial class InventorJobExecutor
         var doc = (Inv.PartDocument)_app.Documents.Add(Inv.DocumentTypeEnum.kPartDocumentObject, template, true);
         doc.Activate(); // the gateway works on the active document
         return doc;
+    }
+
+    // Material code (as sent by the web form) -> display name and the name of the Autodesk material library entry.
+    // The server keeps the same codes in MaterialCatalog (be/Cadflow.Api/PartInfo.cs); keep both lists in step.
+    private static readonly Dictionary<string, (string Display, string[] InventorNames)> MaterialMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["steel-s355"] = ("Structural steel S355", new[] { "Steel", "Steel, Mild" }),
+        ["stainless-304"] = ("Stainless steel 304 (1.4301)", new[] { "Stainless Steel, 304", "Stainless Steel" }),
+        ["alu-6061"] = ("Aluminium 6061-T6", new[] { "Aluminum 6061", "Aluminum-6061", "Aluminum" }),
+        ["abs"] = ("ABS plastic", new[] { "ABS Plastic", "Plastic, ABS" }),
+    };
+
+    private static readonly Dictionary<string, string> FinishNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["natural"] = "Natural (bare metal)",
+        ["ral7035"] = "Powder coat RAL 7035 (light grey)",
+        ["ral5010"] = "Powder coat RAL 5010 (gentian blue)",
+        ["galvanised"] = "Hot-dip galvanised",
+        ["black-anodised"] = "Black anodised",
+    };
+
+    /// <summary>
+    /// Writes Part Number, Description, Material and Finish into the part's properties (Design Tracking and User Defined).
+    /// Each write is separate: the Inventor material library differs between installs, so a material name that is not found is skipped with a log line.
+    /// </summary>
+    private static void WritePartProperties(Inv.PartDocument doc, WorkItem job)
+    {
+        var texts = job.TextInputs;
+        string? materialCode = null, finishCode = null;
+        texts?.TryGetValue("PI_Material", out materialCode);
+        texts?.TryGetValue("PI_Finish", out finishCode);
+        MaterialMap.TryGetValue(materialCode ?? "", out var material);
+        FinishNames.TryGetValue(finishCode ?? "", out var finishName);
+
+        var partNumber = $"{job.ProductCode.ToUpperInvariant()}-{job.Id}";
+        var description = material.Display == null ? job.ProductCode : $"{job.ProductCode}, {material.Display}";
+
+        void Design(string name, string value)
+        {
+            try { doc.PropertySets["Design Tracking Properties"][name].Value = value; }
+            catch (Exception ex) { Log.Warn($"Could not set {name}: {ex.Message}"); }
+        }
+        void Custom(string name, string value)
+        {
+            try
+            {
+                var set = doc.PropertySets["Inventor User Defined Properties"];
+                try { set[name].Value = value; } catch { set.Add(value, name); }
+            }
+            catch (Exception ex) { Log.Warn($"Could not set custom property {name}: {ex.Message}"); }
+        }
+
+        Design("Part Number", partNumber);
+        Design("Description", description);
+        if (material.Display != null)
+        {
+            Custom("MaterialStandardName", material.Display);
+            var assigned = false;
+            foreach (var name in material.InventorNames)
+            {
+                try { doc.ComponentDefinition.Material = doc.Materials[name]; assigned = true; break; }
+                catch { /* not in this install's library: try the next name */ }
+            }
+            if (!assigned) Log.Warn($"No Inventor material found for '{materialCode}'; only the custom property was written.");
+        }
+        if (finishName != null) Custom("Finish", finishName);
     }
 
     /// <summary>

@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, Button, Callout, Select } from '@radix-ui/themes';
 import { DownloadIcon, UploadIcon } from '@radix-ui/react-icons';
 import { api, forgeViewable, fileUrl, fmtDate, fmtSize, go, MAIN_APP, send, uploadFile } from '../lib.js';
-import { Crumbs, StateBadge, VersionBadge } from '../components.jsx';
+import { Crumbs, PartProps, StateBadge, VersionBadge } from '../components.jsx';
 import BomView from '../BomView.jsx';
 import ModelView from '../ModelView.jsx';
 
@@ -81,6 +81,7 @@ export default function Item({ id, user }) {
               <input ref={input} type="file" hidden onChange={(e) => { if (e.target.files[0]) checkIn(e.target.files[0]); e.target.value = ''; }} />
             </div>
           </div>
+          <PartProps props={item.properties} />
           <div className="card">
             <b style={{ fontSize: 13 }}>Version history</b>
             <table className="grid" style={{ marginTop: 6 }}>

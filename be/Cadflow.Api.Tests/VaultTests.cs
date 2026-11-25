@@ -268,6 +268,31 @@ public sealed class VaultTests : IDisposable
     }
 
     [Fact]
+    public void Part_information_goes_to_the_vault_with_the_files_and_can_be_searched_by_material()
+    {
+        var job = _service.Create(new CreateJobRequest("box", null, "tester",
+            TextInputs: new() { ["PI_Material"] = "stainless-304", ["PI_Finish"] = "ral7035" })).Job!;
+        Assert.Equal(job.Id, _jobs.Claim("w")!.Id);
+        Directory.CreateDirectory(_jobs.ArtifactDir(job.Id));
+        var ipt = job.Id + ".ipt";
+        File.WriteAllText(Path.Combine(_jobs.ArtifactDir(job.Id), ipt), "x");
+        Assert.True(_jobs.AddArtifact(job.Id, "w", new ArtifactInfo { Name = ipt, Kind = "ipt", Size = 1 }));
+        Assert.True(_jobs.Complete(job.Id, "w", new Dictionary<string, double> { ["volumeCm3"] = 100, ["massKg"] = 0.8 }));
+        var done = _jobs.Get(job.Id)!;
+
+        new VaultJobSaver(_vault, _files).Save(done, "me");
+
+        var hit = Assert.Single(_vault.Search(null, null, null, "stainless-304"));
+        Assert.Equal(ipt, hit.Name);
+        Assert.Equal("Stainless steel 304 (1.4301)", hit.Properties!["Material"]);
+        Assert.Contains("RAL 7035", hit.Properties["Appearance"]);
+        Assert.Equal("BOX-" + job.Id, hit.Properties["Part number"]);
+        Assert.Empty(_vault.Search(null, null, null, "alu-6061"));          // another material finds nothing
+        Assert.Single(_vault.Search("RAL 7035", null, null));               // free text also looks into the part information
+        Assert.Equal("stainless-304", _vault.Item(hit.Id)!.Properties!["materialCode"]);
+    }
+
+    [Fact]
     public void CopyFromJob_copies_so_retention_of_the_job_cannot_remove_the_vault_file()
     {
         var job = FinishedJob();

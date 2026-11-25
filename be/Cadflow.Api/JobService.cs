@@ -70,8 +70,12 @@ public sealed class JobService(JobStore store, ScriptStore scripts, ConfigStore 
             else log.LogWarning("Bundled script {File} for product {Product} was not found; the job will have no .gea export.", product.ScriptFile, product.Code);
         }
 
+        // Part information chosen on the form (Material, Finish): only values from the catalog are accepted.
+        if (MaterialCatalog.Check(req.TextInputs) is { } partInfoError) return new(null, 400, new { error = partInfoError });
+        var partTexts = MaterialCatalog.Pick(req.TextInputs);
+
         var job = store.Create(product.Code, values, requestedByName,
-            scriptSha == null ? null : product.ScriptFile, scriptSha, scriptSha == null ? null : "bundled", kind: kind, queue: queue, priority: priority);
+            scriptSha == null ? null : product.ScriptFile, scriptSha, scriptSha == null ? null : "bundled", partTexts.Count == 0 ? null : partTexts, kind: kind, queue: queue, priority: priority);
         return new(job, 201, null);
     }
 
