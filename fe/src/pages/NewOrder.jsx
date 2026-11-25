@@ -77,10 +77,10 @@ export default function NewOrder({ code, configId }) {
   };
 
   return (
-    <>
+    <div className="order-page">
     <Hero product={schema.code} eyebrow="New order" title={schema.name} text={schema.description} />
-    <Card size="3">
-      <Flex direction="column" gap="4">
+    <Card size="3" className="order-card">
+      <Flex direction="column" gap="4" className="order-flex">
         <Flex align="center" gap="3" wrap="wrap">
           <Text size="2" color="gray">Product</Text>
           <Select.Root value={schema.code} onValueChange={(v) => go(`#/new/${v}`)}>
@@ -107,32 +107,38 @@ export default function NewOrder({ code, configId }) {
 
         <Notice color="amber">{note}</Notice>
 
-        {schema.groups.map((g) => (
-          <Card key={g} variant="surface">
-            <Heading size="3" mb="2">{g}</Heading>
-            {schema.parameters.filter((p) => p.group === g).map((p) => (
-              <ParamField key={p.name} p={p} value={values[p.name]} invalid={bad.has(p.name)}
-                onChange={(v) => setValues((cur) => ({ ...cur, [p.name]: v }))} />
-            ))}
-          </Card>
-        ))}
+        <Flex direction="column" gap="4" className="order-scroll">
+          {schema.groups.map((g) => (
+            <Card key={g} variant="surface">
+              <Heading size="3" mb="2">{g}</Heading>
+              {schema.parameters.filter((p) => p.group === g).map((p) => (
+                <ParamField key={p.name} p={p} value={values[p.name]} invalid={bad.has(p.name)}
+                  onChange={(v) => setValues((cur) => ({ ...cur, [p.name]: v }))} />
+              ))}
+            </Card>
+          ))}
+        </Flex>
 
         {issues.length > 0 && (
-          <Notice>
-            <ul style={{ margin: 0, paddingLeft: 18 }}>{issues.map((m, i) => <li key={i}>{m}</li>)}</ul>
-          </Notice>
+          <Box className="order-issues">
+            <Notice>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>{issues.map((m, i) => <li key={i}>{m}</li>)}</ul>
+            </Notice>
+          </Box>
         )}
 
         <Separator size="4" />
-        <Flex align="center" gap="3" wrap="wrap">
-          <TextField.Root placeholder="Requested by" value={who} onChange={(e) => setWho(e.target.value)} style={{ minWidth: 240 }} />
-          <Button size="2" disabled={!valid || busy} onClick={submit}>Submit order</Button>
+        <Flex direction="column" gap="4" className="order-footer">
+          <Flex align="center" gap="3" wrap="wrap">
+            <TextField.Root placeholder="Requested by" value={who} onChange={(e) => setWho(e.target.value)} style={{ minWidth: 240 }} />
+            <Button size="2" disabled={!valid || busy} onClick={submit}>Submit order</Button>
+          </Flex>
+          <QuickPreview disabled={!valid || busy}
+            createJob={() => postJson('/api/jobs', { productCode: schema.code, inputs: values, requestedBy: who, configId: cfgId || undefined, kind: 'preview' })} />
         </Flex>
-        <QuickPreview disabled={!valid || busy}
-          createJob={() => postJson('/api/jobs', { productCode: schema.code, inputs: values, requestedBy: who, configId: cfgId || undefined, kind: 'preview' })} />
       </Flex>
     </Card>
-    </>
+    </div>
   );
 }
 

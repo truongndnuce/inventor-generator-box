@@ -81,7 +81,7 @@ export default function App() {
         <Container size="4" px="4">
           <Flex align="center" gap="6" py="3">
             <a className="brand" href="#/">
-              <Text weight="bold" size="4">CAD Automation</Text>
+              <Text weight="bold" size="4">Smart Drawing</Text>
               <Text size="2" color="gray" ml="2">Assembly orders</Text>
             </a>
             <Flex gap="1" flexGrow="1" asChild>

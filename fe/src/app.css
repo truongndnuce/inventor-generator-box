@@ -1,5 +1,15 @@
 ﻿body { margin: 0; }
 
+/* New order: the page itself does not scroll; only the parameter list scrolls, so the submit buttons stay visible.
+   Height = viewport - sticky header (--topbar-h) - vertical padding of the page container. */
+.order-page { --topbar-h: 62px; height: calc(100dvh - var(--topbar-h) - 2 * var(--space-5)); min-height: 420px; display: flex; flex-direction: column; overflow: hidden; }
+.order-page .hero { flex: none; min-height: 170px; margin-bottom: 12px; }
+.order-page .order-card { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.order-page .order-flex { flex: 1 1 auto; min-height: 0; }
+.order-page .order-scroll { flex: 1 1 auto; min-height: 120px; overflow-y: auto; padding-right: var(--space-2); }
+.order-page .order-footer { flex: none; max-height: 40%; overflow-y: auto; }
+.order-page .order-issues { flex: none; max-height: 96px; overflow-y: auto; }
+
 /* GE Vernova palette: teal #005F60 (the logo background color). Overrides the Radix accent scale. */
 .radix-themes {
   --accent-1: #f5fbfa; --accent-2: #eaf6f5; --accent-3: #d4ecea; --accent-4: #bfe1de; --accent-5: #a5d3cf;
