@@ -67,6 +67,9 @@ public sealed class Job
     public int Priority { get; set; } = QueuePolicy.DefaultPriority;
     /// <summary>For an export job: the job it rebuilds.</summary>
     public string? SourceJobId { get; set; }
+    /// <summary>The "Part information" table (identification, material, physical properties, traceability). Computed on read from the fields above; empty until the job has succeeded.</summary>
+    [JsonPropertyName("partInfo")]
+    public IReadOnlyList<PartInfoGroup> PartInfo => PartInfoBuilder.Build(this);
     /// <summary>How many queued jobs of the same queue will be handed out before this one. Only set by GET /api/jobs/{id} for a queued job.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? QueuePosition { get; set; }

@@ -37,6 +37,8 @@ public sealed class VaultJobSaver(VaultStore vault, VaultFiles files, ApsClient?
         int added = 0, versions = 0, unchanged = 0;
         var skipped = new List<string>();
         var models = new List<VaultItem>();
+        // Part information travels with every file of the job, so any of them can be found by material or part number.
+        var props = PartInfoBuilder.Flatten(job);
         foreach (var a in job.Artifacts)
         {
             var kind = VaultStore.KindOf(a.Name);
@@ -44,6 +46,7 @@ public sealed class VaultJobSaver(VaultStore vault, VaultFiles files, ApsClient?
             var r = vault.Put(target.Id, a.Name, who, $"From job {job.Id}", VaultFiles.ContentTypeFor(a.Name), job.Id,
                 (itemId, v) => files.CopyFromJob(job, a, itemId, v));
             if (r.Unchanged) unchanged++; else if (r.Created) added++; else versions++;
+            if (!r.Unchanged && props.Count > 0) vault.SetProperties(r.Item.Id, props);
             if (!r.Unchanged && VaultStore.IsForgeViewable(a.Name)) models.Add(r.Item);
         }
         return new JobSaveResult(folder, added, versions, unchanged, skipped, models);

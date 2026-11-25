@@ -7,7 +7,7 @@ public sealed record VaultFolder(string Id, string? ParentId, string Name, strin
 
 /// <summary>An item as the file list shows it: the item plus its current version.</summary>
 public sealed record VaultItem(string Id, string FolderId, string Number, string Name, string Kind, int Version, string State, long Size, string ContentType,
-    string CreatedBy, DateTimeOffset CreatedAt, string ModifiedBy, DateTimeOffset ModifiedAt, string? JobId);
+    string CreatedBy, DateTimeOffset CreatedAt, string ModifiedBy, DateTimeOffset ModifiedAt, string? JobId, Dictionary<string, string>? Properties = null);
 
 public sealed record VaultVersion(int Version, long Size, string ContentType, string? Comment, string CreatedBy, DateTimeOffset CreatedAt, string? SourceJobId,
     [property: JsonIgnore] string? R2Key);
@@ -81,11 +81,12 @@ public sealed class VaultStore
             created_at timestamptz NOT NULL,
             PRIMARY KEY (item_id, version)
         );
+        ALTER TABLE vault_items ADD COLUMN IF NOT EXISTS properties jsonb NOT NULL DEFAULT '{}';
         """;
 
     private const string ItemCols = """
         i.id, i.folder_id, i.number, i.name, i.kind, i.current_version, i.state, v.size, v.content_type,
-        i.created_by, i.created_at, i.modified_by, i.modified_at, v.source_job_id
+        i.created_by, i.created_at, i.modified_by, i.modified_at, v.source_job_id, i.properties::text
         """;
     private const string ItemFrom = "vault_items i JOIN vault_versions v ON v.item_id = i.id AND v.version = i.current_version";
 
@@ -126,7 +127,8 @@ public sealed class VaultStore
 
     private static VaultItem ReadItem(NpgsqlDataReader r) =>
         new(r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4), r.GetInt32(5), r.GetString(6), r.GetInt64(7), r.GetString(8),
-            r.GetString(9), r.GetFieldValue<DateTimeOffset>(10), r.GetString(11), r.GetFieldValue<DateTimeOffset>(12), Str(r, 13));
+            r.GetString(9), r.GetFieldValue<DateTimeOffset>(10), r.GetString(11), r.GetFieldValue<DateTimeOffset>(12), Str(r, 13),
+            System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(r.GetString(14)) ?? new());
 
     private const string FolderCols = "id, parent_id, name, kind, job_id, created_by, created_at";
 
@@ -321,20 +323,37 @@ public sealed class VaultStore
         return list;
     }
 
-    /// <summary>Search across all folders by number or name, optionally by kind and state. Newest first, at most 200.</summary>
-    public List<VaultItem> Search(string? q, string? kind, string? state)
+    /// <summary>
+    /// Sets the part information of an item (material, finish, part number...), as text key/value pairs. It replaces what was there.
+    /// The keys <c>materialCode</c> and <c>finishCode</c> are what the material filter of <see cref="Search"/> looks at.
+    /// </summary>
+    public void SetProperties(string itemId, IReadOnlyDictionary<string, string> props)
+    {
+        using var conn = _db.OpenConnection();
+        using var cmd = Cmd(conn, null, "UPDATE vault_items SET properties = @p::jsonb WHERE id = @id",
+            ("p", System.Text.Json.JsonSerializer.Serialize(props)), ("id", itemId));
+        cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Search across all folders by number, name or part information (material, part number...), optionally by kind, state and material code.
+    /// Newest first, at most 200.
+    /// </summary>
+    public List<VaultItem> Search(string? q, string? kind, string? state, string? material = null)
     {
         using var conn = _db.OpenConnection();
         using var cmd = Cmd(conn, null, $"""
             SELECT {ItemCols} FROM {ItemFrom}
-            WHERE (@q::text IS NULL OR i.name ILIKE @like OR i.number ILIKE @like)
+            WHERE (@q::text IS NULL OR i.name ILIKE @like OR i.number ILIKE @like OR i.properties::text ILIKE @like)
               AND (@k::text IS NULL OR i.kind = @k) AND (@s::text IS NULL OR i.state = @s)
+              AND (@m::text IS NULL OR i.properties ->> 'materialCode' = @m)
             ORDER BY i.modified_at DESC LIMIT 200
             """,
             ("q", string.IsNullOrWhiteSpace(q) ? null : q.Trim()),
             ("like", "%" + (q ?? "").Trim().Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%"),
             ("k", string.IsNullOrWhiteSpace(kind) ? null : kind),
-            ("s", string.IsNullOrWhiteSpace(state) ? null : state));
+            ("s", string.IsNullOrWhiteSpace(state) ? null : state),
+            ("m", string.IsNullOrWhiteSpace(material) ? null : material));
         using var r = cmd.ExecuteReader();
         var list = new List<VaultItem>();
         while (r.Read()) list.Add(ReadItem(r));

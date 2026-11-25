@@ -119,7 +119,7 @@ public static class VaultEndpoints
             return Results.NoContent();
         });
 
-        g.MapGet("/search", (string? q, string? kind, string? state) => vault.Search(q, kind, state));
+        g.MapGet("/search", (string? q, string? kind, string? state, string? material) => vault.Search(q, kind, state, material));
 
         // Save the results of a finished job: folder "<product>-<job id>" with image / drawing / model sub-folders, files copied in.
         g.MapPost("/from-job/{jobId}", (string jobId, FromJobRequest? req) =>

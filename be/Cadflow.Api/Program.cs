@@ -276,6 +276,8 @@ app.MapGet("/api/stats", (int? days, string? product, string? requestedBy, strin
     });
 });
 
+app.MapGet("/api/materials", () => Results.Ok(new { materials = MaterialCatalog.Materials, finishes = MaterialCatalog.Finishes }));
+
 app.MapGet("/api/jobs/{id}", (string id) =>
 {
     if (store.Get(id) is not { } j) return Results.NotFound();

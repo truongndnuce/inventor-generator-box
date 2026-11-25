@@ -112,7 +112,7 @@ export default function Job({ id, onNav }) {
     ['Attempts', job.attempts],
     ...(Object.keys(job.summary).length ? [['Summary', Object.entries(job.summary).map(([k, v]) => `${k}: ${v}`).join('   ')]] : []),
   ];
-  const inputs = [...Object.entries(job.inputs), ...Object.entries(job.textInputs || {})];
+  const inputs = [...Object.entries(job.inputs), ...Object.entries(job.textInputs || {}).filter(([k]) => !k.startsWith('PI_'))]; // PI_* (material, finish) are shown in the Part information card
 
   return (
     <Flex direction="column" gap="4">
@@ -135,7 +135,7 @@ export default function Job({ id, onNav }) {
           <dl className="meta">
             {inputs.flatMap(([k, v]) => [
               <dt key={`k${k}`}>{k}</dt>,
-              <dd key={`v${k}`}>{isImported || /Count$/.test(k) ? String(v) : `${v} mm`}</dd>,
+              <dd key={`v${k}`}>{isImported || typeof v === 'string' || /Count$/.test(k) ? String(v) : `${v} mm`}</dd>,
             ])}
           </dl>
         </div>
@@ -167,6 +167,29 @@ export default function Job({ id, onNav }) {
               {vaultMsg?.ok && <Link href={`/plm/#/files/${vaultMsg.folderId}`}>Open in Smart Vault</Link>}
             </Flex>
           )}
+        </Card>
+      )}
+
+      {job.status === 'succeeded' && job.partInfo?.length > 0 && (
+        <Card size="3">
+          <Heading size="4" mb="1">Part information</Heading>
+          <Text as="p" size="2" color="gray" mb="3">Identification, material, measured properties and where this part came from.</Text>
+          <div className="cols">
+            {job.partInfo.map((g) => (
+              <div key={g.title}>
+                <Text as="div" size="2" weight="bold" mb="1">{g.title}</Text>
+                <dl className="meta">
+                  {g.rows.flatMap((r) => [
+                    <dt key={`k${r.label}`}>{r.label}</dt>,
+                    <dd key={`v${r.label}`}>
+                      {r.color && <span className="swatch" style={{ background: r.color }} />}
+                      {r.value}
+                    </dd>,
+                  ])}
+                </dl>
+              </div>
+            ))}
+          </div>
         </Card>
       )}
 

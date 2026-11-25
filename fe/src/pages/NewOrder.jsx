@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Box, Button, Card, Flex, Heading, Select, Separator, Text, TextField } from '@radix-ui/themes';
 import { api, go, postJson } from '../lib.js';
 import { Hero, ImportGeaButton, Notice, ParamField, QuickPreview } from '../components.jsx';
@@ -15,7 +15,14 @@ export default function NewOrder({ code, configId }) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(null);
   const [who, setWho] = useState(() => localStorage.getItem('cadflow.user') || '');
+  const [catalog, setCatalog] = useState({ materials: [], finishes: [] }); // Material / Finish choices (part information)
+  const [material, setMaterial] = useState('');
+  const [finish, setFinish] = useState('');
   const seq = useRef(0);
+
+  useEffect(() => { api('/api/materials').then(setCatalog).catch(() => {}); }, []);
+  // Part information sent with the order (only what the engineer chose).
+  const partTexts = () => ({ ...(material ? { PI_Material: material } : {}), ...(finish ? { PI_Finish: finish } : {}) });
 
   // The product list and the schema of the selected product.
   useEffect(() => {
@@ -68,7 +75,7 @@ export default function NewOrder({ code, configId }) {
     setBusy(true);
     try {
       localStorage.setItem('cadflow.user', who);
-      const job = await postJson('/api/jobs', { productCode: schema.code, inputs: values, requestedBy: who, configId: cfgId || undefined });
+      const job = await postJson('/api/jobs', { productCode: schema.code, inputs: values, textInputs: partTexts(), requestedBy: who, configId: cfgId || undefined });
       go(`#/jobs/${job.id}`);
     } catch (e) {
       setNote('Order rejected: ' + (e.body?.issues?.[0]?.message || e.message));
@@ -108,6 +115,32 @@ export default function NewOrder({ code, configId }) {
         <Notice color="amber">{note}</Notice>
 
         <Flex direction="column" gap="4" className="order-scroll">
+          {catalog.materials.length > 0 && (
+            <Card variant="surface">
+              <Heading size="3" mb="2">Part information</Heading>
+              <div className="field">
+                <Text as="label" size="2" weight="medium">Material</Text>
+                <Select.Root value={material || '-'} onValueChange={(v) => setMaterial(v === '-' ? '' : v)}>
+                  <Select.Trigger aria-label="Material" style={{ minWidth: 260 }} />
+                  <Select.Content>
+                    <Select.Item value="-">Not specified</Select.Item>
+                    {catalog.materials.map((m) => <Select.Item key={m.code} value={m.code}>{m.name}</Select.Item>)}
+                  </Select.Content>
+                </Select.Root>
+                <span className="range">{material ? `${catalog.materials.find((m) => m.code === material)?.standard} - density ${catalog.materials.find((m) => m.code === material)?.density} g/cm3` : 'Written to the part properties and the BOM'}</span>
+              </div>
+              <div className="field">
+                <Text as="label" size="2" weight="medium">Appearance / finish</Text>
+                <Select.Root value={finish || '-'} onValueChange={(v) => setFinish(v === '-' ? '' : v)}>
+                  <Select.Trigger aria-label="Appearance" style={{ minWidth: 260 }} />
+                  <Select.Content>
+                    <Select.Item value="-">Not specified</Select.Item>
+                    {catalog.finishes.map((f) => <Select.Item key={f.code} value={f.code}>{f.name}</Select.Item>)}
+                  </Select.Content>
+                </Select.Root>
+              </div>
+            </Card>
+          )}
           {schema.groups.map((g) => (
             <Card key={g} variant="surface">
               <Heading size="3" mb="2">{g}</Heading>

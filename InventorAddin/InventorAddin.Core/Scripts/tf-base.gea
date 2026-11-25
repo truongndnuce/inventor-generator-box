@@ -1,0 +1,28 @@
+! Transformer part 1/7: the base plate (internal part of transformer-assembly; place it with ADD_COMPONENT ... FROM "tf-base").
+! Part origin: center of the plate (X = 0, D = 0), underside at elevation 0.
+GEA_VERSION 1
+PRODUCT_NAME "Transformer base plate"
+PARAM_PREFIX TB_
+TARGET PART
+
+BEGIN_FORM
+  BEGIN_GROUP "Base plate"
+    USER_INPUT_PARAM TB_Length    LENGTH 2240 mm MIN 1000 MAX 6000 REQUIRED LABEL "Plate length (X)"
+    USER_INPUT_PARAM TB_Width     LENGTH 1340 mm MIN 600  MAX 3000 REQUIRED LABEL "Plate width (D)"
+    USER_INPUT_PARAM TB_Thickness LENGTH 80 mm   MIN 40   MAX 200  LABEL "Plate thickness"
+  END_GROUP
+END_FORM
+
+BEGIN_BUILD
+  DECLARE_REFERENCE body
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "SizeX"  TB_Length
+    FEATURE_IN "SizeD"  TB_Width
+    FEATURE_IN "Height" TB_Thickness
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "TF_Base"
+  SET_REF_ATTR body "ROLE" "BASE"
+  SET_APPEARANCE body "Grey"
+  REGEN_MDL
+END_BUILD

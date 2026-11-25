@@ -54,7 +54,26 @@ public sealed record ScriptedProduct(
             "gravel pad, walkway and two portal gantries.",
             SubstationYardParams.Complete, SubstationYardParams.Validate,
             v => new[] { 0, v[SubstationYardParams.GravelHeight], SubstationYardParams.TopHeight(v) - 1000, SubstationYardParams.TopHeight(v) }),
+
+        // Parts of the transformer assembly (docs/examples/transformer-assembly.gea). Internal: placed only with ADD_COMPONENT, built with the defaults of their form.
+        Internal("tf-base", "tf-base.gea", "base plate"),
+        Internal("tf-tank", "tf-tank.gea", "tank"),
+        Internal("tf-cover", "tf-cover.gea", "cover"),
+        Internal("tf-radiator", "tf-radiator.gea", "radiator"),
+        Internal("tf-conservator", "tf-conservator.gea", "conservator"),
+        Internal("tf-leg", "tf-leg.gea", "conservator leg"),
+        Internal("tf-bushing", "tf-bushing.gea", "bushing"),
     };
+
+    /// <summary>
+    /// A part that only an assembly places with ADD_COMPONENT: it has no C# parameter class, so the values are the defaults of the script's own form
+    /// (the form of the script still validates them) and there is no drawing (no section levels).
+    /// </summary>
+    private static ScriptedProduct Internal(string code, string scriptFile, string what) =>
+        new(code, scriptFile, "Building " + what, what + ".",
+            partial => partial == null ? new Dictionary<string, double>() : new Dictionary<string, double>(partial),
+            _ => Array.Empty<ValidationIssue>(),
+            _ => new double[] { 0, 0, 0, 0 });
 
     public static ScriptedProduct? Find(string? code) =>
         All.FirstOrDefault(p => string.Equals(p.Code, code, StringComparison.OrdinalIgnoreCase));

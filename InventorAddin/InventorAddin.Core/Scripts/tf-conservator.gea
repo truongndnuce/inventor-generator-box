@@ -1,0 +1,28 @@
+! Transformer part 5/7: the conservator tank, a cylinder lying along D (internal part of transformer-assembly; ADD_COMPONENT ... FROM "tf-conservator").
+! Part origin: axis of the cylinder at X = 0, D = 0; the axis sits at elevation = Diameter / 2 (the cylinder's underside is at elevation 0).
+GEA_VERSION 1
+PRODUCT_NAME "Transformer conservator"
+PARAM_PREFIX TCV_
+TARGET PART
+
+BEGIN_FORM
+  BEGIN_GROUP "Conservator"
+    USER_INPUT_PARAM TCV_Diameter LENGTH 450 mm  MIN 200 MAX 900  LABEL "Conservator diameter"
+    USER_INPUT_PARAM TCV_Length   LENGTH 1000 mm MIN 400 MAX 2500 LABEL "Conservator length (D)"
+  END_GROUP
+END_FORM
+
+BEGIN_BUILD
+  DECLARE_REFERENCE body
+  CREATE_FEATURE builder:Cylinder
+    FEATURE_IN "Axis"      "D"
+    FEATURE_IN "Elevation" TCV_Diameter / 2
+    FEATURE_IN "Diameter"  TCV_Diameter
+    FEATURE_IN "Length"    TCV_Length
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "TF_Conservator"
+  SET_REF_ATTR body "ROLE" "CONSERVATOR"
+  SET_APPEARANCE body "Grey"
+  REGEN_MDL
+END_BUILD

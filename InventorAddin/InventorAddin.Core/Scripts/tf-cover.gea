@@ -1,0 +1,28 @@
+! Transformer part 3/7: the cover (internal part of transformer-assembly; place it with ADD_COMPONENT ... FROM "tf-cover").
+! Part origin: center of the cover (X = 0, D = 0), underside at elevation 0.
+GEA_VERSION 1
+PRODUCT_NAME "Transformer cover"
+PARAM_PREFIX TC_
+TARGET PART
+
+BEGIN_FORM
+  BEGIN_GROUP "Cover"
+    USER_INPUT_PARAM TC_Length    LENGTH 2080 mm MIN 1000 MAX 5200 REQUIRED LABEL "Cover length (X)"
+    USER_INPUT_PARAM TC_Width     LENGTH 1180 mm MIN 600  MAX 2700 REQUIRED LABEL "Cover width (D)"
+    USER_INPUT_PARAM TC_Thickness LENGTH 50 mm   MIN 20   MAX 150  LABEL "Cover thickness"
+  END_GROUP
+END_FORM
+
+BEGIN_BUILD
+  DECLARE_REFERENCE body
+  CREATE_FEATURE builder:Block
+    FEATURE_IN "SizeX"  TC_Length
+    FEATURE_IN "SizeD"  TC_Width
+    FEATURE_IN "Height" TC_Thickness
+    FEATURE_OUT body "Body"
+  END_CREATE_FEATURE
+  SET_REF_NAME body "TF_Cover"
+  SET_REF_ATTR body "ROLE" "COVER"
+  SET_APPEARANCE body "Grey"
+  REGEN_MDL
+END_BUILD

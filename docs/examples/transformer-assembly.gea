@@ -1,0 +1,85 @@
+! ============================================================================
+! Power transformer ASSEMBLY (TARGET ASSEMBLY): 15 components from 7 different parts, placed by position (no mates yet):
+!   1 base plate, 1 tank, 1 cover, N radiators, 1 conservator, 2 conservator legs, 2 x M bushings (two rows on the cover).
+! Every part is built once from its own bundled script (tf-base, tf-tank, tf-cover, tf-radiator, tf-conservator, tf-leg, tf-bushing) with its default
+! form values, then inserted as many times as needed. The BOM counts each part (e.g. tf-bushing x 6).
+!
+! Axes of the assembly: X = along the tank (conservator at the negative X end), Y = height, Z = depth (radiators on the positive Z side).
+! The dimensions below match the defaults of the part scripts; if you change a part default, change the matching constant here.
+! To use it: import this file on the web (Script order page) or paste it in the Script window of the add-in, then run.
+! ============================================================================
+GEA_VERSION 1
+PRODUCT_NAME "Power transformer assembly"
+PARAM_PREFIX TA_
+TARGET ASSEMBLY
+
+BEGIN_FORM
+  USER_INPUT_PARAM TA_RadiatorCount   INTEGER 3 MIN 0 MAX 6 LABEL "Radiator count"
+  USER_INPUT_PARAM TA_BushingsPerRow  INTEGER 3 MIN 1 MAX 4 LABEL "Bushings per row (two rows)"
+END_FORM
+
+BEGIN_BUILD
+  DECLARE_REFERENCE c
+  DECLARE_VARIABLE LENGTH baseT
+  DECLARE_VARIABLE LENGTH tankH
+  DECLARE_VARIABLE LENGTH hTank
+  DECLARE_VARIABLE LENGTH hCover
+  DECLARE_VARIABLE LENGTH hTop
+  DECLARE_VARIABLE LENGTH radStep
+  DECLARE_VARIABLE LENGTH radX0
+  DECLARE_VARIABLE LENGTH bushStep
+  DECLARE_VARIABLE LENGTH bushX0
+  DECLARE_VARIABLE LENGTH consX
+
+  baseT = 80 mm
+  tankH = 1500 mm
+  hTank = baseT
+  hCover = baseT + tankH
+  hTop = hCover + 50 mm
+  consX = -775 mm
+
+  PROCESSING_BOX_START "Placing the transformer"
+
+  ! --- Base, tank and cover stacked along Y ---
+  ADD_COMPONENT c FROM "tf-base" AT 0, 0, 0
+  SET_REF_NAME c "TF_Base"
+  ADD_COMPONENT c FROM "tf-tank" AT 0, hTank, 0
+  SET_REF_NAME c "TF_Tank"
+  ADD_COMPONENT c FROM "tf-cover" AT 0, hCover, 0
+  SET_REF_NAME c "TF_Cover"
+
+  ! --- Radiators: a row on the positive Z side, centered along X, 150 mm above the tank bottom ---
+  IF TA_RadiatorCount > 0
+    radStep = 460 mm
+    radX0 = -(TA_RadiatorCount - 1) * radStep / 2
+    FOR i FROM 0 TO TA_RadiatorCount - 1
+      ADD_COMPONENT c FROM "tf-radiator" AT radX0 + i * radStep, hTank + 150 mm, 690 mm
+      SET_REF_NAME c "TF_Radiator*"
+    END_FOR
+  END_IF
+
+  ! --- Conservator on two legs at the negative X end ---
+  ADD_COMPONENT c FROM "tf-leg" AT consX, hTop, -300 mm
+  SET_REF_NAME c "TF_ConservatorLeg*"
+  ADD_COMPONENT c FROM "tf-leg" AT consX, hTop, 300 mm
+  SET_REF_NAME c "TF_ConservatorLeg*"
+  ADD_COMPONENT c FROM "tf-conservator" AT consX, hTop + 300 mm, 0
+  SET_REF_NAME c "TF_Conservator"
+
+  ! --- Bushings: two rows (Z = -242 and +242) on the cover, from X = -330 to X = 780 ---
+  bushX0 = -330 mm
+  IF TA_BushingsPerRow > 1
+    bushStep = (780 mm - bushX0) / (TA_BushingsPerRow - 1)
+  ELSE
+    bushStep = 0 mm
+  END_IF
+  FOR row FROM 0 TO 1
+    FOR j FROM 0 TO TA_BushingsPerRow - 1
+      ADD_COMPONENT c FROM "tf-bushing" AT bushX0 + j * bushStep, hTop, (2 * row - 1) * 242 mm
+      SET_REF_NAME c "TF_Bushing*"
+    END_FOR
+  END_FOR
+
+  PRINT "Transformer placed."
+  PROCESSING_BOX_END
+END_BUILD
