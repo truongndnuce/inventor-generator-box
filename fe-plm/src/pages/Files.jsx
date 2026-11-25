@@ -8,7 +8,25 @@ import { FolderGlyph, Crumbs, ModifiedCells, Pager, RenameDialog, RowMenu, State
 const ALL = '__all';
 const STATES = ['In Work', 'Under Review', 'Approved', 'Released'];
 
-export default function Files({ folderId, user, reloadTree, rev }) {
+export default function Files({ folderId, user, reloadTree, rev, allFolders = [] }) {
+  // Height (px) of the file list above the viewer (null = as tall as its rows); drag the bar between them to change it.
+  const [listH, setListH] = useState(() => { try { return Number(localStorage.getItem('plm.listH')) || null; } catch { return null; } });
+  const page = useRef(null);
+  const listBox = useRef(null);
+  const startResize = (e) => {
+    const box = page.current; if (!box || !listBox.current) return;
+    e.preventDefault();
+    const y0 = e.clientY, h0 = listBox.current.clientHeight, max = box.clientHeight - 280;
+    let h = h0;
+    const move = (ev) => { h = Math.max(90, Math.min(max, h0 + ev.clientY - y0)); setListH(h); };
+    const up = () => {
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+      document.body.style.userSelect = '';
+      try { localStorage.setItem('plm.listH', String(Math.round(h))); } catch { /* optional */ }
+    };
+    document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+  };
   const [view, setView] = useState(null);
   const [ctx, setCtx] = useState(null);             // the row under the cursor when the context menu was opened (null = empty area)
   const [renaming, setRenaming] = useState(null);   // the row being renamed
@@ -49,11 +67,18 @@ export default function Files({ folderId, user, reloadTree, rev }) {
   }, [q, kind, state, searching, searchRev]);
 
   const rows = useMemo(() => {
-    if (searching) return found.map((i) => ({ type: 'item', i }));
+    if (searching) {
+      // Folders whose name matches (from the whole tree), then the matching files.
+      const text = q.trim().toLowerCase();
+      const folders = text && kind === ALL && state === ALL
+        ? allFolders.filter((f) => f.name.toLowerCase().includes(text)).sort((a, b) => a.name.localeCompare(b.name)).map((f) => ({ type: 'folder', f }))
+        : [];
+      return [...folders, ...found.map((i) => ({ type: 'item', i }))];
+    }
     if (!view) return [];
     const folders = [...view.folders].sort((a, b) => a.name.localeCompare(b.name)).map((f) => ({ type: 'folder', f }));
     return [...folders, ...view.items.map((i) => ({ type: 'item', i }))];
-  }, [view, searching, found]);
+  }, [view, searching, found, allFolders, q, kind, state]);
   const { rows: pageRows, pager } = usePaging(rows);
   // The selected model, with the freshest copy from the list (a rename or a new version changes it).
   const sel = selected && (rows.find((r) => r.type === 'item' && r.i.id === selected.id)?.i ?? selected);
@@ -86,7 +111,7 @@ export default function Files({ folderId, user, reloadTree, rev }) {
   const folder = view?.folder;
   // With a file open the page fits the window and does not scroll: only the file list (and the folder tree) scroll.
   return (
-    <div style={sel ? { display: 'flex', flexDirection: 'column', height: 'calc(100vh - 104px)' } : undefined}>
+    <div ref={page} style={sel ? { display: 'flex', flexDirection: 'column', height: 'calc(100vh - 104px)' } : undefined}>
       <h1 className="page-title">{folder ? folder.name : 'Files'}</h1>
       <div className="toolbar">
         <input ref={input} type="file" multiple hidden onChange={(e) => { upload([...e.target.files]); e.target.value = ''; }} />
@@ -112,7 +137,8 @@ export default function Files({ folderId, user, reloadTree, rev }) {
       <ContextMenu.Root>
         <ContextMenu.Trigger>
         <div
-          style={sel ? { flex: '1 1 0', minHeight: 0, display: 'flex', flexDirection: 'column' } : { minHeight: 'calc(100vh - 230px)' }}
+          ref={listBox}
+          style={sel ? { flex: listH ? `0 0 ${listH}px` : '0 1 auto', minHeight: 90, display: 'flex', flexDirection: 'column' } : { minHeight: 'calc(100vh - 230px)' }}
           onContextMenuCapture={() => setCtx(null)}
           onDragOver={(e) => { if (folderId) { e.preventDefault(); setDrag(true); } }}
           onDragLeave={() => setDrag(false)}
@@ -120,7 +146,7 @@ export default function Files({ folderId, user, reloadTree, rev }) {
         >
           {searching ? <Text size="2" color="gray">Search results from all folders</Text> : <Crumbs items={view?.breadcrumb || []} />}
           {drag && <div className="dropzone">Drop files to upload to {folder?.name}</div>}
-          <div style={sel ? { flex: '1 1 0', minHeight: 0, overflow: 'auto', marginTop: 10 } : { marginTop: 10 }}>
+          <div style={sel ? { flex: '1 1 auto', minHeight: 0, overflow: 'auto', marginTop: 10 } : { marginTop: 10 }}>
           <table className="grid">
             <thead><tr><th /><th>Name</th><th>Version</th><th>State</th><th>Last modified</th><th>Modified by</th><th /></tr></thead>
             <tbody>
@@ -168,7 +194,9 @@ export default function Files({ folderId, user, reloadTree, rev }) {
 
       {sel && (
         // Click a model in the list: its 3D view opens here, under the list, so another file is one click away.
-        <div className="split-3d" style={{ flex: '0 0 54%', minHeight: 0, gridTemplateRows: 'minmax(0, 1fr)' }}>
+        <>
+        <div className="resize-bar" title="Drag to resize" onPointerDown={startResize} onDoubleClick={() => { setListH(null); try { localStorage.removeItem('plm.listH'); } catch { /* optional */ } }} />
+        <div className="split-3d" style={{ flex: '1 1 0', minHeight: 160, marginTop: 0, gridTemplateRows: 'minmax(0, 1fr)' }}>
           <div className="viewer viewer-3d" style={{ height: '100%', minHeight: 0 }}>
             <ModelView key={`${sel.id}-${sel.version}`} item={sel} onProps={setPicked} />
           </div>
@@ -193,6 +221,7 @@ export default function Files({ folderId, user, reloadTree, rev }) {
             )}
           </div>
         </div>
+        </>
       )}
 
       {renaming && (

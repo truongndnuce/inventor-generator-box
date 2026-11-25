@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Callout, ContextMenu, Dialog, Flex, IconButton, TextField, Tooltip } from '@radix-ui/themes';
-import { CubeIcon, DownloadIcon, EyeOpenIcon, TrashIcon, FileIcon, FileTextIcon, ImageIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, DoubleArrowLeftIcon, DoubleArrowRightIcon } from '@radix-ui/react-icons';
-import { STATE_COLOR, fileUrl, fmtDate, go, send } from './lib.js';
+import { CubeIcon, DownloadIcon, EyeOpenIcon, TrashIcon, FileIcon, FileTextIcon, ImageIcon, MagnifyingGlassIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, DoubleArrowLeftIcon, DoubleArrowRightIcon } from '@radix-ui/react-icons';
+import { STATE_COLOR, api, fileUrl, fmtDate, go, send } from './lib.js';
 
 const KIND_ICON = { image: ImageIcon, drawing: FileTextIcon, model: CubeIcon, bom: FileTextIcon, other: FileIcon };
 
@@ -153,13 +153,44 @@ export function Tree({ folders, current, onSelect, user, onCreated, onRenamed })
       </>
     );
   };
+  // Search box: folders by name (from the tree) and files by name (from the server), across the whole vault.
+  const [q, setQ] = useState('');
+  const text = q.trim().toLowerCase();
+  const [files, setFiles] = useState([]);
+  useEffect(() => {
+    if (!text) { setFiles([]); return; }
+    const t = setTimeout(() => api('/api/vault/search?q=' + encodeURIComponent(q.trim())).then(setFiles).catch(() => setFiles([])), 200);
+    return () => clearTimeout(t);
+  }, [q]);
+  const hits = text ? folders.filter((f) => f.name.toLowerCase().includes(text)) : [];
+  const pathOf = (id) => { const names = []; for (let f = folders.find((x) => x.id === id); f; f = folders.find((x) => x.id === f.parentId)) names.unshift(f.name); return names.join(' / '); };
+
   return (
     <>
+      <div style={{ padding: '6px 8px' }}>
+        <TextField.Root size="1" placeholder="Search files & folders" value={q} onChange={(e) => setQ(e.target.value)}>
+          <TextField.Slot><MagnifyingGlassIcon /></TextField.Slot>
+        </TextField.Root>
+      </div>
       <ContextMenu.Root>
         <ContextMenu.Trigger>
           {/* Capture runs before the row's own handler, so a row overrides this reset to null. */}
           <div className="tree" onContextMenuCapture={() => setTarget(null)}>
-            {(byParent.get('') || []).map((f) => <Row key={f.id} f={f} depth={0} />)}
+            {text ? (
+              <>
+                {hits.map((f) => (
+                  <div key={f.id} className="tree-row" title={pathOf(f.id)} style={{ paddingLeft: 12 }} onClick={() => onSelect(f.id)}>
+                    <FolderGlyph /> <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.name}</span>
+                  </div>
+                ))}
+                {files.map((i) => (
+                  <div key={i.id} className="tree-row" title={pathOf(i.folderId)} style={{ paddingLeft: 12 }} onClick={() => go(`#/files/${i.folderId}`)}>
+                    <FileIcon /> <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.name}</span>
+                  </div>
+                ))}
+                {!hits.length && !files.length && <div style={{ padding: 12, color: 'var(--gray-10)', fontSize: 13 }}>Nothing matches.</div>}
+              </>
+            ) : (byParent.get('') || []).map((f) => <Row key={f.id} f={f} depth={0} />)}
           </div>
         </ContextMenu.Trigger>
         <ContextMenu.Content>
